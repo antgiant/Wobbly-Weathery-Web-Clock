@@ -18,3 +18,5 @@ With thanks to
 - [ ] Add light pollution?
 - [ ] Add air particle count impact?
 - [ ] Add a giant list of weather related visualizations
+
+Thanks to [Hacker News](https://news.ycombinator.com/item?id=44846281) for a great collection of related resources.
