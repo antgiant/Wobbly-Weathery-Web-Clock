@@ -6,9 +6,12 @@
   <script src="script.js" type="text/javascript" charset="utf-8"></script>
   <style>
     #clock {
+      display: flex;
+      justify-content: center; /* horizontal centering */
+      align-items: center;     /* vertical centering */
       width: 100%;
-      box-sizing: border-box;
-      border-style: solid;
+      height: 100vh;           /* make parent full height of viewport */
+
     }
     #clock svg {
       width: calc(((100% + (7% * 3)) / 6) - 1%); /* 6 across; plus offset to match margin changes*/
