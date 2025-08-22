@@ -11,13 +11,10 @@
       border-style: solid;
     }
     #clock svg {
-      width: calc(((100% + (7% * 3)) / 6) - 1%); /* 6 across; tweak as needed */
-      aspect-ratio: 1 / 1;
-      height: auto;          /* let aspect-ratio control height */
+      width: calc(((100% + (7% * 3)) / 6) - 1%); /* 6 across; plus offset to match margin changes*/
       stroke-width: 80;
       stroke: blue;
       fill: none;
-      padding: 1% 0%;
     }
     #clock svg:nth-child(even) {
       margin-left: -7%;
@@ -27,39 +24,39 @@
 
 <body>
   <div id="clock">
-    <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+    <svg viewBox="0 -8 100 116" preserveAspectRatio="xMidYMid meet">
       <path id="h0p0" d="M 0 0 L 400 500" transform="scale(0.2)" />
       <path id="h0p1" d="M 400 0 L 0 500" transform="scale(0.2)" />
       <path id="h0p2" d="M 400 0 L 400 500" transform="scale(0.2)" />
       <path id="h0p3" d="M 400 0 L 0 0 0 500 400 500" transform="scale(0.2)" />Sorry, your browser does not support inline SVG.
     </svg>
-    <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+    <svg viewBox="0 -8 100 116" preserveAspectRatio="xMidYMid meet">
       <path id="h1p0" d="M 0 0 L 400 500" transform="scale(0.2)" />
       <path id="h1p1" d="M 400 0 L 0 500" transform="scale(0.2)" />
       <path id="h1p2" d="M 400 0 L 400 500" transform="scale(0.2)" />
       <path id="h1p3" d="M 400 0 L 0 0 0 500 400 500" transform="scale(0.2)" />Sorry, your browser does not support inline SVG.
     </svg>
   
-    <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+    <svg viewBox="0 -8 100 116" preserveAspectRatio="xMidYMid meet">
       <path id="m0p0" d="M 0 0 L 400 500" transform="scale(0.2)" />
       <path id="m0p1" d="M 400 0 L 0 500" transform="scale(0.2)" />
       <path id="m0p2" d="M 400 0 L 400 500" transform="scale(0.2)" />
       <path id="m0p3" d="M 400 0 L 0 0 0 500 400 500" transform="scale(0.2)" />Sorry, your browser does not support inline SVG.
     </svg>
-    <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+    <svg viewBox="0 -8 100 116" preserveAspectRatio="xMidYMid meet">
       <path id="m1p0" d="M 0 0 L 400 500" transform="scale(0.2)" />
       <path id="m1p1" d="M 400 0 L 0 500" transform="scale(0.2)" />
       <path id="m1p2" d="M 400 0 L 400 500" transform="scale(0.2)" />
       <path id="m1p3" d="M 400 0 L 0 0 0 500 400 500" transform="scale(0.2)" />Sorry, your browser does not support inline SVG.
     </svg>
   
-    <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+    <svg viewBox="0 -8 100 116" preserveAspectRatio="xMidYMid meet">
       <path id="s0p0" d="M 0 0 L 400 500" transform="scale(0.2)" />
       <path id="s0p1" d="M 400 0 L 0 500" transform="scale(0.2)" />
       <path id="s0p2" d="M 400 0 L 400 500" transform="scale(0.2)" />
       <path id="s0p3" d="M 400 0 L 0 0 0 500 400 500" transform="scale(0.2)" />Sorry, your browser does not support inline SVG.
     </svg>
-    <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+    <svg viewBox="0 -8 100 116" preserveAspectRatio="xMidYMid meet">
       <path id="s1p0" d="M 0 0 L 400 500" transform="scale(0.2)" />
       <path id="s1p1" d="M 400 0 L 0 500" transform="scale(0.2)" />
       <path id="s1p2" d="M 400 0 L 400 500" transform="scale(0.2)" />
