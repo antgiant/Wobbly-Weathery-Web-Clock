@@ -5,8 +5,11 @@ With thanks to
 [Bézier Clock](http://jackf.net/bezier-clock/) in [VanillaJS](http://vanilla-js.com) with some [easing options](http://www.robertpenner.com/easing/)
 
 ## Currently Most Probable Roadmap
-- [ ] Lock in preferred easing
 - [ ] Dynamic time sizing
+- [ ] Add Configuration
+  - [ ] Preferred easing
+  - [ ] Show Seconds
+  - [ ] Military vs Normal time
 - [ ] Estimate Viewer's location [by timezone](https://github.com/mcteamster/virgo)
 - [ ] Add option for GPS location refinement
 - [ ] Add option to have correct looking direction
