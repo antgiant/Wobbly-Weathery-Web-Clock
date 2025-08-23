@@ -1,0 +1,28 @@
+    #clock {
+      display: flex;
+      justify-content: center; /* horizontal centering */
+      align-items: center;     /* vertical centering */
+      width: 100%;
+      height: 98vh;           /* make parent full height of viewport */
+
+    }
+    #clock svg {
+      width: calc(((100% + (7% * 3)) / 6) - 1%); /* 6 across; plus offset to match margin changes*/
+      stroke-width: 80;
+      stroke: blue;
+      fill: none;
+    }
+    #clock svg:nth-child(even) {
+      margin-left: -7%;
+    }
+    #settings {
+      position: fixed;
+      bottom: 5%;
+      right: 5%;
+      width: 5%;
+      height: 5%;
+      min-width: 44px;
+      min-height: 44px;
+      max-width: 200px;
+      max-height: 200px;
+    }

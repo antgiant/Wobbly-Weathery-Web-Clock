@@ -87,3 +87,14 @@ function clock() {
 setInterval(function() {
   clock();
 }, vars.step);
+
+var select = document.getElementById("easing");
+Object.getOwnPropertyNames(easing).forEach(function(val, idx, array) {
+  var option = document.createElement("option");
+  option.text = val;
+  option.value = val;
+  if (conf.easing == val) {
+    option.selected = true;
+  }
+  select.add(option);
+});
