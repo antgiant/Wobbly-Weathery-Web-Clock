@@ -46,8 +46,11 @@
       <path id="s1p3" d="M 400 0 L 0 0 0 500 400 500" transform="scale(0.2)" />Sorry, your browser does not support inline SVG.
     </svg>
   </div>
-<svg id="settings" width="800px" height="800px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-
+<svg id="settings"
+     width="32" height="32" viewBox="0 0 24 24" fill="none"
+     xmlns="http://www.w3.org/2000/svg"
+     role="button" tabindex="0" aria-haspopup="dialog"
+     aria-controls="settingsModal" aria-label="Open settings">
 <g id="SVGRepo_bgCarrier" stroke-width="0"/>
 
 <g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"/>
@@ -56,9 +59,29 @@
 
 </svg>
 
+<!-- LIGHTBOX / MODAL -->
+<div id="settingsModal"
+     class="modal"
+     role="dialog"
+     aria-modal="true"
+     aria-labelledby="settingsTitle"
+     hidden>
+  <div class="modal__backdrop" data-close="true"></div>
 
-  <br/>
-  <select id="easing" onchange="conf.easing = this.options[this.selectedIndex].value; console.info(conf.easing);"></select>
+  <div class="modal__content" role="document">
+    <header class="modal__header">
+      <h2 id="settingsTitle">Settings</h2>
+      <button type="button" class="modal__close" aria-label="Close settings" data-close="true">×</button>
+    </header>
+
+    <div class="modal__body">
+      <label for="easing">Easing</label>
+      <select id="easing"
+              onchange="conf.easing = this.options[this.selectedIndex].value; console.info(conf.easing);">
+      </select>
+    </div>
+  </div>
+</div>
 </body>
   <script src="easing.js" type="text/javascript" charset="utf-8"></script>
   <script src="script.js" type="text/javascript" charset="utf-8"></script>
