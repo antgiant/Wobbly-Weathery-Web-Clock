@@ -26,3 +26,24 @@
       max-width: 200px;
       max-height: 200px;
     }
+    /* smooth show/hide for the settings button */
+#settings {
+  transition: opacity 1000ms ease, transform 1000ms ease;
+  will-change: opacity, transform;
+}
+
+#settings.is-hidden {
+  opacity: 0;
+  transform: rotate(360deg);
+  pointer-events: none; /* don’t trap taps/clicks while hidden */
+}
+
+/* respect users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  #settings {
+    transition: opacity 1ms linear;
+  }
+  #settings.is-hidden {
+    transform: none;
+  }
+}

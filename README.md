@@ -5,7 +5,7 @@ With thanks to
 [Bézier Clock](http://jackf.net/bezier-clock/) in [VanillaJS](http://vanilla-js.com) with some [easing options](http://www.robertpenner.com/easing/)
 
 ## Currently Most Probable Roadmap
-- [ ] Dynamic time sizing
+- [x] Dynamic time sizing
 - [ ] Add Configuration
   - [ ] Preferred easing
   - [ ] Show Seconds

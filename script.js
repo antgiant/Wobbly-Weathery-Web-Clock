@@ -98,3 +98,70 @@ Object.getOwnPropertyNames(easing).forEach(function(val, idx, array) {
   }
   select.add(option);
 });
+
+  const settingsEl = document.getElementById('settings');
+
+  // How long to wait with no activity before hiding (ms)
+  const IDLE_MS = 5000;
+
+  let hideTimerId = null;
+  let isHidden = false;
+
+  function showSettings() {
+    if (isHidden) {
+      settingsEl.classList.remove('is-hidden');
+      isHidden = false;
+    }
+  }
+
+  function hideSettings() {
+    if (!isHidden) {
+      settingsEl.classList.add('is-hidden');
+      isHidden = true;
+    }
+  }
+
+  function resetIdleTimer() {
+    // Any activity should show the control immediately
+    showSettings();
+    if (hideTimerId !== null) {
+      clearTimeout(hideTimerId);
+    }
+    hideTimerId = setTimeout(hideSettings, IDLE_MS);
+  }
+
+  // Consider these as “activity”:
+  const activityEvents = [
+    'mousemove',
+    'mousedown',
+    'mouseup',
+    'wheel',
+    'scroll',
+    'keydown',
+    'keyup',
+    'touchstart',
+    'touchmove',
+    'pointerdown',
+    'pointermove'
+  ];
+
+  // Use passive listeners where appropriate for performance
+  const passiveOpts = { passive: true };
+
+  activityEvents.forEach(evt => {
+    window.addEventListener(evt, resetIdleTimer, passiveOpts);
+  });
+
+  // If the page/tab becomes visible again, treat that as activity
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) resetIdleTimer();
+  });
+
+  // Keep the button visible while the user interacts with it directly
+  settingsEl.addEventListener('mouseenter', showSettings, passiveOpts);
+  settingsEl.addEventListener('focusin', showSettings);
+  settingsEl.addEventListener('pointerenter', showSettings, passiveOpts);
+  settingsEl.addEventListener('pointerdown', showSettings, passiveOpts);
+
+  // Start the initial timer on load
+  resetIdleTimer();
