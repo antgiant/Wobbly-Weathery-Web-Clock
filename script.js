@@ -1,5 +1,5 @@
 var conf = {
-  steps: get_element("steps", 15),
+  steps: 15,
   easing: get_element("easing", 'easeInOutBack')
 };
 var dd = [];
@@ -244,3 +244,9 @@ Object.getOwnPropertyNames(easing).forEach(function(val, idx, array) {
   backdrop.addEventListener('click', (e) => {
     if (e.target.dataset.close === 'true') closeModal();
   });
+  
+  function set_conf(element, value) {
+  	conf[element] = value;
+  	set_element(element, value);
+  	console.info("conf." + element + " = " + value);
+  }
