@@ -77,7 +77,7 @@
     <div class="modal__body">
       <label for="easing">Easing</label>
       <select id="easing"
-              onchange="conf.easing = this.options[this.selectedIndex].value; console.info(conf.easing);">
+              onchange="conf.easing = this.options[this.selectedIndex].value; set_element('easing',this.options[this.selectedIndex].value); console.info(conf.easing);">
       </select>
     </div>
   </div>

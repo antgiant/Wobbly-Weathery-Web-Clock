@@ -1,6 +1,6 @@
 var conf = {
-  steps: 15,
-  easing: 'easeInOutBack'
+  steps: get_element("steps", 15),
+  easing: get_element("easing", 'easeInOutBack')
 };
 var dd = [];
 dd[0] = [254, 47, 159, 84, 123, 158, 131, 258, 139, 358, 167, 445, 256, 446, 345, 447, 369, 349, 369, 275, 369, 201, 365, 81, 231, 75];
@@ -19,6 +19,19 @@ var vars = {
   t: ["h", "m", "s"],
   step: 1000 / conf.steps
 };
+
+function get_element(element_name, default_value = "") {
+  var temp = localStorage.getItem(element_name);
+  if (temp === null)
+  {
+    temp = default_value;
+  }
+  return temp;
+}
+
+function set_element(element_name, set_value) {
+  localStorage.setItem(element_name, set_value);
+}
 
 function ci(c, i) {
   var k = i * 6;
