@@ -1,6 +1,7 @@
 var conf = {
   steps: 15,
-  easing: get_element("easing", 'easeInOutBack')
+  easing: get_element("easing", 'easeInOutBack'),
+  twentyFourHourClock: JSON.parse(get_element("twentyFourHourClock", true))
 };
 var dd = [];
 dd[0] = [254, 47, 159, 84, 123, 158, 131, 258, 139, 358, 167, 445, 256, 446, 345, 447, 369, 349, 369, 275, 369, 201, 365, 81, 231, 75];
@@ -71,12 +72,21 @@ function toDigitArray(str) {
 }
 
 function getTime(date) {
-  var s = date.toTimeString().replace(/.*(\d{2}:\d{2}:\d{2}).*/, "$1").split(":");
-  return {
-    'h': toDigitArray(s[0]),
-    'm': toDigitArray(s[1]),
-    's': toDigitArray(s[2])
-  };
+  let h = "";
+  if (JSON.parse(get_element("twentyFourHourClock", true))) {
+    h = date.getHours().toString().padStart(2, "0");
+  } else {
+    h = (date.getHours() % 12 || 12).toString().padStart(2, "0");
+  }
+  
+  let m = date.getMinutes().toString().padStart(2, "0");
+  let s = date.getSeconds().toString().padStart(2, "0");
+  temp = {
+    'h': toDigitArray(h),
+    'm': toDigitArray(m),
+    's': toDigitArray(s)
+  }
+  return temp;
 }
 
 function clock() {
@@ -111,6 +121,8 @@ Object.getOwnPropertyNames(easing).forEach(function(val, idx, array) {
   }
   select.add(option);
 });
+
+document.getElementById("twentyFourHourClock").checked = JSON.parse(get_element("twentyFourHourClock", true));
 
   const settingsEl = document.getElementById('settings');
 

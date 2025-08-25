@@ -6,11 +6,11 @@ With thanks to
 
 ## Currently Most Probable Roadmap
 - [x] Dynamic time sizing
+- [ ] Add Colons
 - [ ] Add Configuration
   - [x] Preferred easing
-  - [ ] Steps?
   - [ ] Show Seconds
-  - [ ] Military vs Normal time
+  - [x] Military vs Normal time
 - [ ] Estimate Viewer's location [by timezone](https://github.com/mcteamster/virgo)
 - [ ] Add option for GPS location refinement
 - [ ] Add option to have correct looking direction
