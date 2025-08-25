@@ -7,7 +7,8 @@ With thanks to
 ## Currently Most Probable Roadmap
 - [x] Dynamic time sizing
 - [ ] Add Configuration
-  - [ ] Preferred easing
+  - [x] Preferred easing
+  - [ ] Steps?
   - [ ] Show Seconds
   - [ ] Military vs Normal time
 - [ ] Estimate Viewer's location [by timezone](https://github.com/mcteamster/virgo)
