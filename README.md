@@ -7,11 +7,11 @@ With thanks to
 ## Currently Most Probable Roadmap
 - [x] Dynamic time sizing
 - [x] Add Colons
+- [x] Hide extra starting zeros
 - [ ] Add Configuration
   - [x] Preferred easing
   - [ ] Show Seconds
   - [x] Military vs Normal time
-  - [ ] Hide extra Zeros?
 - [ ] Estimate Viewer's location [by timezone](https://github.com/mcteamster/virgo)
 - [ ] Add option for GPS location refinement
 - [ ] Add option to have correct looking direction

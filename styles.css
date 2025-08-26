@@ -30,6 +30,9 @@
       max-width: 200px;
       max-height: 200px;
     }
+    .hidden {
+      display: none;
+    }
     /* smooth show/hide for the settings button */
 #settings {
   transition: opacity 1000ms ease, transform 1000ms ease;

@@ -78,6 +78,16 @@ function getTime(date) {
   } else {
     h = (date.getHours() % 12 || 12).toString().padStart(2, "0");
   }
+  const el = document.getElementById("firstDigit");
+  if (!JSON.parse(get_element("twentyFourHourClock", true)) && parseInt(h) < 10) {
+    if (el && !el.classList.contains("hidden")) {
+      el.classList.add("hidden");
+    }
+  } else {
+    if (el && el.classList.contains("hidden")) {
+      el.classList.remove("hidden");
+    }
+  }
   
   let m = date.getMinutes().toString().padStart(2, "0");
   let s = date.getSeconds().toString().padStart(2, "0");
