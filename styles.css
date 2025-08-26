@@ -12,8 +12,12 @@
       stroke: blue;
       fill: none;
     }
-    #clock svg:nth-child(even) {
+    #clock svg:nth-child(3n -1) {
       margin-left: -7%;
+    }
+    #clock svg:nth-child(3n) {
+      margin-left: -2%;
+      margin-right: -15%;
     }
     #settings {
       position: fixed;
