@@ -8,9 +8,9 @@ With thanks to
 - [x] Dynamic time sizing
 - [x] Add Colons
 - [x] Hide extra starting zeros
-- [ ] Add Configuration
+- [x] Add Configuration
   - [x] Preferred easing
-  - [ ] Show Seconds
+  - [x] Show Seconds
   - [x] Military vs Normal time
 - [ ] Estimate Viewer's location [by timezone](https://github.com/mcteamster/virgo)
 - [ ] Add option for GPS location refinement

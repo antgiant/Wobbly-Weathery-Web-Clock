@@ -1,7 +1,8 @@
 var conf = {
   steps: 15,
   easing: get_element("easing", 'easeInOutBack'),
-  twentyFourHourClock: JSON.parse(get_element("twentyFourHourClock", true))
+  twentyFourHourClock: JSON.parse(get_element("twentyFourHourClock", true)),
+  hideSeconds: JSON.parse(get_element("hideSeconds", true))
 };
 var dd = [];
 dd[0] = [254, 47, 159, 84, 123, 158, 131, 258, 139, 358, 167, 445, 256, 446, 345, 447, 369, 349, 369, 275, 369, 201, 365, 81, 231, 75];
@@ -134,6 +135,18 @@ Object.getOwnPropertyNames(easing).forEach(function(val, idx, array) {
 
 document.getElementById("twentyFourHourClock").checked = JSON.parse(get_element("twentyFourHourClock", true));
 
+document.getElementById("hideSeconds").checked = JSON.parse(get_element("hideSeconds", true));
+
+if (JSON.parse(get_element("hideSeconds", true))) {
+  document.querySelector("#firstSeperator").style.marginRight = "-25%";
+  document.querySelectorAll('.seconds').forEach(element => {
+    element.style.display = 'none';
+  });
+} else {
+  document.querySelectorAll('.seconds').forEach(element => {
+    element.style.display = '';
+  });
+}
   const settingsEl = document.getElementById('settings');
 
   // How long to wait with no activity before hiding (ms)
@@ -271,4 +284,41 @@ document.getElementById("twentyFourHourClock").checked = JSON.parse(get_element(
   	conf[element] = value;
   	set_element(element, value);
   	console.info("conf." + element + " = " + value);
+  	
+  	if (element == "hideSeconds") {
+      document.querySelectorAll('.seconds').forEach(element => {
+        if (value) {
+          element.style.display = 'none';
+        } else {
+          element.style.display = '';
+        }
+      });
+      document.querySelector("#firstSeperator").style.marginRight = (value?"-25%":"-15%");
+  	}
   }
+  function updateSvgWidths() {
+    const svgs = document.querySelectorAll("#clock svg");
+    const visibleSvgs = [...svgs].filter(svg => getComputedStyle(svg).display !== "none");
+    const count = visibleSvgs.length - 2;
+    
+    if (count > 0) {
+      let temp = "1%";
+      if (count == 2 || count == 5) {
+        temp = "3%";
+        document.querySelector("#clock").style.marginLeft = "6%";
+      } else {
+        document.querySelector("#clock").style.marginLeft = "";
+      }
+      const width = `calc(((100% + (7% * 3)) / ${count}) - ${temp})`;
+      visibleSvgs.forEach(svg => {
+        svg.style.width = width;
+      });
+    }
+  }
+
+// Run once on page load
+updateSvgWidths();
+
+// Optional: rerun if elements may toggle visibility
+const observer = new MutationObserver(updateSvgWidths);
+observer.observe(document.querySelector("#clock"), { attributes: true, childList: true, subtree: true });
