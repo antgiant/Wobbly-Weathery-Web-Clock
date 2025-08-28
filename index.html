@@ -85,18 +85,23 @@
     </header>
 
     <div class="modal__body">
-      <label for="easing">Easing</label>
-      <select id="easing"
-              onchange="set_conf('easing', this.options[this.selectedIndex].value)">
-      </select>
-      <label>
-        <input type="checkbox" id="twentyFourHourClock" onchange="set_conf('twentyFourHourClock', this.checked)">
-        Use 24 Hour Time
-      </label>
-      <label>
-        <input type="checkbox" id="hideSeconds" onchange="set_conf('hideSeconds', this.checked)">
-        Hide Seconds
-      </label>
+    <fieldset>
+      <legend>Clock</legend>
+        <label for="easing">Easing</label>
+        <select id="easing"
+                onchange="set_conf('easing', this.options[this.selectedIndex].value)">
+        </select>
+        <br>
+        <label>
+          <input type="checkbox" id="twentyFourHourClock" onchange="set_conf('twentyFourHourClock', this.checked)">
+          Use 24 Hour Time
+        </label>
+        <br>
+        <label>
+          <input type="checkbox" id="hideSeconds" onchange="set_conf('hideSeconds', this.checked)">
+          Hide Seconds
+        </label>
+      </fieldset>
     </div>
   </div>
 </div>
