@@ -23,7 +23,7 @@ var vars = {
 };
 
 function get_element(element_name, default_value = "") {
-  var temp = localStorage.getItem(element_name);
+  let temp = localStorage.getItem(element_name);
   if (temp === null)
   {
     temp = default_value;
@@ -92,7 +92,7 @@ function getTime(date) {
   
   let m = date.getMinutes().toString().padStart(2, "0");
   let s = date.getSeconds().toString().padStart(2, "0");
-  temp = {
+  let temp = {
     'h': toDigitArray(h),
     'm': toDigitArray(m),
     's': toDigitArray(s)
@@ -115,7 +115,7 @@ function clock() {
       }
     }
   });
-  inited = true;
+  vars.inited = true;
 }
 
 setInterval(function() {
