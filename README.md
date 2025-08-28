@@ -12,7 +12,7 @@ With thanks to
   - [x] Preferred easing
   - [x] Show Seconds
   - [x] Military vs Normal time
-- [ ] Estimate Viewer's location [by timezone](https://github.com/mcteamster/virgo)
+- [] Estimate Viewer's location [by timezone](https://github.com/mcteamster/virgo)
 - [ ] Add option for GPS location refinement
 - [ ] Add option to have correct looking direction
 - [ ] Figure out sun position via [SunCalc](https://github.com/mourner/suncalc/) or NOAA's Calculator
@@ -23,5 +23,6 @@ With thanks to
 - [ ] Add light pollution?
 - [ ] Add air particle count impact?
 - [ ] Add a giant list of weather related visualizations
+- [ ] Add option to prevent screen from locking?
 
 Thanks to [Hacker News](https://news.ycombinator.com/item?id=44846281) for a great collection of related resources.

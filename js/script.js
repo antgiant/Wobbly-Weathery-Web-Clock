@@ -1,3 +1,4 @@
+import Virgo from './virgo/src/virgo.js';
 var conf = {
   steps: 15,
   easing: get_element("easing", 'easeInOutBack'),
@@ -115,7 +116,6 @@ function clock() {
       }
     }
   });
-  vars.inited = true;
 }
 
 setInterval(function() {
