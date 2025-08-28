@@ -2,7 +2,7 @@ var conf = {
   steps: 15,
   easing: get_element("easing", 'easeInOutBack'),
   twentyFourHourClock: JSON.parse(get_element("twentyFourHourClock", true)),
-  hideSeconds: JSON.parse(get_element("hideSeconds", true))
+  hideSeconds: JSON.parse(get_element("hideSeconds", false))
 };
 var dd = [];
 dd[0] = [254, 47, 159, 84, 123, 158, 131, 258, 139, 358, 167, 445, 256, 446, 345, 447, 369, 349, 369, 275, 369, 201, 365, 81, 231, 75];
