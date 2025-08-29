@@ -1,4 +1,4 @@
-import { set_conf, conf, vars, dd } from './config.js';
+import { set_conf, conf, vars, dd, adjustTimeSize } from './config.js';
 import { easing } from './easing.js'
 
 
@@ -135,7 +135,26 @@ function initalize() {
       set_conf('hideSeconds', event.target.checked);
     });
   });
-
+  
+  //set up easing options to choose from 
+  var select = document.getElementById("easing");
+  Object.getOwnPropertyNames(easing).forEach(function(val, idx, array) {
+    var option = document.createElement("option");
+    option.text = val;
+    option.value = val;
+    if (conf.easing == val) {
+      option.selected = true;
+    }
+    select.add(option);
+  });
+  
+  //Set up initial config settings state
+  document.getElementById("twentyFourHourClock").checked = conf.twentyFourHourClock;
+  
+  document.getElementById("hideSeconds").checked = conf.hideSeconds;
+  
+  adjustTimeSize();
+  
 }
 
 initalize();

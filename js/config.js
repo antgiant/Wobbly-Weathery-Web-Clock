@@ -37,41 +37,7 @@ function set_element(element_name, set_value) {
   localStorage.setItem(element_name, set_value);
 }
 
-export function set_conf(element, value) {
-  conf[element] = value;
-  set_element(element, value);
-  console.info("conf." + element + " = " + value);
-  
-  if (element == "hideSeconds") {
-    document.querySelectorAll('.seconds').forEach(element => {
-      if (value) {
-        element.style.display = 'none';
-      } else {
-        element.style.display = '';
-      }
-    });
-    document.querySelector("#firstSeperator").style.marginRight = (value ? "-25%" : "-15%");
-  }
-}
-
-function initalize() {
-  //set up easing options to choose from 
-  var select = document.getElementById("easing");
-  Object.getOwnPropertyNames(easing).forEach(function(val, idx, array) {
-    var option = document.createElement("option");
-    option.text = val;
-    option.value = val;
-    if (conf.easing == val) {
-      option.selected = true;
-    }
-    select.add(option);
-  });
-  
-  //Set up initial config settings state
-  document.getElementById("twentyFourHourClock").checked = conf.twentyFourHourClock;
-  
-  document.getElementById("hideSeconds").checked = conf.hideSeconds;
-  
+export function adjustTimeSize() {
   if (conf.hideSeconds) {
     document.querySelector("#firstSeperator").style.marginRight = "-25%";
     document.querySelectorAll('.seconds').forEach(element => {
@@ -81,7 +47,16 @@ function initalize() {
     document.querySelectorAll('.seconds').forEach(element => {
       element.style.display = '';
     });
+    document.querySelector("#firstSeperator").style.marginRight = (conf.hideSeconds ? "-25%" : "-15%");
   }
 }
 
-initalize();
+export function set_conf(element, value) {
+  conf[element] = value;
+  set_element(element, value);
+  console.info("conf." + element + " = " + value);
+  
+  if (element == "hideSeconds") {
+    adjustTimeSize();
+  }
+}
