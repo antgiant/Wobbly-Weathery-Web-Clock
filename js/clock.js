@@ -116,6 +116,26 @@ function initalize() {
   // Optional: rerun if elements may toggle visibility
   const observer = new MutationObserver(updateSvgWidths);
   observer.observe(document.querySelector("#clock"), { attributes: true, childList: true, subtree: true });
+  
+  //Set up config option actions
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('easing').addEventListener('change', (event) => {
+      set_conf('easing', event.target.options[event.target.selectedIndex].value);
+    });
+  });
+  
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('twentyFourHourClock').addEventListener('change', (event) => {
+      set_conf('twentyFourHourClock', event.target.checked);
+    });
+  });
+  
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('hideSeconds').addEventListener('change', (event) => {
+      set_conf('hideSeconds', event.target.checked);
+    });
+  });
+
 }
 
 initalize();
