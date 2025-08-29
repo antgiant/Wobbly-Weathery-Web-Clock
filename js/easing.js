@@ -1,4 +1,4 @@
-var easing  = {
+export var easing = {
 	// t: current time, b: begInnIng value, c: change In value, d: duration
 	
 // 	def: 'easeOutQuad',

@@ -1,6 +1,6 @@
 // ESM JSON imports (modern browsers)
-import timezoneCentroids from '../lib/timezone_centroids.js';
-import timezoneLinks from '../lib/timezone_links.js';
+import timezoneCentroids from './lib/timezone_centroids.js';
+import timezoneLinks from './lib/timezone_links.js';
 
 export class Virgo {
   static toRadians(degrees) { return degrees * (Math.PI / 180); }
