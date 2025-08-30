@@ -1,4 +1,4 @@
-import { set_conf, conf, vars, dd, adjustTimeSize } from './config.js';
+import { conf, vars, dd, adjustTimeSize } from './config.js';
 import { easing } from './easing.js'
 
 
@@ -120,19 +120,20 @@ function initalize() {
   //Set up config option actions
   document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('easing').addEventListener('change', (event) => {
-      set_conf('easing', event.target.options[event.target.selectedIndex].value);
+      conf.easing = event.target.options[event.target.selectedIndex].value;
     });
   });
   
   document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('twentyFourHourClock').addEventListener('change', (event) => {
-      set_conf('twentyFourHourClock', event.target.checked);
+      conf.twentyFourHourClock = event.target.checked;
     });
   });
   
   document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('hideSeconds').addEventListener('change', (event) => {
-      set_conf('hideSeconds', event.target.checked);
+      conf.hideSeconds = event.target.checked;
+      adjustTimeSize();
     });
   });
   

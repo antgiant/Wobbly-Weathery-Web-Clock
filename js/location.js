@@ -12,19 +12,19 @@ function initalize() {
   //Set up config option actions
   document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('gpsFrequency').addEventListener('change', (event) => {
-      set_conf('gpsFrequency', event.target.options[event.target.selectedIndex].value);
+      conf.gpsFrequency = event.target.options[event.target.selectedIndex].value;
     });
   });
   
   document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('preciseLocation').addEventListener('change', (event) => {
-      set_conf('preciseLocation', event.target.checked);
+      conf.preciseLocation = event.target.checked;
     });
   });
   
   document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('compassDirection').addEventListener('change', (event) => {
-      set_conf('compassDirection', event.target.checked);
+      conf.compassDirection = event.target.checked;
     });
   });
   
