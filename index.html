@@ -95,12 +95,13 @@
         <fieldset>
           <legend>Location</legend>
           <label>
-            <input type="checkbox" id="preciseLocation" onchange="set_conf('preciseLocation', this.checked)">
+            <input type="checkbox" id="preciseLocation">
             Use Precise Location (instead of estimating by time zone.)
           </label><br>
           <label>
-            <select id="gpsFrequency" onchange="set_conf('gpsFrequency', this.options[this.selectedIndex].value)">
-              <option value="-1">Never/Manual</option>
+            Location Update Frequency
+            <select id="gpsFrequency">
+              <option value="-1">Manual</option>
               <option value="1">1 Minute</option>
               <option value="5">5 Minutes</option>
               <option value="15">15 Minutes</option>
@@ -110,12 +111,12 @@
               <option value="720">12 hours</option>
               <option value="1440">24 hours</option>
             </select>
-            Location Update Frequency
           </label><br>
           <label>
-            <input type="checkbox" id="compassDirection" onchange="set_conf('compassDirection', this.checked)">
+            <input type="checkbox" id="compassDirection">
             Use Compass Direction (Instead of just North)
           </label><br>
+          <button id="refreshLocation">Refresh Location</button>
         </fieldset>
       </div>
     </div>

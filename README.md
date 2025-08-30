@@ -12,7 +12,7 @@ With thanks to
   - [x] Preferred easing
   - [x] Show Seconds
   - [x] Military vs Normal time
-- [] Estimate Viewer's location [by timezone](https://github.com/mcteamster/virgo)
+- [x] Estimate Viewer's location [by timezone](https://github.com/mcteamster/virgo)
 - [ ] Add option for GPS location refinement
 - [ ] Add option to have correct looking direction
 - [ ] Figure out sun position via [SunCalc](https://github.com/mourner/suncalc/) or NOAA's Calculator

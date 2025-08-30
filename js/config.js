@@ -3,7 +3,19 @@ export var conf = {
   steps: 15,
   easing: get_element("easing", 'easeInOutBack'),
   twentyFourHourClock: JSON.parse(get_element("twentyFourHourClock", true)),
-  hideSeconds: JSON.parse(get_element("hideSeconds", false))
+  hideSeconds: JSON.parse(get_element("hideSeconds", false)),
+  preciseLocation: JSON.parse(get_element("preciseLocation", false)),
+  gpsFrequency: JSON.parse(get_element("gpsFrequency", "-1")),
+  compassDirection: JSON.parse(get_element("compassDirection", false)),
+  location: JSON.parse(get_element("location", JSON.stringify({
+  latitude: -1,
+  longitude: -1,
+  accuracy: -1,
+  heading: -1,
+  altitude: -1,
+  altitudeAccuracy: -1,
+  screenAngle: -1
+})))
 };
 
 export var vars = {
