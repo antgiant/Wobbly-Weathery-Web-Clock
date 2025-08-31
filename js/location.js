@@ -14,7 +14,15 @@ function refreshLocation() {
         conf.location_altitudeAccuracy = pos.coords.altitudeAccuracy;
         conf.location_heading = pos.coords.heading;
       },
-      (err) => console.log(`GPS error: ${err.message}`),
+      (err) => {
+        console.log(`GPS error: ${err.message}`);
+        if (err.code == err.PERMISSION_DENIED) {
+          //fallback to general location
+          let temp = Virgo.getLocation();
+          conf.location_latitude = temp.latitude;
+          conf.location_longitude = temp.longitude;
+        }
+      },
       {
         enableHighAccuracy: true, // try GPS when available
         timeout: 10000,
