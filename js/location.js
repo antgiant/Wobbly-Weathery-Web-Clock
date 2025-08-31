@@ -4,8 +4,23 @@ import { conf } from './config.js';
 let locationRefresh;
 
 function refreshLocation() {
-  if (conf.preciseLocation) {
-    //fancy stuff
+  if (conf.preciseLocation && ('geolocation' in navigator)) {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        conf.location_latitude = latitude;
+        conf.location_longitude = longitude;
+        conf.location_accuracy = accuracy;
+        conf.location_altitude = altitude;
+        conf.location_altitudeAccuracy = altitudeAccuracy;
+        conf.location_heading = heading;
+      },
+      (err) => console.log(`GPS error: ${err.message}`),
+      {
+        enableHighAccuracy: true, // try GPS when available
+        timeout: 10000,
+        maximumAge: 0
+      }
+    )
   } else {
     let temp = Virgo.getLocation();
     conf.location_latitude = temp.latitude;
@@ -53,6 +68,13 @@ function initalize() {
   document.getElementById("compassDirection").checked = conf.compassDirection;
   
   document.getElementById('gpsFrequency').value = conf.gpsFrequency;
+  
+  //Remove precise location option if it isn't supported
+  if (!('geolocation' in navigator)) {
+    console.log('Geolocation not supported.');
+    conf.preciseLocation = false;
+    document.getElementById("preciseLocation").style.display = 'none';
+  }
   
   refreshLocation();
 }
