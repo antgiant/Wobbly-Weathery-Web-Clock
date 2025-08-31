@@ -7,12 +7,12 @@ function refreshLocation() {
   if (conf.preciseLocation && ('geolocation' in navigator)) {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        conf.location_latitude = latitude;
-        conf.location_longitude = longitude;
-        conf.location_accuracy = accuracy;
-        conf.location_altitude = altitude;
-        conf.location_altitudeAccuracy = altitudeAccuracy;
-        conf.location_heading = heading;
+        conf.location_latitude = pos.coords.latitude;
+        conf.location_longitude = pos.coords.longitude;
+        conf.location_accuracy = pos.coords.accuracy;
+        conf.location_altitude = pos.coords.altitude;
+        conf.location_altitudeAccuracy = pos.coords.altitudeAccuracy;
+        conf.location_heading = pos.coords.heading;
       },
       (err) => console.log(`GPS error: ${err.message}`),
       {
