@@ -21,6 +21,9 @@ function refreshLocation() {
           let temp = Virgo.getLocation();
           conf.location_latitude = temp.latitude;
           conf.location_longitude = temp.longitude;
+          
+          //turn off precise
+          conf.preciseLocation = false;
         }
       },
       {
