@@ -24,6 +24,7 @@ function refreshLocation() {
           
           //turn off precise
           conf.preciseLocation = false;
+          document.getElementById("preciseLocation").checked = conf.preciseLocation;
         }
       },
       {
