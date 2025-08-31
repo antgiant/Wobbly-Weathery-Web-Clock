@@ -43,14 +43,14 @@ function createPersistentConfig(key, initialValue = {}) {
     set(target, property, value) {
       target[property] = value;
       save(); // Automatically save on any change
-      console.log(key+"."+property+": "+value);
+      console.log(key + "." + property + ": " + value);
       return true;
     },
     
     deleteProperty(target, property) {
       delete target[property];
       save(); // Save on deletion
-      console.log("deleted "+key+"."+property);
+      console.log("deleted " + key + "." + property);
       return true;
     }
     
@@ -65,15 +65,13 @@ export var conf = createPersistentConfig("conf", {
   preciseLocation: false,
   gpsFrequency: -1,
   compassDirection: false,
-  location: {
-    latitude: -1,
-    longitude: -1,
-    accuracy: -1,
-    heading: -1,
-    altitude: -1,
-    altitudeAccuracy: -1,
-    screenAngle: -1
-  }
+  location_latitude: -1,
+  location_longitude: -1,
+  location_accuracy: -1,
+  location_heading: -1,
+  location_altitude: -1,
+  location_altitudeAccuracy: -1,
+  location_screenAngle: -1
 });
 
 //Set clock size
