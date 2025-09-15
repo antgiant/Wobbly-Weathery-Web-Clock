@@ -101,7 +101,7 @@
           <label>
             Location Update Frequency
             <select id="gpsFrequency">
-              <option value="-1">Manual</option>
+              <option value="-1">Page Load</option>
               <option value="1">1 Minute</option>
               <option value="5">5 Minutes</option>
               <option value="15">15 Minutes</option>
@@ -110,13 +110,16 @@
               <option value="120">2 hours</option>
               <option value="720">12 hours</option>
               <option value="1440">24 hours</option>
+              <option value ="-2">Manually Entered</option>
             </select>
-          </label><br>
+            <br><span id="coords">&nbsp;</span><br>
+          </label>
+          <button id="refreshLocation">Refresh Location</button><br>
           <label>
             <input type="checkbox" id="compassDirection">
             Use Compass Direction (Instead of just North)
           </label><br>
-          <button id="refreshLocation">Refresh Location</button>
+          <div id="compass-direction">0°</div>
         </fieldset>
       </div>
     </div>
