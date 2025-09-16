@@ -88,7 +88,7 @@ function initalize() {
     });
     document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('manualCompass').addEventListener('click', (event) => {
-            conf.location_heading = prompt("Please enter your compass heading", conf.location_heading) || conf.location_heading;
+            conf.location_heading = Math.min(360, Math.max(0, parseFloat(prompt("Please enter your compass heading", conf.location_heading)))) || 0;
             updateCompassStatus();
         });
     });
