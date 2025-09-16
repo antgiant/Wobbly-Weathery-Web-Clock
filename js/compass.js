@@ -90,14 +90,11 @@ function initalize() {
         });
     });
     document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('manualCompass').addEventListener('click', (event) => {
-        conf.location_heading = prompt("Please enter your compass heading", conf.location_heading) || conf.location_heading;
+        document.getElementById('manualCompass').addEventListener('click', (event) => {
+            conf.location_heading = prompt("Please enter your compass heading", conf.location_heading) || conf.location_heading;
+            updateCompassStatus();
+        });
     });
-});
-    
-    if (conf.compassDirection) {
-        updateCompassStatus();
-    }
-    
+    updateCompassStatus();
 }
 initalize();
