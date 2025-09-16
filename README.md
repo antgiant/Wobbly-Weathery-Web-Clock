@@ -13,8 +13,8 @@ With thanks to
   - [x] Show Seconds
   - [x] Military vs Normal time
 - [x] Estimate Viewer's location [by timezone](https://github.com/mcteamster/virgo)
-- [ ] Add option for GPS location refinement
-- [ ] Add option to have correct looking direction
+- [x] Add option for GPS location refinement
+- [x] Add option to have correct looking direction
 - [ ] Figure out sun position via [SunCalc](https://github.com/mourner/suncalc/) or NOAA's Calculator
 - [ ] Add background [sky color](https://github.com/dnlzro/horizon/tree/main/src)
 - [ ] Dynamic time colors to remain viewable at all times
