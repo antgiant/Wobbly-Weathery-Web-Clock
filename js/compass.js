@@ -1,0 +1,73 @@
+import { conf } from './config.js';
+
+// elements that ouput our position
+var directionDiv = document.getElementById("compass-direction");
+
+// called on device orientation change
+function onHeadingChange(event) {
+    var heading = -1 * event.webkitCompassHeading || event.alpha;
+    
+    if (typeof heading !== "undefined" && heading !== null) {
+        heading = heading - window.orientation;
+        
+        if (heading < 0) {
+            heading = (-heading | 0);
+        } else {
+            heading = (360 - heading | 0)
+        }
+        //reduce write frequency to localstorage
+        if (Math.abs(heading - conf.location_heading) >= 1) {
+            conf.location_heading = heading;
+        }
+        
+        directionDiv.textContent = conf.location_heading + "°";
+    } else {
+        // device can't show heading
+        directionDiv.textContent = "0°";
+    }
+}
+
+function requestDeviceOrientation(callback) {
+    if (window.DeviceOrientationEvent == null) {
+        callback(new Error("DeviceOrientation is not supported."));
+    } else if (DeviceOrientationEvent.requestPermission) {
+        DeviceOrientationEvent.requestPermission().then(function(state) {
+            if (state == "granted") {
+                callback(null);
+            } else callback(new Error("Permission denied by user"));
+        }, function(err) {
+            callback(err);
+        });
+    } else { // no need for permission
+        callback(null);
+    }
+}
+
+function firstClick() {
+    requestDeviceOrientation(function(err) {
+        if (err == null) {
+            window.removeEventListener("click", firstClick);
+            window.removeEventListener("touchend", firstClick);
+            window.addEventListener("devicelmotion", function(e) {
+                // access e.acceleration, etc.
+            });
+        } else {
+            // failed; a JS error object is stored in `err`
+        }
+    });
+}
+
+function initalize() {
+    
+    document.getElementById("compassDirection").checked = conf.compassDirection;
+    
+    window.addEventListener("click", firstClick);
+    window.addEventListener("touchend", firstClick);
+    
+    if ('ondeviceorientationabsolute' in window) {
+        window.addEventListener("deviceorientationabsolute", onHeadingChange, true);
+    } else {
+        window.addEventListener("deviceorientation", onHeadingChange, true);
+    }
+}
+initalize();
