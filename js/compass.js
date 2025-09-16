@@ -57,17 +57,38 @@ function firstClick() {
     });
 }
 
+function updateCompassStatus() {
+    if (conf.compassDirection) {
+        
+        window.addEventListener("click", firstClick);
+        window.addEventListener("touchend", firstClick);
+        
+        if ('ondeviceorientationabsolute' in window) {
+            window.addEventListener("deviceorientationabsolute", onHeadingChange, true);
+        } else {
+            window.addEventListener("deviceorientation", onHeadingChange, true);
+        }
+    } else {
+        window.removeEventListener("click", firstClick);
+        window.removeEventListener("touchend", firstClick);
+        window.removeEventListener("deviceorientationabsolute", onHeadingChange);
+        window.removeEventListener("deviceorientation", onHeadingChange);
+    }
+}
+
 function initalize() {
     
     document.getElementById("compassDirection").checked = conf.compassDirection;
     
-    window.addEventListener("click", firstClick);
-    window.addEventListener("touchend", firstClick);
     
-    if ('ondeviceorientationabsolute' in window) {
-        window.addEventListener("deviceorientationabsolute", onHeadingChange, true);
-    } else {
-        window.addEventListener("deviceorientation", onHeadingChange, true);
-    }
+    document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('compassDirection').addEventListener('change', (event) => {
+            conf.compassDirection = event.target.checked;
+            refreshLocation();
+        });
+    });
+    
+    updateCompassStatus();
+    
 }
 initalize();
