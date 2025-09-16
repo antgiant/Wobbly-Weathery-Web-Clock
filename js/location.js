@@ -71,13 +71,6 @@ function initalize() {
   });
   
   document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('compassDirection').addEventListener('change', (event) => {
-      conf.compassDirection = event.target.checked;
-      refreshLocation();
-    });
-  });
-  
-  document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('refreshLocation').addEventListener('click', (event) => {
       refreshLocation();
     });
