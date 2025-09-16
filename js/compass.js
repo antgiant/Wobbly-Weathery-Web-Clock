@@ -59,7 +59,6 @@ function firstClick() {
 
 function updateCompassStatus() {
     if (conf.compassDirection) {
-        
         window.addEventListener("click", firstClick);
         window.addEventListener("touchend", firstClick);
         
@@ -73,6 +72,8 @@ function updateCompassStatus() {
         window.removeEventListener("touchend", firstClick);
         window.removeEventListener("deviceorientationabsolute", onHeadingChange);
         window.removeEventListener("deviceorientation", onHeadingChange);
+        conf.compassDirection = 0;
+        onHeadingChange();
     }
 }
 
@@ -84,7 +85,6 @@ function initalize() {
     document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('compassDirection').addEventListener('change', (event) => {
             conf.compassDirection = event.target.checked;
-            refreshLocation();
         });
     });
     
