@@ -19,12 +19,9 @@ function onHeadingChange(event) {
         if (Math.abs(heading - conf.location_heading) >= 1) {
             conf.location_heading = heading;
         }
-        
-        directionDiv.textContent = conf.location_heading + "°";
-    } else {
-        // device can't show heading
-        directionDiv.textContent = "0°";
     }
+    
+    directionDiv.textContent = conf.location_heading + "°";
 }
 
 function requestDeviceOrientation(callback) {
@@ -73,9 +70,9 @@ function updateCompassStatus() {
         window.removeEventListener("touchend", firstClick);
         window.removeEventListener("deviceorientationabsolute", onHeadingChange, true);
         window.removeEventListener("deviceorientation", onHeadingChange, true);
-        directionDiv.textContent = conf.location_heading + "°";
         document.getElementById('manualCompass').disabled = false;
     }
+    directionDiv.textContent = conf.location_heading + "°";
 }
 
 function initalize() {
