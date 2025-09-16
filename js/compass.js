@@ -85,6 +85,7 @@ function initalize() {
     document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('compassDirection').addEventListener('change', (event) => {
             conf.compassDirection = event.target.checked;
+            updateCompassStatus();
         });
     });
     
