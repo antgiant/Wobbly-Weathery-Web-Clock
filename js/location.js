@@ -39,8 +39,15 @@ function refreshLocation() {
       conf.location_longitude = temp.longitude;
     }
   } else {
-    conf.location_latitude = prompt("Please enter your latitude", conf.location_latitude) || conf.location_latitude;
-    conf.location_longitude = prompt("Please enter your longitude", conf.location_longitude) || conf.location_longitude;
+    conf.location_latitude = (() => {
+      const val = parseFloat(prompt("Please enter your latitude", conf.location_latitude));
+      return isNaN(val) || val < -90 || val > 90 ? conf.location_latitude : val;
+    })();
+    
+    conf.location_longitude = (() => {
+      const val = parseFloat(prompt("Please enter your longitude", conf.location_longitude));
+      return isNaN(val) || val < -180 || val > 180 ? conf.location_longitude : val;
+    })();
   }
   clearInterval(locationRefresh);
   if (conf.gpsFrequency > 0) {
