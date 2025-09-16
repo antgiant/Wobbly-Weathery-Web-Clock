@@ -72,8 +72,8 @@ function updateCompassStatus() {
         window.removeEventListener("touchend", firstClick);
         window.removeEventListener("deviceorientationabsolute", onHeadingChange);
         window.removeEventListener("deviceorientation", onHeadingChange);
-        conf.compassDirection = 0;
-        onHeadingChange();
+        conf.location_heading = 0;
+        directionDiv.textContent = "0°";
     }
 }
 
