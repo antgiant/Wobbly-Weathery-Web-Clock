@@ -70,8 +70,8 @@ function updateCompassStatus() {
     } else {
         window.removeEventListener("click", firstClick);
         window.removeEventListener("touchend", firstClick);
-        window.removeEventListener("deviceorientationabsolute", onHeadingChange);
-        window.removeEventListener("deviceorientation", onHeadingChange);
+        window.removeEventListener("deviceorientationabsolute", onHeadingChange, true);
+        window.removeEventListener("deviceorientation", onHeadingChange, true);
         conf.location_heading = 0;
         directionDiv.textContent = "0°";
     }
