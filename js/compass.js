@@ -71,7 +71,7 @@ function updateCompassStatus() {
         window.removeEventListener("click", firstClick);
         window.removeEventListener("touchend", firstClick);
         window.removeEventListener("deviceorientationabsolute", onHeadingChange, true);
-        window.removeEventListener("deviceorientation", onHeadingChange);
+        window.removeEventListener("deviceorientation", onHeadingChange, true);
         conf.location_heading = prompt("Please enter your compass heading", conf.location_heading) || conf.location_heading;
         directionDiv.textContent = conf.location_heading + "°";
     }
