@@ -1,5 +1,6 @@
 import Virgo from './virgo/virgo.js';
 import { conf } from './config.js';
+import { refreshSky } from './horizon/horizon.js'
 
 let locationRefresh;
 
@@ -47,6 +48,8 @@ function refreshLocation() {
     locationRefresh = setInterval(refreshLocation, conf.gpsFrequency * 60000);
   }
   document.getElementById('coords').innerHTML = "Current Location: <a href='https://www.google.com/maps/place/" + conf.location_latitude + "," + conf.location_longitude + "' target='_blank'>(" + conf.location_latitude + ", " + conf.location_longitude + ")</a>";
+  
+  refreshSky();
 }
 
 function initalize() {

@@ -1,6 +1,6 @@
 import { conf, vars, dd, adjustTimeSize } from './config.js';
 import { easing } from './easing.js'
-
+import { refreshSky } from './horizon/horizon.js'
 
 function ci(c, i) {
   var k = i * 6;
@@ -69,6 +69,7 @@ function getTime(date) {
   }
   if (document.title !== h + ":" + m + (conf.hideSeconds ? "" : ":" + s)) {
     document.title = h + ":" + m + (conf.hideSeconds ? "" : ":" + s);
+    refreshSky();
   }
   return temp;
 }

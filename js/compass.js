@@ -1,4 +1,5 @@
 import { conf } from './config.js';
+import { refreshSky } from './horizon/horizon.js'
 
 // elements that ouput our position
 var directionDiv = document.getElementById("compass-direction");
@@ -22,6 +23,8 @@ function onHeadingChange(event) {
     }
     
     directionDiv.textContent = conf.location_heading + "°";
+    
+    refreshSky();
 }
 
 function requestDeviceOrientation(callback) {
