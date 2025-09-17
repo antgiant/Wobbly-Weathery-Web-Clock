@@ -1,24 +1,32 @@
     #clock {
       display: flex;
-      justify-content: center; /* horizontal centering */
-      align-items: center;     /* vertical centering */
+      justify-content: center;
+      /* horizontal centering */
+      align-items: center;
+      /* vertical centering */
       width: 100%;
-      height: 98vh;           /* make parent full height of viewport */
-
+      height: 98vh;
+      /* make parent full height of viewport */
+      
     }
+    
     #clock svg {
-      width: calc(((100% + (7% * 3)) / 6) - 1%); /* 6 across; plus offset to match margin changes*/
+      width: calc(((100% + (7% * 3)) / 6) - 1%);
+      /* 6 across; plus offset to match margin changes*/
       stroke-width: 80;
       stroke: blue;
       fill: none;
     }
+    
     #clock svg:nth-child(3n -1) {
       margin-left: -7%;
     }
+    
     #clock svg:nth-child(3n) {
       margin-left: -2%;
       margin-right: -15%;
     }
+    
     #settings {
       position: fixed;
       bottom: 5%;
@@ -30,91 +38,108 @@
       max-width: 200px;
       max-height: 200px;
     }
+    
     .hidden {
       display: none;
     }
+    
     /* smooth show/hide for the settings button */
-#settings {
-  transition: opacity 1000ms ease, transform 1000ms ease;
-  will-change: opacity, transform;
-  cursor: pointer;
-  outline: none;
-}
-
-#settings.is-hidden {
-  opacity: 0;
-  transform: rotate(360deg);
-  pointer-events: none; /* don’t trap taps/clicks while hidden */
-}
-
-/* respect users who prefer reduced motion */
-@media (prefers-reduced-motion: reduce) {
-  #settings {
-    transition: opacity 1ms linear;
-  }
-  #settings.is-hidden {
-    transform: none;
-  }
-}
-#settings:focus { outline: 2px solid currentColor; outline-offset: 2px; }
-
-/* Modal root: hidden by [hidden] attribute by default */
-.modal[hidden] { display: none; }
-
-.modal {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-}
-
-.modal__backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(0,0,0,0.6);
-  backdrop-filter: blur(2px);
-}
-
-.modal__content {
-  position: relative;
-  max-width: 520px;
-  width: 92vw;
-  margin: 10vh auto 0;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-  padding: 1rem 1.25rem 1.25rem;
-  animation: modal-in 160ms ease-out;
-}
-
-@keyframes modal-in {
-  from { transform: translateY(10px); opacity: 0; }
-  to   { transform: translateY(0); opacity: 1; }
-}
-
-.modal__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: .5rem;
-  margin-bottom: .75rem;
-}
-
-.modal__close {
-  border: none;
-  background: transparent;
-  font-size: 1.5rem;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.modal__body {
-  display: grid;
-  gap: .75rem;
-  max-height: 60vh;
-  overflow-y: auto;
-}
-
-.modal__body label {
-  font-size: .9rem;
-  color: #333;
-}
+    #settings {
+      transition: opacity 1000ms ease, transform 1000ms ease;
+      will-change: opacity, transform;
+      cursor: pointer;
+      outline: none;
+    }
+    
+    #settings.is-hidden {
+      opacity: 0;
+      transform: rotate(360deg);
+      pointer-events: none;
+      /* don’t trap taps/clicks while hidden */
+    }
+    
+    /* respect users who prefer reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      #settings {
+        transition: opacity 1ms linear;
+      }
+      
+      #settings.is-hidden {
+        transform: none;
+      }
+    }
+    
+    #settings:focus {
+      outline: 2px solid currentColor;
+      outline-offset: 2px;
+    }
+    
+    /* Modal root: hidden by [hidden] attribute by default */
+    .modal[hidden] {
+      display: none;
+    }
+    
+    .modal {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+    }
+    
+    .modal__backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(2px);
+    }
+    
+    .modal__content {
+      position: relative;
+      max-width: 520px;
+      width: 92vw;
+      margin: 10vh auto 0;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      padding: 1rem 1.25rem 1.25rem;
+      animation: modal-in 160ms ease-out;
+    }
+    
+    @keyframes modal-in {
+      from {
+        transform: translateY(10px);
+        opacity: 0;
+      }
+      
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+    
+    .modal__header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .5rem;
+      margin-bottom: .75rem;
+    }
+    
+    .modal__close {
+      border: none;
+      background: transparent;
+      font-size: 1.5rem;
+      line-height: 1;
+      cursor: pointer;
+    }
+    
+    .modal__body {
+      display: grid;
+      gap: .75rem;
+      max-height: 60vh;
+      overflow-y: auto;
+    }
+    
+    .modal__body label {
+      font-size: .9rem;
+      color: #333;
+    }
