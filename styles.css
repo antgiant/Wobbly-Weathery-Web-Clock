@@ -110,6 +110,8 @@
 .modal__body {
   display: grid;
   gap: .75rem;
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
 .modal__body label {
