@@ -64,6 +64,11 @@ function getTime(date) {
     'm': toDigitArray(m),
     's': toDigitArray(s)
   }
+  if (conf.hideSeconds) {
+    document.title = h + ":" + m;
+  } else {
+    document.title = h + ":" + m + ":" + s;
+  }
   return temp;
 }
 
