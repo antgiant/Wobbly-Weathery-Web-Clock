@@ -50,6 +50,10 @@ function firstClick() {
             });
         } else {
             // failed; a JS error object is stored in `err`
+            //turn compass option off
+            conf.compassDirection = false;
+            document.getElementById("compassDirection").checked = conf.compassDirection;
+            
         }
     });
 }
@@ -92,6 +96,14 @@ function initalize() {
             updateCompassStatus();
         });
     });
+    //Disable auto compass option if it isn't supported
+    
+    if (window.DeviceOrientationEvent == null) {
+        console.log('Compass not supported.');
+        conf.compassDirection = false;
+        document.getElementById("compassDirectionLabel").style.display = 'none';
+    }
+    
     updateCompassStatus();
 }
 initalize();
