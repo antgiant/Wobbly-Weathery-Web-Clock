@@ -146,20 +146,31 @@ function computeTransmittance(height, angle) {
   return exp(tau);
 }
 
-// Render sky at given solar elevation
-export default function renderGradient(altitude) {
+// Render sky at given solar elevation, respecting viewing azimuth (compass)
+export default function renderGradient(altitude, azimuthDeg = 0) {
   const cameraPosition = [0, GROUND_RADIUS, 0];
   const sunDirection = norm([Math.cos(altitude), Math.sin(altitude), 0]);
   
   // Projection constant (used to tilt rays upward)
   const focalZ = 1.0 / Math.tan((FOV_DEG * 0.5 * PI) / 180.0);
+
+  const az = (azimuthDeg * PI) / 180.0;
+  // Forward points toward your compass bearing
+  const forward = norm([Math.sin(az), 0, Math.cos(az)]); // 0° -> +Z, 90° -> +X
+  const up = [0, 1, 0];
+  // Right is unused for this vertical slice, but defined for completeness:
+  // const right = cross(forward, up);
   
   const stops = [];
   for (let i = 0; i < SAMPLES; i++) {
     const s = i / (SAMPLES - 1);
     
-    const viewDirection = norm([0, s, focalZ]);
-    
+    const viewDirection = norm([
+      forward[0] * focalZ + up[0] * s,
+      forward[1] * focalZ + up[1] * s,
+      forward[2] * focalZ + up[2] * s,
+    ]);
+
     let inscattered = [0, 0, 0];
     
     const tExitTop = intersectSphere(cameraPosition, viewDirection, TOP_RADIUS);
@@ -272,9 +283,7 @@ export default function renderGradient(altitude) {
   const colorStops = stops
     .map(
       ({ percent, rgb }) =>
-      `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]}) ${
-          Math.round(percent * 100) / 100
-        }%`,
+      `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]}) ${Math.round(percent * 100) / 100}%`,
     )
     .join(", ");
   return [

@@ -34,7 +34,7 @@ export function refreshSky() {
     parseFloat(conf.location_longitude),
   );
   
-  const [gradient, topVec, bottomVec] = renderGradient(sunPos.altitude);
+  const [gradient, topVec, bottomVec] = renderGradient(sunPos.altitude, conf.location_heading);
   
   const top = `rgb(${topVec[0]}, ${topVec[1]}, ${topVec[2]})`;
   const bottom = `rgb(${bottomVec[0]}, ${bottomVec[1]}, ${bottomVec[2]})`;
