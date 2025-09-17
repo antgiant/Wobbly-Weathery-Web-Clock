@@ -46,7 +46,7 @@ function refreshLocation() {
   if (conf.gpsFrequency > 0) {
     locationRefresh = setInterval(refreshLocation, conf.gpsFrequency * 60000);
   }
-  document.getElementById('coords').innerHTML = "Current Location: <a href='https://www.google.com/maps/place/" + conf.location_latitude + "," + conf.location_longitude + "'>(" + conf.location_latitude + ", " + conf.location_longitude + ")</a>";
+  document.getElementById('coords').innerHTML = "Current Location: <a href='https://www.google.com/maps/place/" + conf.location_latitude + "," + conf.location_longitude + "' target='_blank'>(" + conf.location_latitude + ", " + conf.location_longitude + ")</a>";
 }
 
 function initalize() {
