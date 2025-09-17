@@ -8,7 +8,7 @@ function setFaviconFromGradient(top, bottom) {
   canvas.height = 64;
   const ctx = canvas.getContext("2d");
 
-  const grad = ctx.createLinearGradient(0, 0, 64, 64);
+  const grad = ctx.createLinearGradient(0, 0, 0, 64);
   grad.addColorStop(0, top);
   grad.addColorStop(1, bottom);
   ctx.fillStyle = grad;
