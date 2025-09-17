@@ -64,13 +64,7 @@ function getTime(date) {
     'm': toDigitArray(m),
     's': toDigitArray(s)
   }
-  if (h < 10) {
-    h = Number(h);
-  }
-  if (document.title !== h + ":" + m + (conf.hideSeconds ? "" : ":" + s)) {
-    document.title = h + ":" + m + (conf.hideSeconds ? "" : ":" + s);
-    refreshSky();
-  }
+  
   return temp;
 }
 
@@ -89,6 +83,11 @@ function clock() {
       }
     }
   });
+  var tempTime = Number(time.h[0] + time.h[1]) + ":" + time.m[0] + time.m[1] + (conf.hideSeconds ? "" : ":" + time.s[0] + time.s[1]);
+  if (document.title !== tempTime) {
+    document.title = tempTime;
+    refreshSky();
+  }
 }
 
 function updateSvgWidths() {
