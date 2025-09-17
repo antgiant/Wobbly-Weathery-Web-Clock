@@ -64,10 +64,11 @@ function getTime(date) {
     'm': toDigitArray(m),
     's': toDigitArray(s)
   }
-  if (conf.hideSeconds) {
-    document.title = h + ":" + m;
-  } else {
-    document.title = h + ":" + m + ":" + s;
+  if (h < 10) {
+    h = Number(h);
+  }
+  if (document.title !== h + ":" + m + (conf.hideSeconds ? "" : ":" + s)) {
+    document.title = h + ":" + m + (conf.hideSeconds ? "" : ":" + s);
   }
   return temp;
 }
