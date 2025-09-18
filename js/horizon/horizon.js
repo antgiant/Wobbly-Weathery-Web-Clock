@@ -39,6 +39,6 @@ export function refreshSky() {
   const top = `rgb(${topVec[0]}, ${topVec[1]}, ${topVec[2]})`;
   const bottom = `rgb(${bottomVec[0]}, ${bottomVec[1]}, ${bottomVec[2]})`;
   
-  document.body.style.background = gradient;
+//  document.body.style.background = gradient;
   setFaviconFromGradient(top, bottom);
 }
