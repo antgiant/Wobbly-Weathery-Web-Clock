@@ -53,6 +53,7 @@ body {
 
 #settings {
   position: fixed;
+  z-index: 3;
   bottom: 5%;
   right: 5%;
   width: 5%;

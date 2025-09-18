@@ -1,34 +1,34 @@
 import { conf } from '../config.js';
 import { getPosition } from "./suncalc/suncalc.js";
 
-  const canvas = document.getElementById('sky');
-  const gl = canvas.getContext('webgl2', {
-    antialias: false,
-    premultipliedAlpha: false,
-    alpha: false,
-    depth: false,
-    stencil: false,
-    powerPreference: 'high-performance',
-  });
-  if (!gl) throw new Error('WebGL2 is required');
-  
-  // ---- HiDPI resize ----
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  
-   export function resize() {
-    const w = Math.floor(innerWidth * dpr);
-    const h = Math.floor(innerHeight * dpr);
-    if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w;
-      canvas.height = h;
-      gl.viewport(0, 0, w, h);
-    }
+const canvas = document.getElementById('sky');
+const gl = canvas.getContext('webgl2', {
+  antialias: false,
+  premultipliedAlpha: false,
+  alpha: false,
+  depth: false,
+  stencil: false,
+  powerPreference: 'high-performance',
+});
+if (!gl) throw new Error('WebGL2 is required');
+
+// ---- HiDPI resize ----
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+export function resize() {
+  const w = Math.floor(innerWidth * dpr);
+  const h = Math.floor(innerHeight * dpr);
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+    gl.viewport(0, 0, w, h);
   }
-  addEventListener('resize', resize, { passive: true });
-  resize();
-  
-  // ---- Shaders ----
-  const vert = `#version 300 es
+}
+addEventListener('resize', resize, { passive: true });
+resize();
+
+// ---- Shaders ----
+const vert = `#version 300 es
   // Fullscreen triangle using gl_VertexID trick
   void main(){
     const vec2 p[3] = vec2[3](
@@ -38,8 +38,8 @@ import { getPosition } from "./suncalc/suncalc.js";
     );
     gl_Position = vec4(p[gl_VertexID], 0.0, 1.0);
   }`;
-  
-  const frag = `#version 300 es
+
+const frag = `#version 300 es
   precision highp float;
 
   out vec4 oColor;
@@ -49,6 +49,7 @@ import { getPosition } from "./suncalc/suncalc.js";
   uniform float uFovDeg;        // vertical FOV (degrees)
   uniform float uCameraAltMeters; // camera altitude above sea level (meters)
   uniform float uAzimuthDeg; // camera azimuth (degrees)
+  uniform float uPitchDeg;   // camera pitch (degrees, +up/-down)
   uniform float uSunAngle; // Sun angle (radians)
   // Atmosphere parameters (match your JS constants)
   uniform float uGroundRadius;        // meters
@@ -172,24 +173,23 @@ import { getPosition } from "./suncalc/suncalc.js";
     // Camera basis from azimuth (point forward along compass bearing)
     float az = radians(uAzimuthDeg);
 
-    vec3 forward = normalize(vec3(sin(az), 0.0, cos(az))); // 0° -> +Z, 90° -> +X
-    vec3 up = vec3(0.0, 1.0, 0.0);
-    vec3 right = normalize(cross(forward, up));
-    up = normalize(cross(right, forward));
+    // World up
+    vec3 worldUp = vec3(0.0, 1.0, 0.0);
 
-    // Optional: tilt camera up by a few degrees so horizon is below mid-screen
-    float pitchDeg = 30.0;
-    float pitch = radians(pitchDeg);
-    mat3 Rx = mat3(
-      1.0, 0.0, 0.0,
-      0.0, cos(pitch), -sin(pitch),
-      0.0, sin(pitch), cos(pitch)
-    );
-    
-    // Rotate forward and up around the right axis
-    forward = normalize(Rx * forward);
-    up = normalize(Rx * up);
-    right = normalize(cross(forward, up)); // re-orthonormalize
+    // Angles
+    float yaw = radians(uAzimuthDeg); // compass heading in degrees
+    float pitch = radians(uPitchDeg); // fixed pitch in degrees
+
+    // Forward built from yaw (around Y) and pitch (around X in camera space)
+    vec3 forward = normalize(vec3(
+      sin(yaw) * cos(pitch), // x
+      sin(pitch), // y
+      cos(yaw) * cos(pitch) // z
+));
+
+    // Orthonormal basis
+    vec3 right = normalize(cross(forward, worldUp));
+    vec3 up = normalize(cross(right, forward));
 
     vec3 rd = normalize(forward * focalZ + right * ndc.x + up * ndc.y);
 
@@ -267,91 +267,91 @@ import { getPosition } from "./suncalc/suncalc.js";
 
     oColor = vec4(saturate(color), 1.0);
   }`;
-  
-  // ---- Program creation ----
-  function compile(type, src) {
-    const s = gl.createShader(type);
-    gl.shaderSource(s, src);
-    gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-      const info = gl.getShaderInfoLog(s) || '(no log)';
-      gl.deleteShader(s);
-      throw new Error(`Shader compile error:\n${info}`);
-    }
-    return s;
+
+// ---- Program creation ----
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    const info = gl.getShaderInfoLog(s) || '(no log)';
+    gl.deleteShader(s);
+    throw new Error(`Shader compile error:\n${info}`);
   }
-  
-  function link(vs, fs) {
-    const prog = gl.createProgram();
-    gl.attachShader(prog, vs);
-    gl.attachShader(prog, fs);
-    gl.linkProgram(prog);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-      const info = gl.getProgramInfoLog(prog) || '(no log)';
-      gl.deleteProgram(prog);
-      throw new Error(`Program link error:\n${info}`);
-    }
-    return prog;
+  return s;
+}
+
+function link(vs, fs) {
+  const prog = gl.createProgram();
+  gl.attachShader(prog, vs);
+  gl.attachShader(prog, fs);
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+    const info = gl.getProgramInfoLog(prog) || '(no log)';
+    gl.deleteProgram(prog);
+    throw new Error(`Program link error:\n${info}`);
   }
-  
-  const prog = link(compile(gl.VERTEX_SHADER, vert), compile(gl.FRAGMENT_SHADER, frag));
-  gl.useProgram(prog);
-  const vao = gl.createVertexArray();
-  gl.bindVertexArray(vao);
-  
-  // ---- Uniform helpers ----
-  const U = (name) => gl.getUniformLocation(prog, name);
-  
-  // ---- Set static uniforms (copying the constants you posted) ----
-  gl.uniform1f(U('uFovDeg'), 75.0);
-  
-  gl.uniform1f(U('uGroundRadius'), 6360e3);
-  gl.uniform1f(U('uTopRadius'), 6460e3);
-  gl.uniform1f(U('uRayleighScaleHeight'), 8000.0);
-  gl.uniform1f(U('uMieScaleHeight'), 1200.0);
-  
-  gl.uniform3f(U('uBetaR'), 5.802e-6, 13.558e-6, 33.1e-6);
-  gl.uniform1f(U('uBetaM'), 3.996e-6);
-  gl.uniform1f(U('uBetaMAbs'), 4.44e-6);
-  gl.uniform3f(U('uOzoneAbs'), 0.65e-6, 1.881e-6, 0.085e-6);
-  
-  gl.uniform1f(U('uSunIntensity'), 1.0);
-  gl.uniform1f(U('uExposure'), 25.0);
-  gl.uniform1f(U('uGamma'), 2.2);
-  gl.uniform1f(U('uSunsetBias'), 0.1);
-  
-  gl.uniform1i(U('uSamples'), 32);
-  
-  // ---- Dynamic state ----
-  let altitude = 0.35; // radians
-  let azimuthDeg = 0.0; // degrees
-  
-  // ---- Draw loop ----
-  function draw() {
-    const now = new Date();
-    const sunPos = getPosition(
+  return prog;
+}
+
+const prog = link(compile(gl.VERTEX_SHADER, vert), compile(gl.FRAGMENT_SHADER, frag));
+gl.useProgram(prog);
+const vao = gl.createVertexArray();
+gl.bindVertexArray(vao);
+
+// ---- Uniform helpers ----
+const U = (name) => gl.getUniformLocation(prog, name);
+
+// ---- Set static uniforms (copying the constants you posted) ----
+gl.uniform1f(U('uFovDeg'), 75.0);
+
+gl.uniform1f(U('uGroundRadius'), 6360e3);
+gl.uniform1f(U('uTopRadius'), 6460e3);
+gl.uniform1f(U('uRayleighScaleHeight'), 8000.0);
+gl.uniform1f(U('uMieScaleHeight'), 1200.0);
+
+gl.uniform3f(U('uBetaR'), 5.802e-6, 13.558e-6, 33.1e-6);
+gl.uniform1f(U('uBetaM'), 3.996e-6);
+gl.uniform1f(U('uBetaMAbs'), 4.44e-6);
+gl.uniform3f(U('uOzoneAbs'), 0.65e-6, 1.881e-6, 0.085e-6);
+
+gl.uniform1f(U('uSunIntensity'), 1.0);
+gl.uniform1f(U('uExposure'), 25.0);
+gl.uniform1f(U('uGamma'), 2.2);
+gl.uniform1f(U('uSunsetBias'), 0.1);
+
+gl.uniform1i(U('uSamples'), 32);
+
+// ---- Dynamic state ----
+let altitude = 0.35; // radians
+let azimuthDeg = 0.0; // degrees
+
+// ---- Draw loop ----
+function draw() {
+  const now = new Date();
+  const sunPos = getPosition(
     now,
     parseFloat(conf.location_latitude),
     parseFloat(conf.location_longitude),
   );
+  
+  // Pull values from global 'conf' each frame
+  const camAltMeters = conf.location_altitude; // meters
+  const camAzimuth = conf.location_heading; // degrees
+  const sunAngleRad = sunPos.altitude; // radians (fallback)
+  
+  // Set uniforms
+  gl.uniform2f(U('uResolution'), canvas.width, canvas.height);
+  gl.uniform1f(U('uCameraAltMeters'), camAltMeters);
+  gl.uniform1f(U('uAzimuthDeg'), camAzimuth);
+  gl.uniform1f(U('uPitchDeg'),        30.0); 
+  gl.uniform1f(U('uSunAngle'), sunAngleRad);
+  
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
 
-    // Pull values from global 'conf' each frame
-    const camAltMeters = conf.location_altitude; // meters
-    const camAzimuth = conf.location_heading; // degrees
-    const sunAngleRad = sunPos.altitude; // radians (fallback)
-    
-    // Set uniforms
-    gl.uniform2f(U('uResolution'), canvas.width, canvas.height);
-    gl.uniform1f(U('uCameraAltMeters'), camAltMeters);
-    gl.uniform1f(U('uAzimuthDeg'), camAzimuth);
-    gl.uniform1f(U('uSunAngle'), sunAngleRad);
-    
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-  }
-  
-  function tick() {
-    draw();
-    requestAnimationFrame(tick);
-  }
-  tick();
-  
+function tick() {
+  draw();
+  requestAnimationFrame(tick);
+}
+tick();
