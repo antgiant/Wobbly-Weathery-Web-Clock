@@ -177,7 +177,7 @@ const frag = `#version 300 es
     vec3 worldUp = vec3(0.0, 1.0, 0.0);
 
     // Angles
-    float yaw = radians(uAzimuthDeg); // compass heading in degrees
+    float yaw = radians(uAzimuthDeg + 180.0); // compass heading in degrees
     float pitch = radians(uPitchDeg); // fixed pitch in degrees
 
     // Forward built from yaw (around Y) and pitch (around X in camera space)
