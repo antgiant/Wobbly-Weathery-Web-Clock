@@ -344,7 +344,7 @@ function draw() {
   gl.uniform2f(U('uResolution'), canvas.width, canvas.height);
   gl.uniform1f(U('uCameraAltMeters'), camAltMeters);
   gl.uniform1f(U('uAzimuthDeg'), camAzimuth);
-  gl.uniform1f(U('uPitchDeg'),        30.0); 
+  gl.uniform1f(U('uPitchDeg'),        37.5); 
   gl.uniform1f(U('uSunAngle'), sunAngleRad);
   
   gl.drawArrays(gl.TRIANGLES, 0, 3);
