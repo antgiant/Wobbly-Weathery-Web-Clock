@@ -1,5 +1,7 @@
 // global variables for settings gear state
 const settingsEl = document.getElementById('settings');
+// floating buttons that fade out together with the gear when the page is idle
+const fadeEls = () => [settingsEl, ...document.querySelectorAll('.fab')];
 
 // How long to wait with no activity before hiding settings gear (ms)
 const IDLE_MS = 5000;
@@ -72,14 +74,14 @@ function initalize() {
 // management of Settings gear hiding and showing
 function showSettings() {
   if (isHidden) {
-    settingsEl.classList.remove('is-hidden');
+    fadeEls().forEach(el => el.classList.remove('is-hidden'));
     isHidden = false;
   }
 }
 
 function hideSettings() {
   if (!isHidden) {
-    settingsEl.classList.add('is-hidden');
+    fadeEls().forEach(el => el.classList.add('is-hidden'));
     isHidden = true;
   }
 }

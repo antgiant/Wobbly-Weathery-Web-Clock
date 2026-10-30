@@ -127,8 +127,10 @@ body {
   background: rgba(60, 120, 255, 0.75);
 }
 
-body.idle .fab {
-  opacity: 0.0;
+/* fades with the settings gear (see settings_gear.js) */
+.fab.is-hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* labels for sun / moon / planets */
