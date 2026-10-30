@@ -1,16 +1,21 @@
 import { conf, vars, dd, adjustTimeSize } from './config.js';
 import { easing } from './easing.js'
-import { refreshSky } from './horizon/horizon.js'
+import { now as simNow } from './simtime.js'
 
 function ci(c, i) {
   var k = i * 6;
   return ["M"].concat(c.slice(k, k + 2), ["C"], c.slice(k + 2, k + 8)).join(" ");
 }
 
+var clockChanged = false;
 function setCurve(id, val) {
   var e = document.getElementById(id);
-  if (e !== null)
+  // skip identical writes: most ticks nothing moves, and the glass renderer redraws on change
+  if (e !== null && e.__d !== val) {
+    e.__d = val;
     e.setAttribute("d", val);
+    clockChanged = true;
+  }
 }
 
 function setDigit(t, d) {
@@ -69,7 +74,8 @@ function getTime(date) {
 }
 
 function clock() {
-  var now = new Date();
+  if (document.hidden) return;                 // nothing to animate in a background tab
+  var now = simNow();
   var time = getTime(now);
   var nTime = getTime(new Date(now.getTime() + 1000));
   var cStep = now.getMilliseconds() / vars.step;
@@ -83,10 +89,13 @@ function clock() {
       }
     }
   });
+  if (clockChanged) {
+    clockChanged = false;
+    window.dispatchEvent(new Event('clockchange'));
+  }
   var tempTime = Number(time.h[0] + time.h[1]) + ":" + time.m[0] + time.m[1] + (conf.hideSeconds ? "" : ":" + time.s[0] + time.s[1]);
   if (document.title !== tempTime) {
     document.title = tempTime;
-    refreshSky();
   }
 }
 
@@ -108,6 +117,7 @@ function updateSvgWidths() {
       svg.style.width = width;
     });
   }
+  window.dispatchEvent(new Event('clocklayout'));
 }
 
 function initalize() {
@@ -118,10 +128,6 @@ function initalize() {
   
   // Set up widths so that clock fills the horizontal space
   updateSvgWidths();
-  
-  // Optional: rerun if elements may toggle visibility
-  const observer = new MutationObserver(updateSvgWidths);
-  observer.observe(document.querySelector("#clock"), { attributes: true, childList: true, subtree: true });
   
   //Set up config option actions
   document.addEventListener('DOMContentLoaded', () => {
@@ -140,6 +146,7 @@ function initalize() {
     document.getElementById('hideSeconds').addEventListener('change', (event) => {
       conf.hideSeconds = event.target.checked;
       adjustTimeSize();
+      updateSvgWidths();
     });
   });
   
@@ -161,7 +168,7 @@ function initalize() {
   document.getElementById("hideSeconds").checked = conf.hideSeconds;
   
   adjustTimeSize();
-  
+  updateSvgWidths();
 }
 
 initalize();

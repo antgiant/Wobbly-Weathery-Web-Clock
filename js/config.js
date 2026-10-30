@@ -20,7 +20,8 @@ function createPersistentConfig(key, initialValue = {}) {
   try {
     const stored = localStorage.getItem(key);
     if (stored) {
-      data = JSON.parse(stored);
+      // defaults first, so settings added in newer versions get a value
+      data = { ...initialValue, ...JSON.parse(stored) };
     } else {
       //Persist the initial value
       localStorage.setItem(key, JSON.stringify(data));
@@ -64,14 +65,31 @@ export var conf = createPersistentConfig("conf", {
   hideSeconds: false,
   preciseLocation: false,
   gpsFrequency: -1,
-  compassDirection: false,
   location_latitude: -1,
   location_longitude: -1,
   location_accuracy: -1,
-  location_heading: -1,
   location_altitude: -1,
   location_altitudeAccuracy: -1,
-  location_screenAngle: -1
+  // sky
+  quality: 'auto',            // auto | low | medium | high
+  landscape: 'auto',          // auto (real terrain when available) | flat | ocean | hills | mountains | desert | city
+  weatherMode: 'live',        // live | clear | partly | cloudy | overcast | rain | storm | snow | fog | haze
+  lightPollution: 'auto',     // auto (by time zone) | off | 1..9 (Bortle)
+  bodySize: 2,                // sun & moon size multiplier
+  nightBrightness: 1.4,
+  cloudMotion: 1,             // 1 real time, 0.25 slow, 0 still
+  // view
+  viewMode: 'fixed',          // fixed | drag | look (gyro "VR" mode)
+  viewHeading: 180,
+  viewPitch: 12,
+  viewFov: 80,
+  showLabels: false,
+  // time travel (never persisted as "on" across reloads)
+  simSpeed: 1,
+  // clock
+  clockStyle: 'glass',        // glass (liquid glass) | stained | solid
+  glassFrost: 0.35,           // 0 clear .. 1 heavily frosted
+  clockColor: 'auto'          // solid style only: auto | classic | white
 });
 
 //Set clock size
