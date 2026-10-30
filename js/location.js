@@ -1,8 +1,13 @@
 import Virgo from './virgo/virgo.js';
 import { conf } from './config.js';
-import { refreshSky } from './horizon/horizon.js'
+const notifyLocation = () => window.dispatchEvent(new Event('locationchange'));
 
 let locationRefresh;
+
+function coordsHtml() {
+  const la = Number(conf.location_latitude).toFixed(3), lo = Number(conf.location_longitude).toFixed(3);
+  return "Current Location: <a href='https://www.google.com/maps/place/" + la + "," + lo + "' target='_blank' rel='noopener'>(" + la + ", " + lo + ")</a>";
+}
 
 function refreshLocation() {
   if (conf.gpsFrequency >= -1) {
@@ -14,6 +19,8 @@ function refreshLocation() {
           conf.location_accuracy = pos.coords.accuracy;
           conf.location_altitude = pos.coords.altitude;
           conf.location_altitudeAccuracy = pos.coords.altitudeAccuracy;
+          document.getElementById('coords').innerHTML = coordsHtml();
+          notifyLocation();
         },
         (err) => {
           console.log(`GPS error: ${err.message}`);
@@ -26,6 +33,7 @@ function refreshLocation() {
             //turn off precise
             conf.preciseLocation = false;
             document.getElementById("preciseLocation").checked = conf.preciseLocation;
+            notifyLocation();
           }
         },
         {
@@ -47,9 +55,9 @@ function refreshLocation() {
   if (conf.gpsFrequency > 0) {
     locationRefresh = setInterval(refreshLocation, conf.gpsFrequency * 60000);
   }
-  document.getElementById('coords').innerHTML = "Current Location: <a href='https://www.google.com/maps/place/" + conf.location_latitude + "," + conf.location_longitude + "' target='_blank'>(" + conf.location_latitude + ", " + conf.location_longitude + ")</a>";
+  document.getElementById('coords').innerHTML = coordsHtml();
   
-  refreshSky();
+  notifyLocation();
 }
 
 function initalize() {

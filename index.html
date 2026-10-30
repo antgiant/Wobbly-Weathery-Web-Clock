@@ -4,12 +4,16 @@
 <head>
   <link rel="stylesheet" type="text/css" href="styles.css">
   <title>Clock</title>
-  <meta name="viewport" content="width=device-width">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1020">
+  <meta name="description" content="A wobbly clock in front of a physically based, real-time sky simulation.">
   <meta charset="utf-8">
 </head>
 
 <body>
   <canvas id="sky" aria-hidden="true"></canvas>
+  <div id="hud" hidden aria-hidden="true"></div>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
   <div id="clock">
     <svg id="firstDigit" viewBox="0 -8 100 116" preserveAspectRatio="xMidYMid meet">
       <path id="h0p0" d="M 0 0 L 400 500" transform="scale(0.2)" />
@@ -69,6 +73,10 @@
     
   </svg>
   
+  <button id="vrButton" class="fab" type="button" aria-pressed="false" aria-label="Toggle VR look-around mode" title="VR look-around: move your phone to look around the sky" hidden>
+    <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h18a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-5l-2-2.5h-4L8 16H3a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="7.5" cy="12" r="0.6"/><circle cx="16.5" cy="12" r="0.6"/></svg>
+  </button>
+
   <!-- LIGHTBOX / MODAL -->
   <div id="settingsModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" hidden>
     <div class="modal__backdrop" data-close="true"></div>
@@ -95,7 +103,116 @@
             <input type="checkbox" id="hideSeconds">
             Hide Seconds
           </label>
+          <br>
+          <label for="clockColor">Clock colour</label>
+          <select id="clockColor">
+            <option value="auto">Automatic (readable on any sky)</option>
+            <option value="classic">Classic blue</option>
+            <option value="white">White</option>
+          </select>
         </fieldset>
+
+        <fieldset>
+          <legend>Sky</legend>
+          <label for="quality">Quality</label>
+          <select id="quality">
+            <option value="auto">Automatic (adapts to your device)</option>
+            <option value="low">Low (battery saver)</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select><br>
+          <label for="bodySize">Sun &amp; moon size</label>
+          <select id="bodySize">
+            <option value="1">Realistic</option>
+            <option value="2">Enhanced</option>
+            <option value="3">Large</option>
+          </select><br>
+          <label for="nightBrightness">Night brightness <output id="nightBrightnessOut"></output></label>
+          <input type="range" id="nightBrightness" min="0.5" max="4" step="0.1"><br>
+          <label for="lightPollution">Light pollution</label>
+          <select id="lightPollution">
+            <option value="auto">Estimate from time zone</option>
+            <option value="off">None</option>
+            <option value="1">Bortle 1 (pristine)</option>
+            <option value="2">Bortle 2</option>
+            <option value="3">Bortle 3 (rural)</option>
+            <option value="4">Bortle 4</option>
+            <option value="5">Bortle 5 (suburban)</option>
+            <option value="6">Bortle 6</option>
+            <option value="7">Bortle 7 (urban)</option>
+            <option value="8">Bortle 8 (city)</option>
+            <option value="9">Bortle 9 (inner city)</option>
+          </select><br>
+          <label for="cloudMotion">Cloud &amp; water motion</label>
+          <select id="cloudMotion">
+            <option value="1">Real wind speed</option>
+            <option value="0.25">Slow</option>
+            <option value="0">Still (saves power)</option>
+          </select>
+          <p class="hint" id="skyStatus"></p>
+        </fieldset>
+
+        <fieldset>
+          <legend>Weather &amp; landscape</legend>
+          <label for="weatherMode">Weather</label>
+          <select id="weatherMode">
+            <option value="live">Live for my location</option>
+            <option value="clear">Clear</option>
+            <option value="partly">Partly cloudy</option>
+            <option value="cloudy">Mostly cloudy</option>
+            <option value="overcast">Overcast</option>
+            <option value="rain">Rain</option>
+            <option value="storm">Thunderstorm</option>
+            <option value="snow">Snow</option>
+            <option value="fog">Fog</option>
+            <option value="haze">Smoky haze</option>
+          </select>
+          <p class="hint" id="weatherStatus"></p>
+          <label for="landscape">Landscape</label>
+          <select id="landscape">
+            <option value="auto">Real terrain around my location</option>
+            <option value="flat">Flat plain</option>
+            <option value="hills">Rolling hills</option>
+            <option value="mountains">Mountains</option>
+            <option value="desert">Desert</option>
+            <option value="ocean">Ocean</option>
+            <option value="city">City</option>
+          </select>
+          <p class="hint" id="terrainStatus"></p>
+        </fieldset>
+
+        <fieldset>
+          <legend>View</legend>
+          <label for="viewMode">Mode</label>
+          <select id="viewMode">
+            <option value="fixed">Clock view (fixed)</option>
+            <option value="drag">Look around (drag &amp; pinch)</option>
+            <option value="look">VR look-around (move your phone)</option>
+          </select><br>
+          <label for="viewHeading">Facing <output id="viewHeadingOut"></output>° (0 north, 90 east, 180 south)</label>
+          <input type="range" id="viewHeading" min="0" max="359" step="1"><br>
+          <label for="viewPitch">Tilt up <output id="viewPitchOut"></output>°</label>
+          <input type="range" id="viewPitch" min="-10" max="80" step="1"><br>
+          <label for="viewFov">Field of view <output id="viewFovOut"></output>°</label>
+          <input type="range" id="viewFov" min="30" max="110" step="1"><br>
+          <label><input type="checkbox" id="showLabels"> Label the sun, moon and planets</label>
+          <p class="hint">VR mode needs a phone or tablet with motion sensors. Drag to fine-tune the compass direction, pinch to zoom.</p>
+        </fieldset>
+
+        <fieldset>
+          <legend>Time travel</legend>
+          <label><input type="checkbox" id="simEnabled"> Simulate a different time</label><br>
+          <input type="datetime-local" id="simTime">
+          <label for="simSpeed">Speed</label>
+          <select id="simSpeed">
+            <option value="1">Real time</option>
+            <option value="60">1 minute / second</option>
+            <option value="600">10 minutes / second</option>
+            <option value="3600">1 hour / second</option>
+          </select>
+          <button id="simNow" type="button">Back to now</button>
+        </fieldset>
+
         <fieldset>
           <legend>Location</legend>
           <label>
@@ -120,19 +237,13 @@
           </label>
           <button id="refreshLocation" type="button">Refresh Location</button>
         </fieldset>
-        <fieldset>
-          <legend>Compass</legend> 
-          <label id="compassDirectionLabel">
-            <input type="checkbox" id="compassDirection">
-            Use Device Compass Direction
-          </label><br>
-          <div id="compass-direction">0°</div>
-          <button id="manualCompass" type="button">Manually Enter Compass Direction</button>
-        </fieldset>
+
+        <p class="hint">Sky: physically based atmosphere (Hillaire 2020), astronomy-engine, d3-celestial star data, NASA LRO moon map, live weather and terrain via Open-Meteo. <a href="https://github.com/antgiant/Wobbly-Weathery-Web-Clock#credits" target="_blank" rel="noopener">Credits</a></p>
       </div>
     </div>
   </div>
 </body>
+<script src="js/vendor/astronomy.browser.min.js"></script>
 <script type="module" src="js/index.js"></script>
 
 </html>

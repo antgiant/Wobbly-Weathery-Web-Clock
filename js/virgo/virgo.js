@@ -15,7 +15,7 @@ export class Virgo {
       return this.timezoneCentroids[timezoneLinks[selectedTimeZone]];
     } else {
       console.warn(`Time zone '${selectedTimeZone}' is not supported. Location not found.`);
-      return { latitude: Infinity, longitude: Infinity };
+      return { latitude: Infinity, longitude: Infinity, lightPollution: 4 };
     }
   }
 

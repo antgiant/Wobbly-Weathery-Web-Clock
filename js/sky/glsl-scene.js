@@ -1,0 +1,608 @@
+// Scene shaders: sky composite, stars, auto exposure, procedural noise.
+//
+// World frame everywhere: x = East, y = Up, z = North. Azimuth is measured
+// from North towards East (dir = (sin az cos el, sin el, cos az cos el)).
+// Luminance is carried in cd/m^2 until the final exposure + tonemap, so stars,
+// clouds, the moon and the sky can all be balanced against each other
+// physically (limiting magnitude, scotopic shift, moonlight ...).
+
+import { ATMOS_COMMON, VERT_FULLSCREEN } from './glsl-atmosphere.js';
+
+// ---------------------------------------------------------------- shared ---
+// Sky radiance lookup used by the composite, the star vertex shader and the
+// exposure pass.
+const SKY_LOOKUP = `
+uniform sampler2D uTrans;
+uniform sampler2D uSkySun;
+uniform sampler2D uSkyMoon;
+uniform vec4 uSunA;       // sin(az), cos(az), elevation (rad), illuminance (lux)
+uniform vec4 uMoonA;
+uniform vec3 uNightLum;   // zenith luminance of airglow + zodiacal + starlight, cd/m^2
+uniform vec3 uLPLum;      // zenith luminance of artificial sky glow, cd/m^2
+uniform float uCamH;      // km above sea level
+
+vec3 transmittance(float r, float mu) { return texture(uTrans, transUv(r, mu)).rgb; }
+
+vec2 skyUv(float e, float cosPhi) {
+  float phi = acos(clamp(cosPhi, -1.0, 1.0));
+  float t = clamp((e + E0) / (0.5 * PI + E0), 0.0, 1.0);
+  return vec2(sqrt(phi / PI), pow(t, 1.0 / 3.0));
+}
+
+vec3 skyLum(vec3 d) {
+  float e = asin(clamp(d.y, -1.0, 1.0));
+  vec2 h = d.xz;
+  float hl = length(h);
+  vec2 hn = hl > 1e-4 ? h / hl : vec2(0.0, 1.0);
+  vec3 L = vec3(0.0);
+  if (uSunA.w > 0.0)  L += texture(uSkySun,  skyUv(e, dot(hn, uSunA.xy))).rgb  * uSunA.w;
+  if (uMoonA.w > 0.0) L += texture(uSkyMoon, skyUv(e, dot(hn, uMoonA.xy))).rgb * uMoonA.w;
+  float ec = max(e, 0.0);
+  float sz = cos(ec);
+  float vr = 1.0 / sqrt(max(1.0 - 0.9693 * sz * sz, 0.04));   // van Rhijn airglow layer
+  L += uNightLum * vr;
+  L += uLPLum * (1.0 + 2.5 * pow(1.0 - sin(ec), 2.0));        // glow domes toward the horizon
+  return L;
+}
+float lumaOf(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+`;
+
+// ----------------------------------------------------------------- noise ---
+export const FRAG_NOISE = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 oColor;
+uint pcg(uint v) {
+  uint s = v * 747796405u + 2891336653u;
+  uint w = ((s >> ((s >> 28u) + 4u)) ^ s) * 277803737u;
+  return (w >> 22u) ^ w;
+}
+float h2(ivec2 p, int period) {
+  p = ivec2(((p.x % period) + period) % period, ((p.y % period) + period) % period);
+  return float(pcg(uint(p.x) + pcg(uint(p.y) + 1013u))) / 4294967295.0;
+}
+float vnoise(vec2 p, int period) {
+  ivec2 i = ivec2(floor(p));
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = h2(i, period), b = h2(i + ivec2(1, 0), period);
+  float c = h2(i + ivec2(0, 1), period), d = h2(i + ivec2(1, 1), period);
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+float fbm(vec2 uv, int period, int oct) {
+  float amp = 0.5, sum = 0.0, norm = 0.0;
+  for (int i = 0; i < 6; i++) {
+    if (i >= oct) break;
+    sum += amp * vnoise(uv * float(period), period);
+    norm += amp;
+    amp *= 0.5;
+    period *= 2;
+  }
+  return sum / norm;
+}
+void main() {
+  float r = fbm(vUv, 4, 5);
+  float g = fbm(vUv + 0.37, 8, 4);
+  float b = fbm(vUv + 0.71, 16, 3);
+  float a = fbm(vUv + 0.13, 32, 2);
+  oColor = vec4(r, g, b, a);
+}`;
+
+// ------------------------------------------------------------- exposure ----
+// One pixel, RGBA32F: r = smoothed log(adaptation luminance), g = target log.
+export const FRAG_ADAPT = `#version 300 es
+${ATMOS_COMMON}
+${SKY_LOOKUP}
+uniform sampler2D uPrev;
+uniform mat3 uCam;
+uniform vec2 uTan;
+uniform float uDt;
+uniform float uSnap;
+uniform float uTau;
+uniform float uAdaptScale;   // overcast dims the sky relative to the clear-sky model
+in vec2 vUv;
+out vec4 oColor;
+void main() {
+  float sum = 0.0;
+  const int NX = 8, NY = 6;
+  for (int j = 0; j < NY; j++) {
+    for (int i = 0; i < NX; i++) {
+      vec2 q = vec2((float(i) + 0.5) / float(NX), (float(j) + 0.5) / float(NY)) * 1.7 - 0.85;
+      vec3 d = uCam * normalize(vec3(q.x * uTan.x, q.y * uTan.y, 1.0));
+      // adaptation follows the sky; terrain-covered pixels still sample sky above them
+      d.y = max(d.y, 0.08);
+      d = normalize(d);
+      sum += log(max(lumaOf(skyLum(d)) * uAdaptScale, 1e-6));
+    }
+  }
+  float target = sum / float(NX * NY);
+  float prev = texelFetch(uPrev, ivec2(0), 0).r;
+  float k = 1.0 - exp(-uDt / max(uTau, 1e-3));
+  float cur = uSnap > 0.5 ? target : mix(prev, target, k);
+  oColor = vec4(cur, target, 0.0, 1.0);
+}`;
+
+// ----------------------------------------------------------------- stars ---
+export const VERT_STARS = `#version 300 es
+${ATMOS_COMMON}
+${SKY_LOOKUP}
+in vec4 aStar;     // xyz unit vector (J2000, or world when uWorld=1), w = magnitude
+in float aBV;      // B-V colour index (planets: pseudo B-V)
+uniform mat3 uEqj;   // J2000 equatorial -> world
+uniform mat3 uCam;   // world -> camera rows are right/up/forward (use transpose)
+uniform vec2 uTan;
+uniform float uWorld;
+uniform float uPx;       // pixel scale relative to a 1080px tall target
+uniform float uTime;
+uniform float uTwinkle;
+uniform float uStarGain;
+uniform float uExtraK;   // extra extinction per airmass from aerosols, magnitudes
+out vec4 vCol;
+
+vec3 bvToRgb(float bv) {
+  float T = 4600.0 * (1.0 / (0.92 * bv + 1.7) + 1.0 / (0.92 * bv + 0.62));
+  float t = clamp(T, 1500.0, 40000.0) / 100.0;
+  float r = t <= 66.0 ? 1.0 : clamp(1.29293 * pow(t - 60.0, -0.1332), 0.0, 1.0);
+  float g = t <= 66.0 ? clamp(0.39008 * log(t) - 0.63184, 0.0, 1.0)
+                      : clamp(1.12989 * pow(t - 60.0, -0.0755), 0.0, 1.0);
+  float b = t >= 66.0 ? 1.0 : (t <= 19.0 ? 0.0 : clamp(0.54321 * log(t - 10.0) - 1.19625, 0.0, 1.0));
+  return mix(vec3(1.0), vec3(r, g, b), 0.65);
+}
+
+void main() {
+  vec3 d = uWorld > 0.5 ? aStar.xyz : uEqj * aStar.xyz;
+  // atmospheric refraction (Bennett), so stars sit where the refracted sun does
+  float e = asin(clamp(d.y, -1.0, 1.0));
+  float eDeg = degrees(e);
+  float R = 0.0;
+  if (eDeg > -1.5) R = radians(1.0 / tan(radians(eDeg + 7.31 / (eDeg + 4.4))) / 60.0);
+  vec2 hz = d.xz;
+  vec2 hn = normalize(hz + vec2(0.0, 1e-6));
+  e += R;
+  d = vec3(hn.x * cos(e), sin(e), hn.y * cos(e));
+
+  vec3 c = transpose(uCam) * d;
+  if (c.z <= 0.01 || d.y < -0.02) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vCol = vec4(0.0); return; }
+  gl_Position = vec4(c.x / (c.z * uTan.x), c.y / (c.z * uTan.y), 0.0, 1.0);
+
+  // limiting magnitude of the naked eye against the local sky brightness
+  float Y = max(lumaOf(skyLum(d)), 1e-7);
+  float sb = -2.5 * log(Y / 1.08e5) / log(10.0);                  // mag / arcsec^2
+  float nelm = 7.93 - 5.0 * log(pow(10.0, 4.316 - sb / 5.0) + 1.0) / log(10.0) + 0.7;   // +0.7: screens beat a dark-adapted eye
+  float s = max(sin(max(e, 0.0)), 0.0);
+  float airmass = 1.0 / (s + 0.025 * exp(-11.0 * s));
+  float m = aStar.w + (0.22 + uExtraK) * airmass;
+  float delta = nelm - m;
+
+  // scintillation, stronger near the horizon
+  float tw = 1.0 + uTwinkle * (0.12 + 0.25 / airmass)
+             * sin(uTime * (7.0 + 5.0 * fract(aStar.x * 91.7)) + aStar.y * 400.0);
+
+  float a = clamp(0.5 + 0.5 * delta, 0.0, 1.0) * step(-0.4, delta);
+  gl_PointSize = clamp((1.6 + 0.6 * max(delta, 0.0)) * uPx, 1.5, 16.0 * uPx);
+  vCol = vec4(bvToRgb(aBV) * a * tw * uStarGain, a);
+}`;
+
+export const FRAG_STARS = `#version 300 es
+precision highp float;
+in vec4 vCol;
+out vec4 oColor;
+void main() {
+  vec2 p = gl_PointCoord * 2.0 - 1.0;
+  float r2 = dot(p, p);
+  float f = exp(-r2 * 3.2) * (1.0 - smoothstep(0.7, 1.0, r2));
+  oColor = vec4(vCol.rgb * f, 0.0);
+}`;
+
+// ----------------------------------------------------------------- blit ----
+export const FRAG_BLIT = `#version 300 es
+precision highp float;
+uniform sampler2D uTex;
+in vec2 vUv;
+out vec4 oColor;
+void main() { oColor = vec4(texture(uTex, vUv).rgb, 1.0); }`;
+
+// ------------------------------------------------------------- composite ---
+export const FRAG_SCENE = `#version 300 es
+${ATMOS_COMMON}
+${SKY_LOOKUP}
+uniform sampler2D uMilky;
+uniform sampler2D uMoonTex;
+uniform sampler2D uNoise;
+uniform sampler2D uSkyline;   // RGBA16F, 1 row: elevation of near/mid/far ridge per azimuth
+uniform sampler2D uAdapt;
+
+uniform vec2  uRes;
+uniform mat3  uCam;           // camera -> world: columns right, up, forward
+uniform vec2  uTan;           // tan(fov/2) horizontally, vertically
+uniform mat3  uEqj;           // J2000 equatorial -> world
+uniform vec3  uSunDir;
+uniform vec3  uMoonDir;
+uniform vec3  uMoonPole;      // lunar north pole, world
+uniform float uMoonElon;      // sub-Earth selenographic longitude, rad
+uniform float uMoonAngR;      // drawn angular radius, rad
+uniform float uMoonLux;       // illuminance used to light the lunar surface (= sun)
+uniform float uEarthshine;    // lux on the dark side
+uniform float uSunDisc;       // disc brightness in display units (post exposure)
+uniform float uSunAngR;
+uniform float uMWLum;         // Milky Way peak luminance, cd/m^2
+uniform float uKey;           // exposure key
+uniform float uBoost;         // night brightness multiplier
+uniform float uTime;          // seconds, for cloud drift / water
+uniform vec3  uCover;         // cloud cover: low, mid, high 0..1
+uniform float uCloudDark;     // 0..1 storm darkening
+uniform vec2  uWind;          // km/s (east, north)
+uniform float uVisKm;         // meteorological visibility
+uniform float uFog;           // 0..1 ground fog
+uniform float uPrecip;        // 0 none, 1 heavy
+uniform float uSnow;          // 0 rain, 1 snow
+uniform float uDpr;
+uniform vec3  uGround;        // ground albedo
+uniform float uLandType;      // 0 land, 1 ocean
+uniform vec3  uHaze;          // atmospheric perspective for near/mid/far ridges
+uniform float uEyeH;          // eye height above local ground, km
+uniform float uDip;           // horizon dip, rad
+uniform float uAdaptScale;
+uniform float uFrame;
+
+in vec2 vUv;
+out vec4 oColor;
+
+const float SUN_LUX_MIN = 1.0;
+
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float lodFor(float footprintM, float tileM) {
+  return clamp(log2(max(footprintM / tileM * 256.0, 1.0)), 0.0, 8.0);
+}
+
+vec3 aces(vec3 x) {
+  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+vec3 srgb(vec3 c) {
+  vec3 lo = c * 12.92;
+  vec3 hi = 1.055 * pow(max(c, 0.0), vec3(1.0 / 2.4)) - 0.055;
+  return mix(lo, hi, step(0.0031308, c));
+}
+
+// ---- atmosphere helpers ----
+vec3 sunTransAt(float h, float elev) {            // sunlight reaching height h above the camera
+  float r = BOT + uCamH + h;
+  float mu = sin(elev);
+  return transmittance(r, mu) * earthShadow(r, mu);
+}
+
+// ---- clouds ----
+float cloudShape(vec2 uv, float cover, float lod, float sharp) {
+  vec4 n = textureLod(uNoise, uv, lod);
+  float base = n.r * 0.62 + n.g * 0.28 + n.b * 0.10;
+  float th = mix(0.74, 0.02, pow(cover, 0.85));
+  float d = smoothstep(th, th + sharp, base);
+  // erode the edges with finer detail; thin edges lose more than the dense core
+  float fine = textureLod(uNoise, uv * 3.7 + 0.31, lod).b;
+  return clamp(d - (1.0 - fine) * 0.35 * (1.0 - d), 0.0, 1.0);
+}
+
+// Returns premultiplied-ish (rgb radiance in cd/m^2, alpha).
+vec4 cloudLayer(vec3 d, float cover, float H, float tile, vec2 stretch, float tau,
+                float lowCover, vec3 ambLux, vec3 hazeL, float windMul) {
+  if (cover < 0.01 || d.y <= 0.0) return vec4(0.0);
+  float t = H / d.y;                                   // km along the ray
+  vec2 xz = d.xz * t + uWind * (uTime * windMul);
+  vec2 uv = xz / tile;
+  uv = vec2(uv.x * stretch.x, uv.y * stretch.y);
+  float pix = 2.0 * uTan.y / uRes.y;
+  float lod = clamp(log2(max(t * pix / max(d.y, 0.02) / tile * 256.0, 1.0)), 0.0, 8.0);
+
+  float sharp = mix(0.16, 0.30, cover);
+  float dens = cloudShape(uv, cover, lod, sharp);
+  float fade = smoothstep(0.0, 0.02, d.y);
+  if (dens < 0.003 || fade < 0.003) return vec4(0.0);
+
+  // sun-facing edges: compare against density a little way toward the sun
+  vec2 sdir = normalize(uSunDir.xz + vec2(1e-5));
+  float ds = cloudShape(uv + vec2(sdir.x * stretch.x, sdir.y * stretch.y) * 0.012, cover, lod, sharp);
+  float lit = clamp(0.55 + (dens - ds) * 5.0, 0.0, 1.0);
+
+  float thick = smoothstep(0.25, 1.0, dens);
+  vec3 sunI  = sunTransAt(H, uSunA.z) * uSunA.w;
+  vec3 moonI = sunTransAt(H, uMoonA.z) * uMoonA.w;
+
+  float cs = dot(d, uSunDir);
+  float fwd = miePhase(cs) * 0.12;                       // silver lining, strongest on thin edges
+  float body = mix(1.0, 0.10, thick);                    // thick cloud passes almost no direct sun
+  vec3 E = sunI * (0.30 + 0.70 * lit) * body
+         + sunI * fwd * (1.0 - thick) * 0.5
+         + moonI * (0.35 + 0.65 * lit) * body
+         + mix(ambLux, vec3(lumaOf(ambLux)), 0.25 + 0.6 * thick) * mix(0.9, 0.5, thick);   // thick cloud scatters neutral light
+  E *= 1.0 - 0.70 * uCloudDark;
+  vec3 rad = 0.85 * E / PI;
+
+  // aerial perspective toward the horizon
+  float aer = 1.0 - exp(-t / max(uVisKm * 0.8, 1.0));
+  rad = mix(rad, hazeL, clamp(aer, 0.0, 1.0));
+
+  float a = (1.0 - exp(-dens * tau)) * fade;
+  return vec4(rad, a);
+}
+
+// ---- moon ----
+vec4 moonDisc(vec3 d, float expo) {
+  float cm = dot(d, uMoonDir);
+  float sr = sin(uMoonAngR);
+  if (cm < cos(uMoonAngR * 1.25)) return vec4(0.0);
+  vec3 up = abs(uMoonDir.y) > 0.99 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+  vec3 rt = normalize(cross(up, uMoonDir));
+  vec3 up2 = cross(uMoonDir, rt);
+  vec2 q = vec2(dot(d, rt), dot(d, up2)) / sr;
+  float r2 = dot(q, q);
+  if (r2 > 1.5) return vec4(0.0);
+  float cov = 1.0 - smoothstep(0.97, 1.0, sqrt(r2));
+  if (cov <= 0.0) return vec4(0.0);
+  float z = sqrt(max(0.0, 1.0 - r2));
+  vec3 toObs = -uMoonDir;
+  // flip x: looking at the moon from outside, +x of the image is toward 'rt'
+  vec3 n = normalize(q.x * rt + q.y * up2 + z * toObs);
+
+  // selenographic coordinates
+  vec3 P = normalize(uMoonPole);
+  float lat = asin(clamp(dot(n, P), -1.0, 1.0));
+  vec3 S = toObs;
+  vec3 Seq = normalize(S - P * dot(S, P));
+  vec3 Eeq = normalize(cross(P, Seq));
+  vec3 nEq = normalize(n - P * dot(n, P));
+  float lam = atan(dot(nEq, Eeq), dot(nEq, Seq));
+  float lon = uMoonElon + lam;
+  vec2 tuv = vec2(0.5 + lon / (2.0 * PI), 0.5 - lat / PI);
+  vec3 alb = texture(uMoonTex, tuv).rgb;
+  alb = pow(alb, vec3(1.15)) * 0.30;     // normalise the texture to ~0.12 mean geometric albedo
+
+  float mu0 = max(dot(n, uSunDir), 0.0);
+  float mu = max(dot(n, toObs), 1e-3);
+  float ls = mu0 / (mu0 + mu);           // Lommel-Seeliger: flat full-moon disc
+  vec3 Ts = transmittance(BOT + uCamH, clamp(sin(uMoonA.z), -0.2, 1.0));
+  vec3 phys = alb * (uMoonLux * 2.0 * ls + uEarthshine) / PI * Ts;
+  // Physically the sunlit moon is ~3000 cd/m^2, which a night-time exposure would
+  // blow out to a white blob. Cap it in display space so the maria stay visible;
+  // in daylight the physical value is smaller than the cap and wins.
+  vec3 cap = (alb / 0.1) * (2.0 * ls) * 0.85 * Ts / expo;
+  return vec4(min(phys, cap + vec3(uEarthshine) * alb / PI), cov);
+}
+
+// ---- terrain ----
+vec3 terrainLit(vec3 albedo, vec3 n, vec3 sunI, vec3 moonI, vec3 ambLux) {
+  float ns = max(dot(n, uSunDir), 0.0);
+  float nm = max(dot(n, uMoonDir), 0.0);
+  vec3 E = sunI * ns + moonI * nm + ambLux * (0.55 + 0.45 * n.y);
+  return albedo * E / PI;
+}
+
+// per-pixel values shared by the terrain and sky shaders (assigned in main)
+float La, expo, pixM, az, u;
+vec3 sk, hdir, hazeL, zenL, ambLux, sunIg, moonIg;
+
+// Terrain, water and city layers; layer 0 is the nearest.
+vec3 shadeTerrain(int layer, vec3 d) {
+  vec3 L;
+  bool plane = layer == 0 && d.y < -uDip + 0.0002;
+  if (plane && abs(uLandType - 1.0) < 0.1) {
+    // ocean: Fresnel mix of the reflected sky and a dark body, wind-roughened glitter
+    float tdist = uEyeH / max(-d.y, 1e-4);              // km to the water
+    vec2 wp = d.xz * tdist * 1000.0;                    // metres
+    float fp = pixM * tdist * 1000.0 / max(-d.y, 0.003);
+    vec2 w1 = textureLod(uNoise, wp / 61.0 + vec2(uTime * 0.012, uTime * 0.007), lodFor(fp, 61.0)).rg - 0.5;
+    vec2 w2 = textureLod(uNoise, wp / 17.0 - vec2(uTime * 0.025, 0.0), lodFor(fp, 17.0)).rg - 0.5;
+    vec2 w3 = textureLod(uNoise, wp / 4.3 + vec2(0.0, uTime * 0.05), lodFor(fp, 4.3)).rg - 0.5;
+    vec2 w4 = textureLod(uNoise, wp / 1.3 - vec2(uTime * 0.09, uTime * 0.03), lodFor(fp, 1.3)).rg - 0.5;
+    vec2 slope = (w1 * 0.25 + w2 * 0.5 + w3 * 0.8 + w4 * 0.7) * 0.45;   // fine ripples dominate; distance averages flat via the mips
+    vec3 nrm = normalize(vec3(slope.x, 1.0, slope.y));
+    vec3 rd = reflect(d, nrm);
+    rd.y = abs(rd.y);
+    float F = 0.02 + 0.98 * pow(1.0 - clamp(dot(nrm, -d), 0.0, 1.0), 5.0);
+    vec3 refl = skyLum(rd);
+    // sun glitter: Gaussian lobe on the half vector (Cox-Munk style), display-referred like the disc
+    vec3 hh = normalize(uSunDir - d);
+    float sig2 = 0.020;
+    float glint = exp(-(1.0 - clamp(dot(nrm, hh), 0.0, 1.0)) / sig2);
+    vec3 Ts = transmittance(BOT + uCamH, clamp(sin(uSunA.z), -0.2, 1.0));
+    refl += Ts * (uSunDisc / expo) * glint * 0.9 * step(0.0, uSunA.z + 0.02);
+    vec3 body = vec3(0.010, 0.040, 0.055) * (sunIg * max(uSunDir.y, 0.0) + moonIg * max(uMoonDir.y, 0.0) + ambLux) / PI;
+    L = mix(body, refl, F);
+    L = mix(L, hazeL, smoothstep(0.004, 0.0, -d.y - uDip) * 0.5);
+  } else {
+    float ridgeTop = layer == 0 ? sk.r : (layer == 1 ? sk.g : sk.b);
+    float depthMix = layer == 0 ? 0.0 : (layer == 1 ? uHaze.y : uHaze.z);
+    vec3 n;
+    vec3 alb = uGround;
+    vec3 emit = vec3(0.0);
+    if (plane) {
+      n = vec3(0.0, 1.0, 0.0);
+      float tdist = uEyeH / max(-d.y, 1e-4);
+      vec2 gp = d.xz * tdist * 1000.0;                  // metres
+      float fp = pixM * tdist * 1000.0 / max(-d.y, 0.003);
+      float sp = textureLod(uNoise, gp / 6.0, lodFor(fp, 6.0)).b * 0.6 + textureLod(uNoise, gp / 1.1, lodFor(fp, 1.1)).a * 0.4;
+      float sm = exp(-tdist * 4.0);
+      alb *= mix(1.0, 0.62 + 0.9 * sp, sm);
+      depthMix = clamp(tdist * 3.0, 0.0, 1.0) * uHaze.x + depthMix;
+    } else {
+      // ridge face: tilt the normal by the local skyline slope so slopes catch the sun differently
+      float du = 6.0 / 2048.0;
+      vec3 sl = texture(uSkyline, vec2(u - du, 0.5)).rgb;
+      vec3 sr = texture(uSkyline, vec2(u + du, 0.5)).rgb;
+      float dh = (layer == 0 ? sr.r - sl.r : (layer == 1 ? sr.g - sl.g : sr.b - sl.b)) / (2.0 * du * 2.0 * PI);
+      vec3 side = normalize(cross(vec3(0.0, 1.0, 0.0), hdir));
+      n = normalize(-hdir * 0.75 + vec3(0.0, 0.55, 0.0) - side * clamp(dh, -3.0, 3.0) * 0.6);
+      float hz = clamp(d.y / max(ridgeTop, 0.004), 0.0, 1.0);          // 0 at the foot, 1 at the crest
+      float rr = textureLod(uNoise, vec2(az * 7.0, d.y * 70.0), 1.0).g;
+      vec3 rock = vec3(0.26, 0.23, 0.20);
+      alb = mix(alb, rock, smoothstep(0.25, 0.8, hz) * (0.4 + 0.6 * float(layer > 0)));
+      alb *= 0.65 + 0.7 * rr;
+      float snow = smoothstep(0.78, 0.92, hz + (rr - 0.5) * 0.25) * step(0.06, ridgeTop);
+      alb = mix(alb, vec3(0.8, 0.82, 0.86), snow);
+      depthMix *= mix(1.3, 0.65, hz);
+      if (abs(uLandType - 2.0) < 0.1) {
+        // city: dark blocks with lit windows after dusk
+        alb = vec3(0.14, 0.14, 0.15) * (0.7 + 0.6 * rr);
+        vec2 cell = floor(vec2(az * 2400.0, d.y * 2600.0));
+        float lit = step(0.80, hash12(cell)) * step(0.35, hz * 0.0 + hash12(cell + 9.0));
+        float night = 1.0 - smoothstep(-0.14, 0.01, uSunA.z);
+        emit = vec3(1.0, 0.78, 0.45) * lit * night * 1.4 / expo * 0.35;
+      }
+    }
+    vec3 lit = terrainLit(alb, n, sunIg, moonIg, ambLux) + emit;
+    float fogK = clamp(uFog * (0.35 + 0.65 * float(layer + 1) / 3.0), 0.0, 1.0);
+    L = mix(lit, hazeL, clamp(depthMix + fogK, 0.0, 1.0));
+  }
+  return L;
+}
+
+// Everything above the skyline. skyMask = how much of the sky is still open to stars.
+vec3 shadeSky(vec3 d, out float skyMask) {
+  vec3 L;
+  skyMask = 1.0;
+  L = skyLum(d);
+
+  // Milky Way (equatorial map) behind everything, extinguished near the horizon
+  vec3 eq = transpose(uEqj) * d;
+  float ra = atan(eq.y, eq.x);
+  float dec = asin(clamp(eq.z, -1.0, 1.0));
+  vec2 muv = vec2(ra / (2.0 * PI), 0.5 - dec / PI);
+  float mw = texture(uMilky, muv).r;
+  float mott = textureLod(uNoise, muv * vec2(10.0, 5.0), 1.5).g;
+  mw = clamp(mw * (0.45 + 1.1 * mott), 0.0, 1.4);
+  float sE = max(d.y, 0.0);
+  float am = 1.0 / (sE + 0.025 * exp(-11.0 * sE));
+  L += vec3(0.85, 0.92, 1.1) * mw * uMWLum * exp(-0.22 * am) * step(-0.01, d.y);
+
+  // sun: disc + soft glare, tinted by the atmosphere's own transmittance
+  float cs = dot(d, uSunDir);
+  float angS = acos(clamp(cs, -1.0, 1.0));
+  vec3 Ts = transmittance(BOT + uCamH, clamp(sin(uSunA.z), -0.2, 1.0));
+  float limb = sqrt(max(0.0, 1.0 - pow(angS / uSunAngR, 2.0)));
+  float disc = 1.0 - smoothstep(uSunAngR * 0.96, uSunAngR * 1.04, angS);
+  float glare = 0.05 / (1.0 + pow(angS / (uSunAngR * 4.0), 2.0));
+  float sunUp = smoothstep(-0.02, 0.01, uSunA.z);
+  L += Ts * (uSunDisc / expo) * (disc * mix(0.62, 1.0, limb) + glare) * sunUp;
+
+  // moon
+  vec4 mo = moonDisc(d, expo);
+  L += mo.rgb * mo.a;               // added on top: the air in front of the moon still glows
+  skyMask *= 1.0 - mo.a;
+
+  // clouds, high to low
+  vec3 wd = vec3(uWind.x, 0.0, uWind.y);
+  float cc = 0.0;
+  vec4 cH = cloudLayer(d, uCover.z, 9.5, 120.0, vec2(1.0, 0.32), 1.1, uCover.x, ambLux, hazeL, 1.6);
+  L = mix(L, cH.rgb, cH.a);
+  vec4 cM = cloudLayer(d, uCover.y, 5.0, 70.0, vec2(1.0, 0.8), 2.4, uCover.x, ambLux, hazeL, 1.2);
+  L = mix(L, cM.rgb, cM.a);
+  vec4 cL = cloudLayer(d, uCover.x, 1.8, 40.0, vec2(1.0, 1.0), 5.0, uCover.x, ambLux, hazeL, 1.0);
+  L = mix(L, cL.rgb, cL.a);
+  skyMask *= (1.0 - cH.a * 0.9) * (1.0 - cM.a) * (1.0 - cL.a);
+
+  // fog
+  float fogMix = max(0.75 * uFog * uFog, uFog * 0.92 * (1.0 - smoothstep(0.0, 0.25, d.y)));
+  L = mix(L, hazeL, fogMix);
+  skyMask *= 1.0 - fogMix;
+  return L;
+}
+
+void main() {
+  vec2 ndc = (gl_FragCoord.xy / uRes) * 2.0 - 1.0;
+  vec3 d = normalize(uCam * normalize(vec3(ndc.x * uTan.x, ndc.y * uTan.y, 1.0)));
+
+  // Display adaptation is deliberately incomplete: a pure auto-exposure would make
+  // a moonlit night as bright as dusk. Compress the curve so the sky stays dark at
+  // night (but readable), and let the user lift it with uBoost.
+  La = exp(texelFetch(uAdapt, ivec2(0), 0).r);
+  float LaEff = pow(La, 0.8) * 4.95;                    // 4.95 = 3000^0.2: unity at a bright day sky
+  expo = uKey / LaEff * mix(uBoost, 1.0, smoothstep(0.1, 300.0, La));
+
+  pixM = 2.0 * uTan.y / uRes.y;                         // radians per pixel
+  az = atan(d.x, d.z);
+  u = az / (2.0 * PI) + 0.5;
+  sk = texture(uSkyline, vec2(u, 0.5)).rgb;             // near, mid, far ridge elevations (cumulative)
+
+  int layer = -1;
+  if (d.y < sk.r) layer = 0;
+  else if (d.y < sk.g) layer = 1;
+  else if (d.y < sk.b) layer = 2;
+
+  hdir = normalize(vec3(d.x, 0.0, d.z) + vec3(1e-6, 0.0, 0.0));
+  hazeL = skyLum(normalize(vec3(hdir.x, 0.012, hdir.z)));
+  zenL = skyLum(vec3(0.0, 1.0, 0.0));
+  vec3 sunUpDir = normalize(vec3(uSunA.x * 0.866, 0.5, uSunA.y * 0.866));
+  ambLux = PI * (0.7 * zenL + 0.3 * skyLum(sunUpDir));
+  sunIg  = sunTransAt(0.0, uSunA.z) * uSunA.w;
+  moonIg = sunTransAt(0.0, uMoonA.z) * uMoonA.w;
+
+  // Analytic antialiasing of the outermost silhouette (there is no MSAA here): within a
+  // pixel of the skyline, shade both sides and blend by coverage.
+  int topLayer = sk.b > sk.g ? 2 : (sk.g > sk.r ? 1 : 0);
+  float edge = (sk.b - d.y) / pixM;                      // pixels below the silhouette
+  vec3 L;
+  float skyMask;
+  if (layer >= 0 && edge > 1.0) {
+    L = shadeTerrain(layer, d);
+    skyMask = 0.0;
+  } else if (layer < 0 && edge < -1.0) {
+    L = shadeSky(d, skyMask);
+  } else {
+    float cov = clamp(edge + 0.5, 0.0, 1.0);
+    float m;
+    vec3 Ls = shadeSky(d, m);
+    vec3 Lt = shadeTerrain(layer >= 0 ? layer : topLayer, d);
+    L = mix(Ls, Lt, cov);
+    skyMask = m * (1.0 - cov);
+  }
+
+  // ---------- precipitation overlay (screen space, display-referred) ----------
+  vec3 rainRel = vec3(0.0);
+  if (uPrecip > 0.01) {
+    vec2 sp = gl_FragCoord.xy / uDpr;
+    for (int k = 0; k < 2; k++) {
+      float sc = k == 0 ? 1.0 : 0.6;
+      float cellW = mix(5.0, 11.0, uSnow) / sc;
+      float slant = (1.0 - uSnow) * 0.12;
+      vec2 g = vec2(sp.x + sp.y * slant, sp.y);
+      float cx = floor(g.x / cellW);
+      float rnd = hash12(vec2(cx, float(k) * 17.0));
+      float len = mix(46.0, 8.0, uSnow) * sc;
+      float speed = mix(1100.0, 70.0, uSnow) * (0.75 + 0.5 * rnd) * sc;
+      float y = fract((g.y + uTime * speed) / (len * 5.0) + rnd);       // position along the cycle
+      float fx = fract(g.x / cellW) - 0.5;
+      float on = step(1.0 - uPrecip * 0.8, hash12(vec2(cx, 3.3 + float(k))));
+      float across = exp(-pow(fx * cellW / mix(0.55, 2.6, uSnow), 2.0));
+      float along = uSnow > 0.5 ? exp(-pow((y - 0.5) * len * 5.0 / 3.0, 2.0))
+                                : smoothstep(0.0, 0.2, y) * (1.0 - smoothstep(0.2, 0.2 + 1.0 / 5.0, y));
+      rainRel += vec3(0.55, 0.6, 0.68) * across * along * on * 0.20 * sc;
+    }
+  }
+
+  // ---------- exposure, scotopic shift, tonemap ----------
+  float Y = lumaOf(L);
+  // mesopic range ~0.005..3 cd/m^2, judged on a log scale: rods take over below it
+  float scot = 1.0 - smoothstep(-2.3, 0.5, log(max(Y, 1e-6)) / 2.302585);
+  vec3 night = vec3(0.62, 0.82, 1.18) * Y;
+  vec3 c = mix(L, night, scot * 0.75) * expo;
+
+  c += rainRel;
+  vec3 x = c * 0.9;
+  vec3 tm = aces(x);
+  vec3 toe = x / (1.0 + x);                               // no toe crush: keeps night gradients readable
+  c = mix(toe, tm, smoothstep(0.02, 0.25, x));
+  c = srgb(c);
+  // triangular dither avoids banding in the dark gradients
+  float n1 = hash12(gl_FragCoord.xy + uFrame * 1.31);
+  float n2 = hash12(gl_FragCoord.yx + uFrame * 2.17 + 11.0);
+  c += (n1 + n2 - 1.0) / 255.0;
+
+  oColor = vec4(clamp(c, 0.0, 1.0), skyMask);
+}`;
+
+export { VERT_FULLSCREEN };

@@ -1,9 +1,17 @@
 /* Full-bleed backdrop canvas */
+:root {
+  --clock-stroke: #f4f7ff;
+}
+
 html,
 body {
   margin: 0;
   padding: 0;
   height: 100%;
+  background: #0b1020;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 #sky {
@@ -11,35 +19,34 @@ body {
   inset: 0;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   display: block;
-  /* removes inline-gap */
   z-index: 0;
-  /* behind everything else */
+  touch-action: none;
 }
 
 #clock {
   position: relative;
-  /* creates stacking context */
   z-index: 2;
-  /* above the canvas */
-  pointer-events: auto;
+  /* the sky below handles drag / pinch; only the digits themselves are painted */
+  pointer-events: none;
   display: flex;
   justify-content: center;
-  /* horizontal centering */
   align-items: center;
-  /* vertical centering */
   width: 93vw;
   height: 98vh;
-  /* make parent full height of viewport */
-  
+  height: 98dvh;
 }
 
 #clock svg {
   width: calc(((100% + (7% * 3)) / 6) - 1%);
   /* 6 across; plus offset to match margin changes*/
   stroke-width: 80;
-  stroke: blue;
+  stroke: var(--clock-stroke);
   fill: none;
+  /* fade the whole glyph, not the stroke: overlapping path segments would show seams */
+  opacity: 0.92;
+  transition: stroke 1.5s ease;
 }
 
 #clock svg:nth-child(3n -1) {
@@ -54,7 +61,7 @@ body {
 #settings {
   position: fixed;
   z-index: 3;
-  bottom: 5%;
+  bottom: max(5%, env(safe-area-inset-bottom));
   right: 5%;
   width: 5%;
   height: 5%;
@@ -62,6 +69,15 @@ body {
   min-height: 44px;
   max-width: 200px;
   max-height: 200px;
+}
+
+#settings path {
+  fill: #fff;
+}
+
+#settings {
+  /* stays visible on a pale daytime sky too */
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.65));
 }
 
 .hidden {
@@ -83,14 +99,111 @@ body {
   /* don’t trap taps/clicks while hidden */
 }
 
+/* floating round buttons (VR) */
+.fab {
+  position: fixed;
+  z-index: 3;
+  left: 5%;
+  bottom: max(5%, env(safe-area-inset-bottom));
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(10, 16, 32, 0.45);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition: opacity 1000ms ease, background 200ms ease;
+}
+
+.fab[hidden] {
+  display: none;
+}
+
+.fab[aria-pressed="true"] {
+  background: rgba(60, 120, 255, 0.75);
+}
+
+body.idle .fab {
+  opacity: 0.0;
+}
+
+/* labels for sun / moon / planets */
+#hud {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  color: #fff;
+  font: 600 12px/1 system-ui, sans-serif;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.8), 0 0 2px rgba(0, 0, 0, 0.9);
+}
+
+#hud[hidden] {
+  display: none;
+}
+
+#hud .lbl {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+#hud .lbl.minor {
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+#hud .lbl.edge {
+  padding: 3px 8px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+#hud .readout {
+  position: absolute;
+  top: max(10px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+#toast {
+  position: fixed;
+  z-index: 5;
+  left: 50%;
+  bottom: 14%;
+  transform: translateX(-50%);
+  max-width: 80vw;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font: 14px system-ui, sans-serif;
+  text-align: center;
+}
+
+#toast[hidden] {
+  display: none;
+}
+
 /* respect users who prefer reduced motion */
 @media (prefers-reduced-motion: reduce) {
   #settings {
     transition: opacity 1ms linear;
   }
-  
+
   #settings.is-hidden {
     transform: none;
+  }
+
+  #clock svg {
+    transition: none;
   }
 }
 
@@ -122,8 +235,9 @@ body {
   position: relative;
   max-width: 520px;
   width: 92vw;
-  margin: 10vh auto 0;
+  margin: 5vh auto 0;
   background: #fff;
+  color: #111;
   border-radius: 12px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   padding: 1rem 1.25rem 1.25rem;
@@ -135,7 +249,7 @@ body {
     transform: translateY(10px);
     opacity: 0;
   }
-  
+
   to {
     transform: translateY(0);
     opacity: 1;
@@ -161,11 +275,28 @@ body {
 .modal__body {
   display: grid;
   gap: .75rem;
-  max-height: 60vh;
+  max-height: 78vh;
+  max-height: 78dvh;
   overflow-y: auto;
 }
 
 .modal__body label {
   font-size: .9rem;
   color: #333;
+}
+
+.modal__body select,
+.modal__body input[type="datetime-local"] {
+  max-width: 100%;
+  margin: .15rem 0 .4rem;
+}
+
+.modal__body input[type="range"] {
+  width: 100%;
+}
+
+.modal__body .hint {
+  margin: .25rem 0;
+  font-size: .8rem;
+  color: #555;
 }

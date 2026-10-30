@@ -1,3 +1,7 @@
+The atmosphere constants and phase functions in js/sky/glsl-atmosphere.js, and the project this clock originally took its sky from, come from
+"Horizon" by Daniel Lazaro (https://github.com/dnlzro/horizon), which derives from "Production Sky Rendering" by Andrew Helmer
+(MIT, https://www.shadertoy.com/view/slSXRW). The Horizon licence follows.
+
 MIT License
 
 Copyright (c) 2025 Daniel Lazaro
