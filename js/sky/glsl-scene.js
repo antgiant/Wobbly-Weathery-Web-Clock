@@ -11,7 +11,7 @@ import { ATMOS_COMMON, VERT_FULLSCREEN } from './glsl-atmosphere.js';
 // ---------------------------------------------------------------- shared ---
 // Sky radiance lookup used by the composite, the star vertex shader and the
 // exposure pass.
-const SKY_LOOKUP = `
+export const SKY_LOOKUP = `
 uniform sampler2D uTrans;
 uniform sampler2D uSkySun;
 uniform sampler2D uSkyMoon;
@@ -45,6 +45,38 @@ vec3 skyLum(vec3 d) {
   return L;
 }
 float lumaOf(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+`;
+
+
+// Exposure + tone mapping shared by the scene and the plant sprites, so both look identical.
+export const DISPLAY_FNS = `
+vec3 aces(vec3 x) {
+  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
+  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
+vec3 srgb(vec3 c) {
+  vec3 lo = c * 12.92;
+  vec3 hi = 1.055 * pow(max(c, 0.0), vec3(1.0 / 2.4)) - 0.055;
+  return mix(lo, hi, step(0.0031308, c));
+}
+// Display adaptation is deliberately incomplete: a pure auto-exposure would make a moonlit night
+// as bright as dusk. Compress the curve so the sky stays dark at night (but readable); boost lifts it.
+float calcExpo(float La, float key, float boost) {
+  float LaEff = pow(La, 0.8) * 4.95;                    // 4.95 = 3000^0.2: unity at a bright day sky
+  return key / LaEff * mix(boost, 1.0, smoothstep(0.1, 300.0, La));
+}
+// L in cd/m^2 -> display sRGB. addRel is display-referred light (rain streaks).
+vec3 toDisplay(vec3 L, float expo, vec3 addRel) {
+  float Y = dot(L, vec3(0.2126, 0.7152, 0.0722));
+  // mesopic range ~0.005..3 cd/m^2, judged on a log scale: rods take over below it
+  float scot = 1.0 - smoothstep(-2.3, 0.5, log(max(Y, 1e-6)) / 2.302585);
+  vec3 night = vec3(0.62, 0.82, 1.18) * Y;
+  vec3 c = mix(L, night, scot * 0.75) * expo + addRel;
+  vec3 x = c * 0.9;
+  vec3 tm = aces(x);
+  vec3 toe = x / (1.0 + x);                               // no toe crush: keeps night gradients readable
+  return srgb(mix(toe, tm, smoothstep(0.02, 0.25, x)));
+}
 `;
 
 // ----------------------------------------------------------------- noise ---
@@ -338,6 +370,7 @@ void main() {
 export const FRAG_SCENE = `#version 300 es
 ${ATMOS_COMMON}
 ${SKY_LOOKUP}
+${DISPLAY_FNS}
 uniform sampler2D uMilky;
 uniform sampler2D uMoonTex;
 uniform sampler2D uNoise;
@@ -370,6 +403,8 @@ uniform float uPrecip;        // 0 none, 1 heavy
 uniform float uSnow;          // 0 rain, 1 snow
 uniform float uDpr;
 uniform vec3  uGround;        // ground albedo
+uniform vec3  uGround2;       // second ground colour (patches of dry / bare / different cover)
+uniform float uWet;           // 0..1 wet ground (rain)
 uniform float uLandType;      // 0 land, 1 ocean
 uniform vec3  uHaze;          // atmospheric perspective for near/mid/far ridges
 uniform float uEyeH;          // eye height above local ground, km
@@ -390,16 +425,6 @@ float hash12(vec2 p) {
 
 float lodFor(float footprintM, float tileM) {
   return clamp(log2(max(footprintM / tileM * 256.0, 1.0)), 0.0, 8.0);
-}
-
-vec3 aces(vec3 x) {
-  const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
-  return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
-}
-vec3 srgb(vec3 c) {
-  vec3 lo = c * 12.92;
-  vec3 hi = 1.055 * pow(max(c, 0.0), vec3(1.0 / 2.4)) - 0.055;
-  return mix(lo, hi, step(0.0031308, c));
 }
 
 // ---- atmosphere helpers ----
@@ -559,7 +584,26 @@ vec3 shadeTerrain(int layer, vec3 d) {
       float fp = pixM * tdist * 1000.0 / max(-d.y, 0.003);
       float sp = textureLod(uNoise, gp / 6.0, lodFor(fp, 6.0)).b * 0.6 + textureLod(uNoise, gp / 1.1, lodFor(fp, 1.1)).a * 0.4;
       float sm = exp(-tdist * 4.0);
+      // patchy cover: two ground colours blended by large and medium scale noise
+      float pa = textureLod(uNoise, gp / 37.0 + 0.2, lodFor(fp, 37.0)).r;
+      float pb = textureLod(uNoise, gp / 9.0 + 0.6, lodFor(fp, 9.0)).g;
+      alb = mix(uGround, uGround2, smoothstep(0.38, 0.62, pa * 0.7 + pb * 0.3));
       alb *= mix(1.0, 0.62 + 0.9 * sp, sm);
+      alb = mix(alb, vec3(0.30, 0.28, 0.25), step(0.985, hash12(floor(gp * 7.0))) * sm * 0.55);   // pebbles
+      // wet ground: darker, with a sky-reflecting sheen that grows toward grazing angles and in puddles
+      float pud = smoothstep(0.55, 0.72, pb) * uWet;
+      alb *= 1.0 - 0.35 * uWet;
+      float cosv = max(-d.y, 0.0);
+      float Fg = 0.02 + 0.98 * pow(1.0 - cosv, 5.0);
+      emit += skyLum(vec3(d.x, -d.y, d.z)) * Fg * (0.14 * uWet + 0.5 * pud);
+      if (uWet > 0.05 && tdist < 0.03) {                  // raindrop ripples close to the camera
+        vec2 rp = gp * 0.8;
+        vec2 cell = floor(rp);
+        vec2 fc = fract(rp) - 0.5 - (vec2(hash12(cell + 7.3), hash12(cell + 3.1)) - 0.5) * 0.5;
+        float tt = fract(uTime * 0.9 + hash12(cell));
+        float ring = exp(-pow((length(fc) - tt * 0.45) / 0.035, 2.0)) * (1.0 - tt);
+        emit += vec3(ring * 0.30 * uWet * (1.0 - smoothstep(0.01, 0.03, tdist)) / expo);
+      }
       depthMix = clamp(tdist * 3.0, 0.0, 1.0) * uHaze.x + depthMix;
     } else {
       // ridge face: tilt the normal by the local skyline slope so slopes catch the sun differently
@@ -652,8 +696,7 @@ void main() {
   // a moonlit night as bright as dusk. Compress the curve so the sky stays dark at
   // night (but readable), and let the user lift it with uBoost.
   La = exp(texelFetch(uAdapt, ivec2(0), 0).r);
-  float LaEff = pow(La, 0.8) * 4.95;                    // 4.95 = 3000^0.2: unity at a bright day sky
-  expo = uKey / LaEff * mix(uBoost, 1.0, smoothstep(0.1, 300.0, La));
+  expo = calcExpo(La, uKey, uBoost);
 
   pixM = 2.0 * uTan.y / uRes.y;                         // radians per pixel
   az = atan(d.x, d.z);
@@ -717,18 +760,7 @@ void main() {
   }
 
   // ---------- exposure, scotopic shift, tonemap ----------
-  float Y = lumaOf(L);
-  // mesopic range ~0.005..3 cd/m^2, judged on a log scale: rods take over below it
-  float scot = 1.0 - smoothstep(-2.3, 0.5, log(max(Y, 1e-6)) / 2.302585);
-  vec3 night = vec3(0.62, 0.82, 1.18) * Y;
-  vec3 c = mix(L, night, scot * 0.75) * expo;
-
-  c += rainRel;
-  vec3 x = c * 0.9;
-  vec3 tm = aces(x);
-  vec3 toe = x / (1.0 + x);                               // no toe crush: keeps night gradients readable
-  c = mix(toe, tm, smoothstep(0.02, 0.25, x));
-  c = srgb(c);
+  vec3 c = toDisplay(L, expo, rainRel);
   // triangular dither avoids banding in the dark gradients
   float n1 = hash12(gl_FragCoord.xy + uFrame * 1.31);
   float n2 = hash12(gl_FragCoord.yx + uFrame * 2.17 + 11.0);
