@@ -297,33 +297,34 @@ void main() {
     glass = c;
   } else {
     // ---- stained glass ----
-    float cell = max(stroke * 0.95, 14.0);
-    vec2 p = gl_FragCoord.xy / cell;
-    vec2 ip = floor(p), fp = fract(p);
-    float f1 = 8.0, f2 = 8.0; vec2 id = vec2(0.0);
-    for (int j = -1; j <= 1; j++) {
-      for (int i = -1; i <= 1; i++) {
-        vec2 o = vec2(float(i), float(j));
-        vec2 r = o + hash22(ip + o) * 0.9 + 0.05 - fp;
-        float dd = dot(r, r);
-        if (dd < f1) { f2 = f1; f1 = dd; id = ip + o; }
-        else if (dd < f2) { f2 = dd; }
-      }
+    // The panes are baked into the mask by glass.js: every stroke is cut into pieces along
+    // its length (and into an inner and an outer lane), each filled with its own id colour.
+    // Because the pieces are slices of the morphing curves, the leading stretches and bends
+    // with the digit. Lead lines are simply where the pane id changes.
+    vec4 mk = textureLod(uMask, (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw, 0.0);
+    float pid = floor(mk.r * 255.0 / 40.0 + 0.5);
+    float shade = mk.g;
+    float lr = max(stroke * 0.035, 0.9);
+    float diffN = 0.0;
+    for (int i = 0; i < 8; i++) {
+      float a8 = float(i) * 0.785398;
+      vec2 o = vec2(cos(a8), sin(a8)) * lr * px;
+      vec2 mm = (vec2(vUv.x + o.x, 1.0 - (vUv.y + o.y)) - uMaskRect.xy) / uMaskRect.zw;
+      vec4 q = textureLod(uMask, mm, 0.0);
+      diffN += step(0.5, q.a) * step(0.04, abs(q.r - mk.r) + abs(q.g - mk.g));
     }
-    float e = sqrt(f2) - sqrt(f1);                                    // distance to the nearest pane boundary
-    float lead = 1.0 - smoothstep(0.035, 0.085, e);
-    float k = hash21(id);
+    float lead = smoothstep(0.0, 2.5, diffN);
     vec3 pal;
-    if (k < 0.17)      pal = vec3(0.80, 0.08, 0.10);                 // ruby
-    else if (k < 0.34) pal = vec3(0.10, 0.28, 0.85);                 // cobalt
-    else if (k < 0.51) pal = vec3(0.95, 0.62, 0.08);                 // amber
-    else if (k < 0.68) pal = vec3(0.06, 0.62, 0.30);                 // emerald
-    else if (k < 0.84) pal = vec3(0.55, 0.15, 0.75);                 // amethyst
-    else               pal = vec3(0.90, 0.35, 0.50);                 // rose
+    if (pid < 0.5)      pal = vec3(0.80, 0.08, 0.10);                 // ruby
+    else if (pid < 1.5) pal = vec3(0.10, 0.28, 0.85);                 // cobalt
+    else if (pid < 2.5) pal = vec3(0.95, 0.62, 0.08);                 // amber
+    else if (pid < 3.5) pal = vec3(0.06, 0.62, 0.30);                 // emerald
+    else if (pid < 4.5) pal = vec3(0.55, 0.15, 0.75);                 // amethyst
+    else                pal = vec3(0.90, 0.35, 0.50);                 // rose
     vec3 sky = sceneAt(vUv, 4.5);
     float through = mix(0.22, 1.25, smoothstep(0.02, 0.7, lumaOf(sky))); // sunlight shining through the pane
-    float pane = 0.80 + 0.35 * hash21(id + 5.0);
-    vec3 c = pal * pane * through * (1.0 - 0.30 * sqrt(f1));          // darker toward pane edges, like hand-made glass
+    float pane = 0.78 + 0.40 * shade;
+    vec3 c = pal * pane * through * (0.72 + 0.28 * smoothstep(0.0, 0.55, h));   // hand-made glass: darker towards the edges
     c = mix(c, c * 0.55 + sky * 0.45 * pal, frost * 0.6);             // frost: more translucent, takes on the sky
     c += uLightCol * spec * 0.7 + uLightCol * rim * facing * 0.35;    // bevelled outer edge catches light
     c = mix(c, vec3(0.035, 0.03, 0.028) + uLightCol * spec * 0.12, clamp(lead + rim * 0.5, 0.0, 1.0));   // lead came
