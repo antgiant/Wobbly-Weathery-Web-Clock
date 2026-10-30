@@ -26,8 +26,8 @@ export const PRESETS = {
   partly:   { ...CLEAR, cover: [0.38, 0.18, 0.25], label: 'Partly cloudy' },
   cloudy:   { ...CLEAR, cover: [0.7, 0.5, 0.4], cloudDark: 0.15, visKm: 25, label: 'Mostly cloudy' },
   overcast: { ...CLEAR, cover: [1, 0.8, 0.5], cloudDark: 0.45, visKm: 15, label: 'Overcast' },
-  rain:     { ...CLEAR, cover: [1, 0.9, 0.6], cloudDark: 0.8, precip: 0.55, visKm: 6, label: 'Rain' },
-  storm:    { ...CLEAR, cover: [1, 1, 0.7], cloudDark: 1, precip: 0.95, visKm: 4, wind: [0.01, 0.004], label: 'Thunderstorm' },
+  rain:     { ...CLEAR, cover: [1, 0.9, 0.6], cloudDark: 0.8, precip: 0.55, visKm: 6, wind: [0.008, 0.003], label: 'Rain' },
+  storm:    { ...CLEAR, cover: [1, 1, 0.7], cloudDark: 1, precip: 0.95, visKm: 4, wind: [0.02, 0.008], label: 'Thunderstorm' },
   snow:     { ...CLEAR, cover: [0.95, 0.8, 0.5], cloudDark: 0.3, precip: 0.5, snowfall: 1, visKm: 4, snowCover: 1, label: 'Snow' },
   fog:      { ...CLEAR, cover: [0, 0, 0], fog: 0.85, visKm: 0.6, label: 'Fog' },
   haze:     { ...CLEAR, cover: [0.1, 0.05, 0.1], aod: 0.9, visKm: 8, label: 'Smoky haze' },
@@ -92,4 +92,31 @@ export async function fetchLiveWeather(lat, lon, signal) {
   } catch (_) { /* aerosol data is optional */ }
 
   return { weather: mapOpenMeteo(fj.current || {}, air), elevation: Number.isFinite(fj.elevation) ? fj.elevation : null };
+}
+
+/**
+ * Sea state from Open-Meteo's marine forecast (open water only; inland / unsupported points return
+ * nothing). Directions come back as where the waves arrive FROM; the renderer wants where they travel TO.
+ * @returns {Promise<null|{windHs:number,windTp:number,windDir:number[],swellHs:number,swellTp:number,swellDir:number[],label:string}>}
+ */
+export async function fetchMarine(lat, lon, signal) {
+  const vars = ['wave_height', 'wave_direction', 'wave_period', 'wind_wave_height', 'wind_wave_direction', 'wind_wave_period',
+    'swell_wave_height', 'swell_wave_direction', 'swell_wave_period'].join(',');
+  const r = await fetch(`https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}&current=${vars}&timezone=auto`, { signal });
+  if (!r.ok) throw new Error('marine HTTP ' + r.status);
+  return mapMarine((await r.json()).current);
+}
+
+export function mapMarine(c) {
+  const ok = (v) => Number.isFinite(v);
+  if (!c || !ok(c.wave_height)) return null;
+  const to = (fromDeg) => { const a = (((ok(fromDeg) ? fromDeg : 0) + 180) * Math.PI) / 180; return [Math.sin(a), Math.cos(a)]; };
+  const windHs = ok(c.wind_wave_height) ? c.wind_wave_height : c.wave_height;
+  const swellHs = ok(c.swell_wave_height) ? c.swell_wave_height : 0;
+  const per = (p, hs) => (ok(p) && p > 1 ? p : 3.9 * Math.sqrt(Math.max(hs, 0.05)) + 1);
+  return {
+    windHs, windTp: per(c.wind_wave_period, windHs), windDir: to(ok(c.wind_wave_direction) ? c.wind_wave_direction : c.wave_direction),
+    swellHs, swellTp: per(c.swell_wave_period, swellHs) < 4 ? 9 : per(c.swell_wave_period, swellHs), swellDir: to(ok(c.swell_wave_direction) ? c.swell_wave_direction : c.wave_direction),
+    label: `${c.wave_height.toFixed(1)} m waves` + (ok(c.wave_period) ? ` every ${Math.round(c.wave_period)} s` : ''),
+  };
 }

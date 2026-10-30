@@ -59,6 +59,7 @@ export class SkyEngine {
       fps: 15, reducedMotion: false,
       landscape: { type: 'hills', skyline: null, albedo: [0.12, 0.17, 0.07], haze: [0.35, 0.3, 0.55], ocean: false, seed: 1 },
       snowCover: 0,
+      sea: null,                    // marine forecast {windHs, windTp, windDir, swellHs, swellTp, swellDir} or null: derive from the wind
       ground: null,                 // { g1, g2 } ground colours from the biome / season; null = landscape default
       plants: { on: false, count: 0, palette: null },
     };
@@ -536,6 +537,22 @@ export class SkyEngine {
     this._3f('uGround', ground);
     this._3f('uGround2', ground2);
     this._1f('uWet', Math.min(1, w.precip * (1 - w.snowfall)));
+    // sea state: real marine data when we have it, otherwise grown from the wind (fully developed sea, damped for fetch)
+    if (land.ocean) {
+      const m = s.sea, U = Math.hypot(w.wind[0], w.wind[1]) * 500, wl = Math.hypot(w.wind[0], w.wind[1]) || 1;
+      const wd = [w.wind[0] / wl, w.wind[1] / wl];
+      const hsW = m ? m.windHs : Math.min(0.0246 * U * U * 0.7, 7);
+      const tW = m ? m.windTp : 3.9 * Math.sqrt(Math.max(hsW, 0.05)) + 1;
+      const dW = m ? m.windDir : wd, dS = m ? m.swellDir : wd;
+      const hsS = m ? m.swellHs : 0, tS = m ? m.swellTp : 9;
+      const foamK = Math.min(1, Math.max(0, (Math.max(U, hsW * 4.2) - 5.5) / 5.5));
+      this._4f('uWaveA', hsW, tW, dW[0], dW[1]);
+      this._4f('uWaveB', hsS, tS, dS[0], dS[1]);
+      this._4f('uSea', U, foamK * foamK * (3 - 2 * foamK), wd[0], wd[1]);
+      this._1f('uSwellH', Math.min(0.5 * (hsW + hsS) / 110, 0.010));
+    } else {
+      this._4f('uWaveA', 0, 5, 1, 0); this._4f('uWaveB', 0, 9, 1, 0); this._4f('uSea', 0, 0, 1, 0); this._1f('uSwellH', 0);
+    }
     this._1f('uLandType', land.ocean ? 1 : (land.type === 'city' ? 2 : 0));
     this._3f('uHaze', land.haze.map(v => v * (0.6 + 0.4 * Math.min(1, 25 / w.visKm))));
     this._1f('uEyeH', eyeKm);

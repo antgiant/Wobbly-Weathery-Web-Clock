@@ -4,7 +4,7 @@ import { conf } from '../config.js';
 import { setSim, getSim, now } from '../simtime.js';
 import { SkyEngine } from './engine.js';
 import { Controls } from './controls.js';
-import { PRESETS, fetchLiveWeather, CLEAR } from './weather.js';
+import { PRESETS, fetchLiveWeather, fetchMarine, mapMarine, CLEAR } from './weather.js';
 import { fetchDem, demSkyline, LANDSCAPES } from './landscape.js';
 import Virgo from '../virgo/virgo.js';
 import { initGlass } from './glass.js';
@@ -17,12 +17,12 @@ const statusEls = {
   weather: document.getElementById('weatherStatus'),
   sky: document.getElementById('skyStatus'),
 };
-const setStatus = (k, t) => { if (statusEls[k]) { if (k === 'terrain' && !t.includes('Land cover')) statusEls[k].dataset.base = t; statusEls[k].textContent = t; } };
+const setStatus = (k, t) => { if (statusEls[k]) { if (k === 'terrain' && !t.includes('Land cover') && !t.includes('Sea:')) statusEls[k].dataset.base = t; statusEls[k].textContent = t; } };
 
 let engine = null;
 let controls = null;
 let glass = null;
-const state = { liveWeather: null, elevation: null, dem: null, lpBortle: 3, biome: null };
+const state = { seaText: '', liveWeather: null, elevation: null, dem: null, lpBortle: 3, biome: null };
 const ov = {};                      // deep-link overrides (never written to localStorage)
 const num = (v, d) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : d);
 // unknown time zone (e.g. plain "UTC"): guess a longitude from the UTC offset, 15 degrees per hour
@@ -163,7 +163,36 @@ function applyLandscapeCore() {
   engine.setLandscapeType(type, seedFromLocation());
   setStatus('terrain', LANDSCAPES[type]?.label || type);
 }
-function applyLandscape() { applyLandscapeCore(); applyPlants(); }
+function applyLandscape() { applyLandscapeCore(); applyPlants(); loadSea(); }
+
+// Sea state for open water: real wave height / period / direction from the marine forecast, cached
+// for 30 minutes; without it (offline, inland lake, API refusing) the waves grow from the wind speed.
+let seaBusy = false;
+async function loadSea() {
+  if (!engine) return;
+  if (!engine.s.landscape.ocean) { state.seaText = ''; if (engine.s.sea) engine.set({ sea: null }); return; }
+  if (ov.waves) {                                              // ?waves=2.5x9 : height m x period s
+    const [h, t] = ov.waves.split('x').map(parseFloat);
+    const d = [Math.sin(1.2), Math.cos(1.2)];
+    engine.set({ sea: { windHs: h || 1, windTp: t || 7, windDir: d, swellHs: 0, swellTp: 9, swellDir: d } });
+    state.seaText = `Sea: ${h} m waves (forced)`; setStatus('terrain', statusText()); return;
+  }
+  if ((ov.weather ?? conf.weatherMode) !== 'live') { state.seaText = 'Sea: waves follow the chosen weather'; engine.set({ sea: null }); setStatus('terrain', statusText()); return; }
+  const lat = num(ov.lat ?? conf.location_latitude, DEFAULT_LAT), lon = num(ov.lon ?? conf.location_longitude, defaultLon());
+  const key = `marine:${lat.toFixed(1)},${lon.toFixed(1)}`;
+  let m = null;
+  const cached = lsGet(key);
+  if (cached && Date.now() - cached.t < 30 * 60000) m = cached.sea;
+  else if (!seaBusy) {
+    seaBusy = true;
+    try { m = await fetchMarine(lat, lon); lsSet(key, { t: Date.now(), sea: m }); }
+    catch (e) { console.info('[sky] marine fetch failed:', e.message); }
+    seaBusy = false;
+  }
+  state.seaText = m ? `Sea: ${m.label} (live)` : 'Sea: waves grown from the wind (no marine data here)';
+  engine.set({ sea: m });
+  setStatus('terrain', statusText());
+}
 const seedFromLocation = () => Math.abs(Math.round(num(conf.location_latitude, 0) * 10 + num(conf.location_longitude, 0) * 7)) + 1;
 
 // ------------------------------------------------------------ vegetation ----
@@ -205,7 +234,7 @@ function statusText() {
   const b = currentBiome(), t = engine?.s.landscape.type;
   const base = (document.getElementById('terrainStatus')?.dataset.base) || '';
   const bio = state.biome ? `Land cover: ${b.kind}${b.conifer ? ' (conifer)' : b.tropical ? ' (tropical)' : ''}` : 'Land cover: estimated from latitude';
-  return [base, t === 'ocean' || t === 'city' ? '' : bio].filter(Boolean).join(' · ');
+  return [base, t === 'ocean' || t === 'city' ? (t === 'ocean' ? state.seaText : '') : bio].filter(Boolean).join(' · ');
 }
 
 function applyQuality() {
@@ -494,6 +523,7 @@ function init() {
   if (q.has('pitch')) ov.pitch = num(q.get('pitch'), 12);
   if (q.has('lp')) ov.lp = q.get('lp');
   if (q.has('biome')) ov.biome = q.get('biome');
+  if (q.has('waves')) ov.waves = q.get('waves');
   if (q.has('lat') && q.has('lon')) { ov.lat = num(q.get('lat'), 40); ov.lon = num(q.get('lon'), -74); }
   if (q.has('t')) {
     const base = new Date(q.get('t'));

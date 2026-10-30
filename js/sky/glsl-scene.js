@@ -405,6 +405,10 @@ uniform float uDpr;
 uniform vec3  uGround;        // ground albedo
 uniform vec3  uGround2;       // second ground colour (patches of dry / bare / different cover)
 uniform float uWet;           // 0..1 wet ground (rain)
+uniform vec4  uWaveA;         // wind sea: significant height m, period s, travel direction (x east, z north)
+uniform vec4  uWaveB;         // swell, same layout
+uniform vec4  uSea;           // wind speed m/s, foam amount 0..1, wind direction x, z
+uniform float uSwellH;        // how far the swell lifts the horizon, rad
 uniform float uLandType;      // 0 land, 1 ocean
 uniform vec3  uHaze;          // atmospheric perspective for near/mid/far ridges
 uniform float uEyeH;          // eye height above local ground, km
@@ -539,14 +543,41 @@ vec3 terrainLit(vec3 albedo, vec3 n, vec3 sunI, vec3 moonI, vec3 ambLux) {
   return albedo * E / PI;
 }
 
+// Directional wave train (deep-water dispersion, wavelength = 1.56 T^2). Five components from the peak
+// wavelength down to ~1/8 of it, spread over about +-45 degrees, so there are long faces and shorter
+// chop riding on them. Returns surface slope and height. Components shorter than ~3 pixels fade out,
+// which keeps the far sea from shimmering. The slope is exaggerated a little (visual gain): real
+// swell is gentle, but at a grazing eye height small tilts swing the reflected sky a long way.
+void waveTrain(vec4 W, vec2 p, float fp, out vec2 slope, out float hgt) {
+  slope = vec2(0.0);
+  hgt = 0.0;
+  if (W.x < 0.02) return;
+  float lam0 = 1.56 * W.y * W.y;
+  for (int i = 0; i < 5; i++) {
+    float fi = float(i);
+    float f = 1.0 / (1.0 + 0.55 * fi * fi * 0.5 + 0.6 * fi);          // 1, 0.62, 0.39, 0.25, 0.17
+    float ang = (hash12(vec2(fi, 4.0)) - 0.5) * (0.6 + 0.35 * fi);
+    vec2 dv = vec2(W.z * cos(ang) - W.w * sin(ang), W.z * sin(ang) + W.w * cos(ang));
+    float lam = lam0 * f;
+    float k = 2.0 * PI / lam;
+    float om = sqrt(9.81 * k);
+    float fade = clamp(lam / (fp * 3.0) - 1.0, 0.0, 1.0);
+    float a = W.x * 0.20 * pow(f, 1.15) * fade;
+    float ph = k * dot(dv, p) - om * uTime + fi * 2.1;
+    hgt += a * sin(ph);
+    slope += dv * (a * k * cos(ph) * 2.4);
+  }
+}
+
 // per-pixel values shared by the terrain and sky shaders (assigned in main)
+float swellUp;
 float La, expo, pixM, az, u;
 vec3 sk, hdir, hazeL, zenL, ambLux, sunIg, moonIg;
 
 // Terrain, water and city layers; layer 0 is the nearest.
 vec3 shadeTerrain(int layer, vec3 d) {
   vec3 L;
-  bool plane = layer == 0 && d.y < -uDip + 0.0002;
+  bool plane = layer == 0 && d.y < -uDip + 0.0002 + swellUp;
   if (plane && abs(uLandType - 1.0) < 0.1) {
     // ocean: Fresnel mix of the reflected sky and a dark body, wind-roughened glitter
     float tdist = uEyeH / max(-d.y, 1e-4);              // km to the water
@@ -556,20 +587,44 @@ vec3 shadeTerrain(int layer, vec3 d) {
     vec2 w2 = textureLod(uNoise, wp / 17.0 - vec2(uTime * 0.025, 0.0), lodFor(fp, 17.0)).rg - 0.5;
     vec2 w3 = textureLod(uNoise, wp / 4.3 + vec2(0.0, uTime * 0.05), lodFor(fp, 4.3)).rg - 0.5;
     vec2 w4 = textureLod(uNoise, wp / 1.3 - vec2(uTime * 0.09, uTime * 0.03), lodFor(fp, 1.3)).rg - 0.5;
-    vec2 slope = (w1 * 0.25 + w2 * 0.5 + w3 * 0.8 + w4 * 0.7) * 0.45;   // fine ripples dominate; distance averages flat via the mips
+    // small ripples roughen with the wind and with rain; the real waves come from the wave trains
+    float ripK = clamp(0.25 + uSea.x / 10.0, 0.25, 1.4) * (1.0 + 1.2 * uWet);
+    vec2 slope = (w1 * 0.25 + w2 * 0.5 + w3 * 0.8 + w4 * 0.7) * 0.45 * ripK;
+    vec2 sA, sB; float hA, hB;
+    waveTrain(uWaveA, wp, fp, sA, hA);
+    waveTrain(uWaveB, wp, fp, sB, hB);
+    slope += sA + sB;
     vec3 nrm = normalize(vec3(slope.x, 1.0, slope.y));
     vec3 rd = reflect(d, nrm);
     rd.y = abs(rd.y);
     float F = 0.02 + 0.98 * pow(1.0 - clamp(dot(nrm, -d), 0.0, 1.0), 5.0);
     vec3 refl = skyLum(rd);
-    // sun glitter: Gaussian lobe on the half vector (Cox-Munk style), display-referred like the disc
+    // sun glitter: Gaussian lobe on the half vector (Cox-Munk style); a rougher sea widens the path
     vec3 hh = normalize(uSunDir - d);
-    float sig2 = 0.020;
+    float sig2 = 0.004 + 0.0012 * uSea.x;
     float glint = exp(-(1.0 - clamp(dot(nrm, hh), 0.0, 1.0)) / sig2);
     vec3 Ts = transmittance(BOT + uCamH, clamp(sin(uSunA.z), -0.2, 1.0));
     refl += Ts * (uSunDisc / expo) * glint * 0.9 * step(0.0, uSunA.z + 0.02);
     vec3 body = vec3(0.010, 0.040, 0.055) * (sunIg * max(uSunDir.y, 0.0) + moonIg * max(uMoonDir.y, 0.0) + ambLux) / PI;
     L = mix(body, refl, F);
+    // whitecaps on the steepest crests once the wind is up, with streaks blown along the wind
+    float hgtN = (hA + hB) / max(0.45 * (uWaveA.x + uWaveB.x) + 0.05, 0.05);
+    vec2 wdir = uSea.zw;
+    float streak = textureLod(uNoise, vec2(dot(wp, wdir) / 55.0, dot(wp, vec2(-wdir.y, wdir.x)) / 7.0), lodFor(fp, 7.0)).g;
+    float fnoise = textureLod(uNoise, wp / 3.1 + 0.37, lodFor(fp, 3.1)).b;
+    float steep = length(sA + sB) * 7.0;                       // waves break where they are steep as well as high
+    float foam = smoothstep(0.62, 1.05, 0.55 * hgtN + steep + (fnoise - 0.5) * 0.8 + (streak - 0.5) * 0.7) * uSea.y;
+    foam *= mix(1.0, 0.55, smoothstep(2.0, 40.0, fp));        // far foam averages into a pale sheen instead of aliasing
+    vec3 foamL = vec3(0.82, 0.86, 0.88) * (sunIg * max(uSunDir.y, 0.0) + moonIg * max(uMoonDir.y, 0.0) + ambLux) / PI;
+    L = mix(L, foamL, foam);
+    if (uWet > 0.05 && tdist < 0.05) {                          // raindrop rings
+      vec2 rp = wp * 0.8;
+      vec2 cell = floor(rp);
+      vec2 fc = fract(rp) - 0.5 - (vec2(hash12(cell + 7.3), hash12(cell + 3.1)) - 0.5) * 0.5;
+      float tt = fract(uTime * 0.9 + hash12(cell));
+      float ring = exp(-pow((length(fc) - tt * 0.45) / 0.035, 2.0)) * (1.0 - tt);
+      L += vec3(ring * 0.30 * uWet * (1.0 - smoothstep(0.02, 0.05, tdist)) / expo);
+    }
     L = mix(L, hazeL, smoothstep(0.004, 0.0, -d.y - uDip) * 0.5);
   } else {
     float ridgeTop = layer == 0 ? sk.r : (layer == 1 ? sk.g : sk.b);
@@ -702,6 +757,12 @@ void main() {
   az = atan(d.x, d.z);
   u = az / (2.0 * PI) + 0.5;
   sk = texture(uSkyline, vec2(u, 0.5)).rgb;             // near, mid, far ridge elevations (cumulative)
+  // far swell crests rise and fall along the sea horizon
+  swellUp = 0.0;
+  if (abs(uLandType - 1.0) < 0.1) {
+    swellUp = uSwellH * (0.55 + 0.45 * sin(az * 47.0 - uTime * 0.9) * (0.6 + 0.4 * sin(az * 13.0 + uTime * 0.5)));
+    sk += vec3(swellUp);
+  }
 
   int layer = -1;
   if (d.y < sk.r) layer = 0;
