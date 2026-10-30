@@ -330,3 +330,9 @@ body[data-clockstyle="stained"] #clock {
 #wakeBanner[hidden] {
   display: none;
 }
+
+/* in the interactive view modes the page must never pan, zoom or pull-to-refresh under the finger */
+body[data-view="drag"],
+body[data-view="look"] {
+  touch-action: none;
+}

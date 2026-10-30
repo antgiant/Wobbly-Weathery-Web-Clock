@@ -482,8 +482,11 @@ function init() {
   $('viewPitchAuto').checked = !!conf.viewPitchAuto;
   $('viewPitchAuto').addEventListener('change', (e) => { conf.viewPitchAuto = e.target.checked; applyView(); });
   // the clock's size follows the window, so keep the horizon pinned to it
-  window.addEventListener('resize', applyView);
-  window.addEventListener('clocklayout', applyView);
+  // Only the fixed clock view is re-aligned automatically. In drag / VR modes the view belongs to the user:
+  // a phone's toolbar collapsing fires resize events mid-drag and must not snap the view back.
+  const realign = () => { if (controls.mode === 'fixed') applyView(); };
+  window.addEventListener('resize', realign);
+  window.addEventListener('clocklayout', realign);
   $('showLabels').checked = !!conf.showLabels;
   $('showLabels').addEventListener('change', (e) => { conf.showLabels = e.target.checked; updateHud(); });
 
