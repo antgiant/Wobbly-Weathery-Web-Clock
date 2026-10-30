@@ -201,12 +201,19 @@
           </select><br>
           <label for="viewHeading">Facing <output id="viewHeadingOut"></output>° (0 north, 90 east, 180 south)</label>
           <input type="range" id="viewHeading" min="0" max="359" step="1"><br>
+          <label><input type="checkbox" id="viewPitchAuto"> Put the horizon at the bottom of the clock (so the ground always shows)</label><br>
           <label for="viewPitch">Tilt up <output id="viewPitchOut"></output>°</label>
           <input type="range" id="viewPitch" min="-10" max="80" step="1"><br>
           <label for="viewFov">Field of view <output id="viewFovOut"></output>°</label>
           <input type="range" id="viewFov" min="30" max="110" step="1"><br>
           <label><input type="checkbox" id="showLabels"> Label the sun, moon and planets</label>
           <p class="hint">VR mode needs a phone or tablet with motion sensors. Drag to fine-tune the compass direction, pinch to zoom.</p>
+        </fieldset>
+
+        <fieldset>
+          <legend>Display</legend>
+          <label><input type="checkbox" id="keepAwake"> Keep the screen on</label>
+          <p class="hint" id="wakeStatus">Stops the phone dimming and locking while this page is open, handy as a bedside or travel clock. It lasts only while the page is visible, and it uses battery, so plug in if you can.</p>
         </fieldset>
 
         <fieldset>
