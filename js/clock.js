@@ -8,6 +8,9 @@ function ci(c, i) {
 }
 
 var clockChanged = false;
+// Hiding / showing the leading hour digit changes how many digits share the row, so the widths
+// must be recomputed (this used to be done by a MutationObserver that also fired on every path write).
+var layoutStale = false;
 function setCurve(id, val) {
   var e = document.getElementById(id);
   // skip identical writes: most ticks nothing moves, and the glass renderer redraws on change
@@ -55,10 +58,12 @@ function getTime(date) {
   if (!conf.twentyFourHourClock && parseInt(h) < 10) {
     if (el && !el.classList.contains("hidden")) {
       el.classList.add("hidden");
+      layoutStale = true;
     }
   } else {
     if (el && el.classList.contains("hidden")) {
       el.classList.remove("hidden");
+      layoutStale = true;
     }
   }
   
@@ -89,6 +94,10 @@ function clock() {
       }
     }
   });
+  if (layoutStale) {
+    layoutStale = false;
+    updateSvgWidths();
+  }
   if (clockChanged) {
     clockChanged = false;
     window.dispatchEvent(new Event('clockchange'));

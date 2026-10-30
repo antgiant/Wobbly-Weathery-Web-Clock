@@ -83,9 +83,41 @@ function applyLocation() {
   engine.set({ lat, lon, elevM, bortle: bortleFromSettings() });
 }
 
+// Bottom edge of the clock digits, in canvas CSS pixels (digit glyphs end at the bottom of their viewBox).
+function clockBottom() {
+  const cr = canvas.getBoundingClientRect();
+  let bottom = -Infinity;
+  document.querySelectorAll('#clock svg').forEach((el) => {
+    if (getComputedStyle(el).display === 'none') return;
+    const r = el.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) return;
+    const k = Math.min(r.width / 100, r.height / 116);
+    bottom = Math.max(bottom, r.top + (r.height - 116 * k) / 2 + 116 * k - cr.top);
+  });
+  return Number.isFinite(bottom) ? { bottom, h: cr.height, w: cr.width } : null;
+}
+
+// Tilt the camera so the horizon lands exactly on the bottom of the digits. In a rectilinear view the
+// horizon is a straight line at ndc_y = -tan(pitch) / tan(fovY / 2), so solve for the pitch.
+function pitchForHorizonAtClockBottom(fovDeg) {
+  const m = clockBottom();
+  if (!m || !m.h) return null;
+  const ndc = 1 - 2 * m.bottom / m.h;
+  const t = Math.tan(fovDeg * Math.PI / 360), aspect = m.w / m.h;
+  const ty = aspect >= 1 ? t / aspect : t;
+  const p = Math.atan(-ndc * ty) * 180 / Math.PI;
+  return Math.max(-10, Math.min(80, p));
+}
+
 function applyView() {
   if (!controls) return;
-  controls.setView({ heading: num(ov.az ?? conf.viewHeading, 180), pitch: num(ov.pitch ?? conf.viewPitch, 12), fov: num(conf.viewFov, 80) });
+  const fov = num(conf.viewFov, 80);
+  let pitch = num(ov.pitch ?? conf.viewPitch, 12);
+  const auto = ov.pitch == null && conf.viewPitchAuto && controls.mode === 'fixed';
+  if (auto) pitch = pitchForHorizonAtClockBottom(fov) ?? pitch;
+  const slider = document.getElementById('viewPitch');
+  if (slider) { slider.disabled = !!(ov.pitch == null && conf.viewPitchAuto); if (auto) { slider.value = Math.round(pitch); const o = document.getElementById('viewPitchOut'); if (o) o.textContent = Math.round(pitch); } }
+  controls.setView({ heading: num(ov.az ?? conf.viewHeading, 180), pitch, fov });
 }
 
 function applyWeather() {
@@ -296,6 +328,7 @@ export async function setViewMode(mode) {
   conf.viewMode = ok ? mode : conf.viewMode === 'look' ? 'fixed' : conf.viewMode;
   document.body.dataset.view = controls.mode;
   document.getElementById('viewMode').value = controls.mode;
+  applyView();
   document.getElementById('vrButton')?.setAttribute('aria-pressed', String(controls.mode === 'look'));
   return ok;
 }
@@ -351,6 +384,11 @@ function init() {
   bindRange('viewHeading', 'viewHeading', applyView, 'viewHeadingOut');
   bindRange('viewPitch', 'viewPitch', applyView, 'viewPitchOut');
   bindRange('viewFov', 'viewFov', applyView, 'viewFovOut');
+  $('viewPitchAuto').checked = !!conf.viewPitchAuto;
+  $('viewPitchAuto').addEventListener('change', (e) => { conf.viewPitchAuto = e.target.checked; applyView(); });
+  // the clock's size follows the window, so keep the horizon pinned to it
+  window.addEventListener('resize', applyView);
+  window.addEventListener('clocklayout', applyView);
   $('showLabels').checked = !!conf.showLabels;
   $('showLabels').addEventListener('change', (e) => { conf.showLabels = e.target.checked; updateHud(); });
 

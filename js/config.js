@@ -82,8 +82,10 @@ export var conf = createPersistentConfig("conf", {
   viewMode: 'fixed',          // fixed | drag | look (gyro "VR" mode)
   viewHeading: 180,
   viewPitch: 12,
+  viewPitchAuto: true,        // put the horizon at the bottom of the clock digits
   viewFov: 80,
   showLabels: false,
+  keepAwake: false,           // Screen Wake Lock
   // time travel (never persisted as "on" across reloads)
   simSpeed: 1,
   // clock
