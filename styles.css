@@ -336,3 +336,8 @@ body[data-view="drag"],
 body[data-view="look"] {
   touch-action: none;
 }
+
+/* keep-screen-on video: always behind the sky canvas; only if there is no canvas does it fade out of sight */
+body.no-webgl video {
+  opacity: 0.02;
+}
