@@ -17,6 +17,7 @@ import {
 import {
   FRAG_NOISE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, FRAG_BLIT, FRAG_SCENE,
 } from './glsl-scene.js';
+import { VERT_PLANTS, FRAG_PLANTS } from './glsl-plants.js';
 import { computeSky, DEG } from './astro.js';
 import { proceduralSkyline, horizonDip, SKYLINE_BINS, LANDSCAPES } from './landscape.js';
 import { CLEAR } from './weather.js';
@@ -58,6 +59,8 @@ export class SkyEngine {
       fps: 15, reducedMotion: false,
       landscape: { type: 'hills', skyline: null, albedo: [0.12, 0.17, 0.07], haze: [0.35, 0.3, 0.55], ocean: false, seed: 1 },
       snowCover: 0,
+      ground: null,                 // { g1, g2 } ground colours from the biome / season; null = landscape default
+      plants: { on: false, count: 0, palette: null },
     };
     this.dirty = true;
     this.lutDirty = true;
@@ -138,6 +141,7 @@ export class SkyEngine {
     this.pScene = this._program(VERT_FULLSCREEN, FRAG_SCENE);
     this.pBlit = this._program(VERT_FULLSCREEN, FRAG_BLIT);
     this.pStars = this._program(VERT_STARS, FRAG_STARS, { aStar: 0, aBV: 1 });
+    this.pPlants = this._program(VERT_PLANTS, FRAG_PLANTS, { aInst: 0, aSeed: 1 });
 
     const F = gl.RGBA16F, RGBA = gl.RGBA, HF = gl.HALF_FLOAT;
     this.tTrans = this._target(TRANS_W, TRANS_H, F, RGBA, HF);
@@ -186,6 +190,14 @@ export class SkyEngine {
     this.planetCount = 0;
     this.vaoStars = gl.createVertexArray();
     this.vaoPlanets = gl.createVertexArray();
+    // plants: one instance = [x z height type | seed variant], advanced per instance
+    this.plantBuf = gl.createBuffer();
+    this.vaoPlants = gl.createVertexArray();
+    gl.bindVertexArray(this.vaoPlants);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.plantBuf);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 24, 0); gl.vertexAttribDivisor(0, 1);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 24, 16); gl.vertexAttribDivisor(1, 1);
+    gl.bindVertexArray(null);
     for (const [vao, buf] of [[this.vaoStars, this.starBuf], [this.vaoPlanets, this.planetBuf]]) {
       gl.bindVertexArray(vao);
       gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -255,7 +267,7 @@ export class SkyEngine {
     const s = this.s;
     for (const [k, v] of Object.entries(patch)) {
       if (k === 'sim') setSim(v);
-      else if (['view', 'landscape'].includes(k)) s[k] = { ...s[k], ...v };
+      else if (['view', 'landscape', 'plants'].includes(k)) s[k] = { ...s[k], ...v };
       else s[k] = v;
     }
     if ('lat' in patch || 'lon' in patch || 'elevM' in patch || 'sim' in patch) { this.lastAstro = -1e9; this.lastPlanets = -1e9; this.exposure.adaptSnap = true; }
@@ -393,7 +405,8 @@ export class SkyEngine {
     const water = s.landscape.ocean;
     const rain = w.precip > 0.01;
     const night = this.sky && this.sky.sun.alt < -6 && s.twinkle;
-    return clouds || water || rain || night;
+    const wind = s.plants.on && s.plants.count > 0 && s.cloudMotion > 0;      // plants sway
+    return clouds || water || rain || night || wind;
   }
 
   interval() {
@@ -457,7 +470,8 @@ export class SkyEngine {
     const cam = this._camera(rw, rh);
     const camH = this.camH ?? Math.max((s.elevM + s.eyeM) / 1000, 0.002);
     const land = s.landscape;
-    const ground = land.albedo.map((c, i) => c + (0.82 - c) * w.snowCover * (i === 2 ? 1 : 1));
+    const ground = s.ground ? s.ground.g1 : land.albedo.map((c) => c + (0.82 - c) * w.snowCover);
+    const ground2 = s.ground ? s.ground.g2 : ground;
     const dtSec = Math.min(2, Math.max(0.001, (perfNow - (this._lastAdapt || perfNow)) / 1000));
     this._lastAdapt = perfNow;
     const eyeKm = s.eyeM / 1000;
@@ -520,6 +534,8 @@ export class SkyEngine {
     this._1f('uSnow', w.snowfall);
     this._1f('uDpr', T.h / Math.max(1, this.canvas.clientHeight));
     this._3f('uGround', ground);
+    this._3f('uGround2', ground2);
+    this._1f('uWet', Math.min(1, w.precip * (1 - w.snowfall)));
     this._1f('uLandType', land.ocean ? 1 : (land.type === 'city' ? 2 : 0));
     this._3f('uHaze', land.haze.map(v => v * (0.6 + 0.4 * Math.min(1, 25 / w.visKm))));
     this._1f('uEyeH', eyeKm);
@@ -527,6 +543,9 @@ export class SkyEngine {
     this._1f('uAdaptScale', adaptScale);
     this._1f('uFrame', this.frameNo++ % 1024);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    // ---- plants: alpha-blended sprites that also knock the stars' visibility mask down ----
+    this._drawPlants(sky, sunAz, sunAlt, sunLux, moonAz, moonAlt, moonLux, natural, lp, camH, cam, perfNow, w, eyeKm);
 
     // ---- stars + planets: additive, weighted by the scene's sky-visibility alpha ----
     this._drawStars(sky, sunAz, sunAlt, sunLux, moonAz, moonAlt, moonLux, natural, lp, camH, cam, T, perfNow, w);
@@ -605,6 +624,48 @@ export class SkyEngine {
     this._3f('uNightLum', natural);
     this._3f('uLPLum', lp);
     this._1f('uCamH', camH);
+  }
+
+  /** @param {Float32Array} data 6 floats per plant; palette from biome.paletteFor */
+  setPlants({ data, count, palette, on }) {
+    const gl = this.gl, p = this.s.plants;
+    if (data) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.plantBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+      p.count = count;
+    }
+    if (palette) p.palette = palette;
+    if (on !== undefined) p.on = on;
+    this.dirty = true;
+  }
+
+  _drawPlants(sky, sunAz, sunAlt, sunLux, moonAz, moonAlt, moonLux, natural, lp, camH, cam, perfNow, w, eyeKm) {
+    const gl = this.gl, s = this.s, p = s.plants;
+    if (!p.on || !p.count || !p.palette || s.landscape.ocean) return;
+    gl.enable(gl.BLEND);
+    // colour: normal alpha blend; alpha channel: dst *= (1 - src) so stars are hidden behind plants
+    gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
+    this._use(this.pPlants);
+    this._1f('uMie', s.mie);
+    this._bindSkyUniforms(sky, sunAz, sunAlt, sunLux, moonAz, moonAlt, moonLux, natural, lp, camH);
+    this._1i('uAdapt', 8);
+    this._m3('uCam', cam.mat);
+    this._2f('uTan', cam.tan[0], cam.tan[1]);
+    this._3f('uSunDir', sky.sun.dir);
+    this._1f('uEyeM', s.eyeM);
+    this._1f('uTime', (perfNow / 1000) % 100000 * (s.cloudMotion === 0 ? 0 : s.cloudMotion));
+    this._2f('uWind', w.wind[0], w.wind[1]);
+    this._1f('uKey', 0.36);
+    this._1f('uBoost', Math.max(0.2, s.nightBoost));
+    this._1f('uWet', Math.min(1, w.precip * (1 - w.snowfall)));
+    this._1f('uFogDens', w.fog * 0.025 + 1 / (Math.max(w.visKm, 0.3) * 1000));
+    this._3f('uLeaf', p.palette.leaf); this._3f('uConifer', p.palette.conifer); this._3f('uGrass', p.palette.grass);
+    this._3f('uDry', p.palette.dry); this._3f('uRock', p.palette.rock);
+    this._1f('uSnowCover', Math.max(p.palette.snow || 0, w.snowCover));
+    gl.bindVertexArray(this.vaoPlants);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, p.count);
+    gl.bindVertexArray(null);
+    gl.disable(gl.BLEND);
   }
 
   _drawStars(sky, sunAz, sunAlt, sunLux, moonAz, moonAlt, moonLux, natural, lp, camH, cam, T, perfNow, w) {

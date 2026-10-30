@@ -8,6 +8,8 @@ import { PRESETS, fetchLiveWeather, CLEAR } from './weather.js';
 import { fetchDem, demSkyline, LANDSCAPES } from './landscape.js';
 import Virgo from '../virgo/virgo.js';
 import { initGlass } from './glass.js';
+import { fetchBiome, fallbackBiome, classify, seasonOf, paletteFor } from './biome.js';
+import { generatePlants } from './plants.js';
 
 const canvas = document.getElementById('sky');
 const statusEls = {
@@ -15,12 +17,12 @@ const statusEls = {
   weather: document.getElementById('weatherStatus'),
   sky: document.getElementById('skyStatus'),
 };
-const setStatus = (k, t) => { if (statusEls[k]) statusEls[k].textContent = t; };
+const setStatus = (k, t) => { if (statusEls[k]) { if (k === 'terrain' && !t.includes('Land cover')) statusEls[k].dataset.base = t; statusEls[k].textContent = t; } };
 
 let engine = null;
 let controls = null;
 let glass = null;
-const state = { liveWeather: null, elevation: null, dem: null, lpBortle: 3 };
+const state = { liveWeather: null, elevation: null, dem: null, lpBortle: 3, biome: null };
 const ov = {};                      // deep-link overrides (never written to localStorage)
 const num = (v, d) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : d);
 // unknown time zone (e.g. plain "UTC"): guess a longitude from the UTC offset, 15 degrees per hour
@@ -86,15 +88,16 @@ function applyLocation() {
 // Bottom edge of the clock digits, in canvas CSS pixels (digit glyphs end at the bottom of their viewBox).
 function clockBottom() {
   const cr = canvas.getBoundingClientRect();
-  let bottom = -Infinity;
+  let bottom = -Infinity, digitH = 0;
   document.querySelectorAll('#clock svg').forEach((el) => {
     if (getComputedStyle(el).display === 'none') return;
     const r = el.getBoundingClientRect();
     if (r.width < 1 || r.height < 1) return;
     const k = Math.min(r.width / 100, r.height / 116);
     bottom = Math.max(bottom, r.top + (r.height - 116 * k) / 2 + 116 * k - cr.top);
+    digitH = Math.max(digitH, 116 * k);
   });
-  return Number.isFinite(bottom) ? { bottom, h: cr.height, w: cr.width } : null;
+  return Number.isFinite(bottom) ? { bottom, dh: digitH, h: cr.height, w: cr.width } : null;
 }
 
 // Tilt the camera so the horizon lands exactly on the bottom of the digits. In a rectilinear view the
@@ -102,7 +105,9 @@ function clockBottom() {
 function pitchForHorizonAtClockBottom(fovDeg) {
   const m = clockBottom();
   if (!m || !m.h) return null;
-  const ndc = 1 - 2 * m.bottom / m.h;
+  // the horizon crosses the digits this far up from their bottom edge, so the glass shows ground
+  const frac = Math.max(0, Math.min(0.8, num(conf.horizonInDigits, 0.3)));
+  const ndc = 1 - 2 * (m.bottom - frac * m.dh) / m.h;
   const t = Math.tan(fovDeg * Math.PI / 360), aspect = m.w / m.h;
   const ty = aspect >= 1 ? t / aspect : t;
   const p = Math.atan(-ndc * ty) * 180 / Math.PI;
@@ -134,29 +139,74 @@ function applyWeather() {
   // aerosol optical depth -> Mie multiplier (the model's clean-air baseline is ~0.01 AOD)
   const mie = Math.min(12, 1 + 12 * (w.aod ?? 0.12));
   engine.set({ weather: w, mie });
+  applyPlants();
 }
 
-function applyLandscape() {
+function applyLandscapeCore() {
   if (!engine) return;
   const type = ov.landscape ?? conf.landscape;
   const eyeM = (engine.s.elevM || 0) + engine.s.eyeM;
   if (type === 'auto') {
     if (state.dem) {
       const sk = demSkyline(state.dem, eyeM);
-      const t = sk.ocean ? 'ocean' : (sk.maxElevM > 400 ? 'mountains' : 'hills');
+      const sea = sk.ocean || state.biome?.kind === 'water';
+      const t = sea ? 'ocean' : (sk.maxElevM > 400 ? 'mountains' : 'hills');
       const spec = LANDSCAPES[t];
-      engine.set({ landscape: { type: t, skyline: sk.data, albedo: spec.albedo, haze: sk.haze, ocean: sk.ocean } });
-      setStatus('terrain', sk.ocean ? 'Real terrain: open water' : `Real terrain from elevation data (peaks to ${Math.round(sk.maxElevM)} m)`);
+      engine.set({ landscape: { type: t, skyline: sk.data, albedo: spec.albedo, haze: sk.haze, ocean: sea } });
+      setStatus('terrain', sea ? 'Real terrain: open water' : `Real terrain from elevation data (peaks to ${Math.round(sk.maxElevM)} m)`);
       return;
     }
-    engine.setLandscapeType('hills', seedFromLocation());
+    engine.setLandscapeType(state.biome?.kind === 'water' ? 'ocean' : 'hills', seedFromLocation());
     setStatus('terrain', 'Estimating (elevation data not loaded)');
     return;
   }
   engine.setLandscapeType(type, seedFromLocation());
   setStatus('terrain', LANDSCAPES[type]?.label || type);
 }
+function applyLandscape() { applyLandscapeCore(); applyPlants(); }
 const seedFromLocation = () => Math.abs(Math.round(num(conf.location_latitude, 0) * 10 + num(conf.location_longitude, 0) * 7)) + 1;
+
+// ------------------------------------------------------------ vegetation ----
+// Ground colours and plants follow the biome (from satellite imagery, or latitude rules offline), the
+// season (date + hemisphere) and the weather (snow cover). Cities and open water get none.
+const FORCED = {   // ?biome= deep-link values
+  conifer: { kind: 'forest', conifer: true }, forest: { kind: 'forest' }, tropical: { kind: 'forest', tropical: true },
+  grass: { kind: 'grass' }, steppe: { kind: 'steppe' }, desert: { kind: 'desert' }, tundra: { kind: 'tundra' }, urban: { kind: 'urban' }, snow: { kind: 'snow' },
+};
+function currentBiome() {
+  const lat = num(ov.lat ?? conf.location_latitude, DEFAULT_LAT), lon = num(ov.lon ?? conf.location_longitude, defaultLon());
+  let b = state.biome || fallbackBiome(lat, lon);
+  if (ov.biome && FORCED[ov.biome]) b = { ...b, region: b.region, conifer: false, tropical: false, ...FORCED[ov.biome] };
+  if ((ov.landscape ?? conf.landscape) === 'desert') b = { ...b, kind: 'desert', conifer: false, tropical: false };
+  return b;
+}
+function applyPlants() {
+  if (!engine) return;
+  const type = engine.s.landscape.type, water = engine.s.landscape.ocean || type === 'ocean';
+  const b = currentBiome();
+  const on = !!conf.plants && !water && type !== 'city' && b.kind !== 'water';
+  const season = seasonOf(now(), b.lat ?? num(conf.location_latitude, DEFAULT_LAT), b);
+  const w = engine.s.weather;
+  const pal = paletteFor(b, season, w.snowCover || 0, b.rgb);
+  // ground colours follow the biome too (the ocean keeps its own water shading)
+  if (!water && type !== 'city') engine.set({ ground: { g1: pal.ground, g2: pal.ground2 } });
+  else engine.set({ ground: null });
+  const q = engine.s.quality;
+  const count = q === 'low' ? 450 : q === 'high' ? 1500 : 1000;
+  const seed = seedFromLocation();
+  const key = `${b.kind}|${b.conifer}|${b.tropical}|${b.region}|${season}|${count}|${seed}`;
+  if (on && key !== state.plantKey) {
+    state.plantKey = key;
+    engine.setPlants({ ...generatePlants(b, { count, seed, season }), palette: pal, on });
+  } else engine.setPlants({ palette: pal, on });
+  setStatus('terrain', statusText());
+}
+function statusText() {
+  const b = currentBiome(), t = engine?.s.landscape.type;
+  const base = (document.getElementById('terrainStatus')?.dataset.base) || '';
+  const bio = state.biome ? `Land cover: ${b.kind}${b.conifer ? ' (conifer)' : b.tropical ? ' (tropical)' : ''}` : 'Land cover: estimated from latitude';
+  return [base, t === 'ocean' || t === 'city' ? '' : bio].filter(Boolean).join(' · ');
+}
 
 function applyQuality() {
   if (!engine) return;
@@ -172,6 +222,7 @@ function applyQuality() {
     bortle: bortleFromSettings(),
   });
   engine._resetScale();
+  applyPlants();
 }
 
 // -------------------------------------------------------- live data fetch --
@@ -183,6 +234,17 @@ async function loadLiveData() {
   fetchAbort = new AbortController();
   const signal = fetchAbort.signal;
   const key = `${lat.toFixed(1)},${lon.toFixed(1)}`;
+
+  // land cover: one small satellite tile, cached for good
+  if (!ov.biome) {
+    const bioKey = `biome:${lat.toFixed(2)},${lon.toFixed(2)}`;
+    let bio = lsGet(bioKey);
+    if (!bio) {
+      try { bio = await fetchBiome(lat, lon, state.elevation ?? 0); lsSet(bioKey, bio); }
+      catch (e) { console.info('[sky] land cover fetch failed:', e.message); }
+    }
+    if (bio) { state.biome = bio; applyLandscape(); }
+  }
 
   // terrain: cached for good, it does not change
   if ((ov.landscape ?? conf.landscape) === 'auto') {
@@ -302,10 +364,11 @@ function applySim() {
   const on = document.getElementById('simEnabled')?.checked;
   const input = document.getElementById('simTime');
   if (!engine) return;
-  if (!on) { engine.set({ sim: null }); return; }
+  if (!on) { engine.set({ sim: null }); applyPlants(); return; }
   let base = input?.value ? new Date(input.value) : new Date();
   if (isNaN(base)) base = new Date();
   engine.set({ sim: { base, startPerf: performance.now(), scale: num(conf.simSpeed, 1) } });
+  applyPlants();
 }
 
 // -------------------------------------------------------------- toast ----
@@ -384,6 +447,9 @@ function init() {
   bindRange('viewHeading', 'viewHeading', applyView, 'viewHeadingOut');
   bindRange('viewPitch', 'viewPitch', applyView, 'viewPitchOut');
   bindRange('viewFov', 'viewFov', applyView, 'viewFovOut');
+  $('plants').checked = !!conf.plants;
+  $('plants').addEventListener('change', (e) => { conf.plants = e.target.checked; applyPlants(); });
+  bindRange('horizonInDigits', 'horizonInDigits', applyView, 'horizonInDigitsOut');
   $('viewPitchAuto').checked = !!conf.viewPitchAuto;
   $('viewPitchAuto').addEventListener('change', (e) => { conf.viewPitchAuto = e.target.checked; applyView(); });
   // the clock's size follows the window, so keep the horizon pinned to it
@@ -427,6 +493,7 @@ function init() {
   if (q.has('az')) ov.az = num(q.get('az'), 180);
   if (q.has('pitch')) ov.pitch = num(q.get('pitch'), 12);
   if (q.has('lp')) ov.lp = q.get('lp');
+  if (q.has('biome')) ov.biome = q.get('biome');
   if (q.has('lat') && q.has('lon')) { ov.lat = num(q.get('lat'), 40); ov.lon = num(q.get('lon'), -74); }
   if (q.has('t')) {
     const base = new Date(q.get('t'));

@@ -190,6 +190,7 @@
             <option value="city">City</option>
           </select>
           <p class="hint" id="terrainStatus"></p>
+          <label><input type="checkbox" id="plants"> Plants that suit this place (grass, trees, cacti...), swaying in the wind</label>
         </fieldset>
 
         <fieldset>
@@ -202,7 +203,9 @@
           </select><br>
           <label for="viewHeading">Facing <output id="viewHeadingOut"></output>° (0 north, 90 east, 180 south)</label>
           <input type="range" id="viewHeading" min="0" max="359" step="1"><br>
-          <label><input type="checkbox" id="viewPitchAuto"> Put the horizon at the bottom of the clock (so the ground always shows)</label><br>
+          <label><input type="checkbox" id="viewPitchAuto"> Keep the horizon on the clock digits (so the ground always shows through them)</label><br>
+          <label for="horizonInDigits">Ground inside the digits <output id="horizonInDigitsOut"></output> (0 = horizon at the bottom edge)</label>
+          <input type="range" id="horizonInDigits" min="0" max="0.8" step="0.05"><br>
           <label for="viewPitch">Tilt up <output id="viewPitchOut"></output>°</label>
           <input type="range" id="viewPitch" min="-10" max="80" step="1"><br>
           <label for="viewFov">Field of view <output id="viewFovOut"></output>°</label>
