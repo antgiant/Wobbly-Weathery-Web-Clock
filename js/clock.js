@@ -7,10 +7,15 @@ function ci(c, i) {
   return ["M"].concat(c.slice(k, k + 2), ["C"], c.slice(k + 2, k + 8)).join(" ");
 }
 
+var clockChanged = false;
 function setCurve(id, val) {
   var e = document.getElementById(id);
-  if (e !== null)
+  // skip identical writes: most ticks nothing moves, and the glass renderer redraws on change
+  if (e !== null && e.__d !== val) {
+    e.__d = val;
     e.setAttribute("d", val);
+    clockChanged = true;
+  }
 }
 
 function setDigit(t, d) {
@@ -84,6 +89,10 @@ function clock() {
       }
     }
   });
+  if (clockChanged) {
+    clockChanged = false;
+    window.dispatchEvent(new Event('clockchange'));
+  }
   var tempTime = Number(time.h[0] + time.h[1]) + ":" + time.m[0] + time.m[1] + (conf.hideSeconds ? "" : ":" + time.s[0] + time.s[1]);
   if (document.title !== tempTime) {
     document.title = tempTime;
@@ -108,6 +117,7 @@ function updateSvgWidths() {
       svg.style.width = width;
     });
   }
+  window.dispatchEvent(new Event('clocklayout'));
 }
 
 function initalize() {

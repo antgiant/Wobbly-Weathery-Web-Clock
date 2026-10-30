@@ -195,12 +195,143 @@ void main() {
 }`;
 
 // ----------------------------------------------------------------- blit ----
+// Final pass: scene -> canvas, and the clock drawn as glass on top.
+//
+// The digits arrive as a coverage mask (white strokes, alpha channel) covering only
+// the clock's bounding box. A blurred copy of the mask is the "thickness" of the
+// glass; its gradient is the bevel normal. From that:
+//   liquid glass  - refract the scene through the bevel (with a little dispersion),
+//                   blur it by the frost amount through the scene's mip chain, add
+//                   specular glints and a bright rim facing the real sun/moon, and
+//                   a soft shadow on the sky behind
+//   stained glass - jewel-coloured Voronoi panes with lead lines, lit by whatever
+//                   light is coming through the sky behind them
 export const FRAG_BLIT = `#version 300 es
 precision highp float;
 uniform sampler2D uTex;
+uniform sampler2D uMask;
+uniform vec4 uGlass;       // x frost 0..1, y mode (0 off, 1 liquid, 2 stained), z stroke width (canvas px), w time
+uniform vec4 uMaskRect;    // clock bounding box in canvas uv, y down: x, y, w, h
+uniform vec2 uMaskPx;      // mask texture size in texels
+uniform vec2 uRes;         // canvas size in px
+uniform vec3 uLight;       // xy: screen direction towards the light (y up), z: strength 0..1
+uniform vec3 uLightCol;
 in vec2 vUv;
 out vec4 oColor;
-void main() { oColor = vec4(texture(uTex, vUv).rgb, 1.0); }`;
+
+float hash21(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+vec2 hash22(vec2 p) { return vec2(hash21(p), hash21(p + 17.31)); }
+
+float maskAt(vec2 uv, float lod) {
+  vec2 m = (vec2(uv.x, 1.0 - uv.y) - uMaskRect.xy) / uMaskRect.zw;
+  return textureLod(uMask, m, lod).a;
+}
+float lumaOf(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+vec3 sceneAt(vec2 uv, float lod) { return textureLod(uTex, uv, lod).rgb; }
+
+void main() {
+  vec3 base = texture(uTex, vUv).rgb;
+  float mode = uGlass.y;
+  if (mode < 0.5) { oColor = vec4(base, 1.0); return; }
+
+  vec2 px = 1.0 / uRes;
+  float stroke = uGlass.z;                                  // canvas px
+  float maskScale = uMaskPx.x / (uMaskRect.z * uRes.x);     // mask texels per canvas px
+  float lodH = max(log2(stroke * 0.30 * maskScale), 0.0);
+  float lodS = max(log2(stroke * 0.9 * maskScale), 0.0);
+
+  // soft shadow of the glass cast on the sky, away from the light
+  vec2 sh = vUv - uLight.xy * stroke * 0.22 * px;
+  float shadow = maskAt(sh, lodS) * (0.10 + 0.20 * uLight.z);
+
+  float cover = maskAt(vUv, 0.0);
+  float wide = maskAt(vUv, lodS);
+  if (cover < 0.004 && wide < 0.004 && shadow < 0.004) { oColor = vec4(base, 1.0); return; }
+
+  // height field = blurred coverage; gradient = bevel
+  float d = stroke * 0.22;
+  vec2 dx = vec2(d * px.x, 0.0), dy = vec2(0.0, d * px.y);
+  float h  = maskAt(vUv, lodH);
+  float gx = maskAt(vUv + dx, lodH) - maskAt(vUv - dx, lodH);
+  float gy = maskAt(vUv + dy, lodH) - maskAt(vUv - dy, lodH);
+  vec2 g = vec2(gx, gy);
+  vec3 n = normalize(vec3(-g * 2.4, 1.0));
+  float slope = length(g);
+
+  vec3 Ldir = normalize(vec3(uLight.xy * 0.75, 0.7));
+  vec3 Hv = normalize(Ldir + vec3(0.0, 0.0, 1.0));
+  float spec = pow(max(dot(n, Hv), 0.0), 38.0) * uLight.z;
+  float facing = max(dot(normalize(-g + 1e-5), uLight.xy), 0.0);      // 1 where the bevel faces the light
+  float away = max(dot(normalize(g + 1e-5), uLight.xy), 0.0);
+  float rim = smoothstep(0.02, 0.55, slope);
+  float frost = uGlass.x;
+
+  vec3 shaded = base * (1.0 - shadow * (1.0 - cover));
+  vec3 glass;
+
+  if (mode < 1.5) {
+    // ---- liquid glass ----
+    vec2 off = n.xy * stroke * (0.9 + 0.8 * h) * px;                  // lens-like displacement
+    float lodF = frost * 6.0;
+    vec3 c;
+    float disp = (1.0 - frost) * 0.10 + 0.015;
+    c.r = sceneAt(vUv + off * (1.0 + disp), lodF).r;
+    c.g = sceneAt(vUv + off, lodF).g;
+    c.b = sceneAt(vUv + off * (1.0 - disp), lodF).b;
+    // frost: diffuse towards the local average sky colour and go milky; clear glass stays clear
+    vec3 avg = sceneAt(vUv, 6.5);
+    c = mix(c, mix(avg, c, 0.5), frost * 0.6);
+    float lum = lumaOf(c);
+    c = mix(c, vec3(lum), 0.12 * frost);
+    c += uLightCol * (0.012 + 0.26 * frost * frost + 0.06 * frost) * (0.45 + 0.55 * uLight.z);
+    c += (hash21(gl_FragCoord.xy) - 0.5) * 0.05 * frost;             // fine grain of etched glass
+    c *= 1.0 - 0.10 * rim * away;                                     // bevel facing away from the light darkens
+    c += uLightCol * spec * mix(1.1, 0.35, frost);                    // frost scatters the glint into a soft sheen
+    c += uLightCol * rim * facing * (0.30 + 0.45 * uLight.z) * mix(1.0, 0.65, frost);
+    c += uLightCol * rim * 0.05;
+    c += uLightCol * exp(-pow((h - 0.62) * 5.0, 2.0)) * spec * 0.35 * (1.0 - frost);
+    glass = c;
+  } else {
+    // ---- stained glass ----
+    float cell = max(stroke * 0.95, 14.0);
+    vec2 p = gl_FragCoord.xy / cell;
+    vec2 ip = floor(p), fp = fract(p);
+    float f1 = 8.0, f2 = 8.0; vec2 id = vec2(0.0);
+    for (int j = -1; j <= 1; j++) {
+      for (int i = -1; i <= 1; i++) {
+        vec2 o = vec2(float(i), float(j));
+        vec2 r = o + hash22(ip + o) * 0.9 + 0.05 - fp;
+        float dd = dot(r, r);
+        if (dd < f1) { f2 = f1; f1 = dd; id = ip + o; }
+        else if (dd < f2) { f2 = dd; }
+      }
+    }
+    float e = sqrt(f2) - sqrt(f1);                                    // distance to the nearest pane boundary
+    float lead = 1.0 - smoothstep(0.035, 0.085, e);
+    float k = hash21(id);
+    vec3 pal;
+    if (k < 0.17)      pal = vec3(0.80, 0.08, 0.10);                 // ruby
+    else if (k < 0.34) pal = vec3(0.10, 0.28, 0.85);                 // cobalt
+    else if (k < 0.51) pal = vec3(0.95, 0.62, 0.08);                 // amber
+    else if (k < 0.68) pal = vec3(0.06, 0.62, 0.30);                 // emerald
+    else if (k < 0.84) pal = vec3(0.55, 0.15, 0.75);                 // amethyst
+    else               pal = vec3(0.90, 0.35, 0.50);                 // rose
+    vec3 sky = sceneAt(vUv, 4.5);
+    float through = mix(0.22, 1.25, smoothstep(0.02, 0.7, lumaOf(sky))); // sunlight shining through the pane
+    float pane = 0.80 + 0.35 * hash21(id + 5.0);
+    vec3 c = pal * pane * through * (1.0 - 0.30 * sqrt(f1));          // darker toward pane edges, like hand-made glass
+    c = mix(c, c * 0.55 + sky * 0.45 * pal, frost * 0.6);             // frost: more translucent, takes on the sky
+    c += uLightCol * spec * 0.7 + uLightCol * rim * facing * 0.35;    // bevelled outer edge catches light
+    c = mix(c, vec3(0.035, 0.03, 0.028) + uLightCol * spec * 0.12, clamp(lead + rim * 0.5, 0.0, 1.0));   // lead came
+    glass = c;
+  }
+
+  oColor = vec4(mix(shaded, glass, cover), 1.0);
+}`;
 
 // ------------------------------------------------------------- composite ---
 export const FRAG_SCENE = `#version 300 es

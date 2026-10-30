@@ -19,7 +19,7 @@ With thanks to
 | **Landscape** | "Real terrain around my location" samples a public elevation model in 32 directions out to 40 km and builds your actual skyline, so the sun really does set behind the hills to your west. Or choose flat, hills, mountains, desert, ocean (with sun glitter) or a city with lit windows. |
 | **VR look-around** | Tap the goggles button on a phone/tablet: the sky follows the device's orientation sensors. Drag to fine-tune the compass direction, pinch to zoom. "Look around" mode (drag and pinch, no sensors) works on desktop. Optional labels for the sun, moon and planets with arrows to find them. |
 | **Time travel** | Settings → Time travel: jump to any date/time or run at up to 1 hour per second. |
-| **Clock** | Same wobbly clock; the digits now switch between light and dark ink so they stay readable on any sky. |
+| **Clock** | The same wobbly morphing digits, in three styles: **Liquid glass** (default: bevelled glass that refracts the real sky behind it, catches the actual sun or moon as glints and a bright rim, and casts a soft shadow), **Stained glass** (jewel-coloured leaded panes lit by the sky behind them) and the classic **solid ink**, which flips between light and dark so it stays readable. A **Frosting** slider takes the glass from perfectly clear to fully etched. |
 
 ## Why it is fast
 
@@ -76,10 +76,11 @@ These are not saved to your settings:
     js/clock.js, easing.js            the wobbly clock (unchanged look)
     js/sky/engine.js                  GL pipeline, scheduler, adaptive resolution
     js/sky/glsl-atmosphere.js         transmittance / multiple scattering / sky-view LUTs
-    js/sky/glsl-scene.js              composite, stars, clouds, terrain, tone mapping
+    js/sky/glsl-scene.js              composite, stars, clouds, terrain, tone mapping, glass / stained glass
     js/sky/astro.js                   sun / moon / planets / sky rotation (astronomy-engine)
     js/sky/weather.js                 Open-Meteo + presets
     js/sky/landscape.js               procedural skylines + real-terrain skyline
+    js/sky/glass.js                   rasterises the digits for the glass styles; light direction from sun/moon
     js/sky/controls.js                drag / pinch / VR sensors
     js/sky/app.js                     settings, live data, HUD, clock colour
     data/                             star catalogue, Milky Way, moon map (built by tools/build-data.py)

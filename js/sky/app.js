@@ -7,6 +7,7 @@ import { Controls } from './controls.js';
 import { PRESETS, fetchLiveWeather, CLEAR } from './weather.js';
 import { fetchDem, demSkyline, LANDSCAPES } from './landscape.js';
 import Virgo from '../virgo/virgo.js';
+import { initGlass } from './glass.js';
 
 const canvas = document.getElementById('sky');
 const statusEls = {
@@ -18,6 +19,7 @@ const setStatus = (k, t) => { if (statusEls[k]) statusEls[k].textContent = t; };
 
 let engine = null;
 let controls = null;
+let glass = null;
 const state = { liveWeather: null, elevation: null, dem: null, lpBortle: 3 };
 const ov = {};                      // deep-link overrides (never written to localStorage)
 const num = (v, d) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : d);
@@ -306,8 +308,9 @@ function init() {
     return;
   }
   window.__sky = engine;                         // handy for debugging / tests
-  controls = new Controls(engine, { onToast: toast, onChange: () => { /* HUD follows frames */ } });
+  controls = new Controls(engine, { onToast: toast, onChange: () => { glass?.updateLight(); } });
   window.__controls = controls;
+  glass = initGlass(engine, () => engine._basis());
 
   applyQuality(); applyLocation(); applyView(); applyWeather(); applyLandscape();
   engine.start();
@@ -342,6 +345,8 @@ function init() {
   bindSelect('bodySize', 'bodySize', applyQuality, parseFloat);
   bindSelect('cloudMotion', 'cloudMotion', applyQuality, parseFloat);
   bindSelect('clockColor', 'clockColor', updateClockColor);
+  bindSelect('clockStyle', 'clockStyle', () => { glass.apply(); updateClockColor(); });
+  bindRange('glassFrost', 'glassFrost', () => glass.apply(), 'glassFrostOut');
   bindRange('nightBrightness', 'nightBrightness', applyQuality, 'nightBrightnessOut');
   bindRange('viewHeading', 'viewHeading', applyView, 'viewHeadingOut');
   bindRange('viewPitch', 'viewPitch', applyView, 'viewPitchOut');

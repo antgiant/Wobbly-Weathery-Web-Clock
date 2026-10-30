@@ -104,7 +104,17 @@
             Hide Seconds
           </label>
           <br>
-          <label for="clockColor">Clock colour</label>
+          <label for="clockStyle">Style</label>
+          <select id="clockStyle">
+            <option value="glass">Liquid glass</option>
+            <option value="stained">Stained glass</option>
+            <option value="solid">Solid ink</option>
+          </select>
+          <br>
+          <label for="glassFrost">Frosting <output id="glassFrostOut"></output> (glass styles)</label>
+          <input type="range" id="glassFrost" min="0" max="1" step="0.01">
+          <br>
+          <label for="clockColor">Ink colour (solid style)</label>
           <select id="clockColor">
             <option value="auto">Automatic (readable on any sky)</option>
             <option value="classic">Classic blue</option>

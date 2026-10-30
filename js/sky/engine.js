@@ -197,6 +197,10 @@ export class SkyEngine {
     gl.bindVertexArray(null);
 
     this.sceneTarget = null;
+    this.glass = { mode: 0, frost: 0.35, stroke: 30, light: [-0.5, 0.8, 0.6], lightCol: [1, 1, 1], rect: [0, 0, 1, 1], maskW: 1, maskH: 1, hasMask: false };
+    this.maskTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, this.maskTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
     this._applySkyline();
     this._loadAssets();
   }
@@ -527,19 +531,69 @@ export class SkyEngine {
     // ---- stars + planets: additive, weighted by the scene's sky-visibility alpha ----
     this._drawStars(sky, sunAz, sunAlt, sunLux, moonAz, moonAlt, moonLux, natural, lp, camH, cam, T, perfNow, w);
 
-    // ---- blit ----
-    gl.disable(gl.BLEND);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, cw, ch);
-    this._use(this.pBlit);
-    this._1i('uTex', 0);
-    this._bind(0, T.tex);
-    gl.bindVertexArray(this.vaoEmpty);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    // ---- blit (+ glass clock) ----
+    this._blit(true);
+    this._mipsValid = this.glass.mode > 0 && this.glass.hasMask;
 
     this.dirty = false;
     this._autoScale(perfNow);
     for (const fn of this.listeners) fn(this);
+  }
+
+  /** Scene -> canvas, with the glass clock. `scene` is true right after the scene was redrawn. */
+  _blit(scene) {
+    const gl = this.gl, T = this.sceneTarget, g = this.glass;
+    if (!T) return;
+    const cw = this.canvas.width, ch = this.canvas.height;
+    const glassOn = g.mode > 0 && g.hasMask;
+    gl.disable(gl.BLEND);
+    gl.bindTexture(gl.TEXTURE_2D, T.tex);
+    if (glassOn) {
+      if (scene) gl.generateMipmap(gl.TEXTURE_2D);          // frosting blurs through the mip chain
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    } else gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, cw, ch);
+    this._use(this.pBlit);
+    this._1i('uTex', 0); this._bind(0, T.tex);
+    this._1i('uMask', 1); this._bind(1, this.maskTex);
+    const dpr = cw / Math.max(1, this.canvas.clientWidth);
+    this._4f('uGlass', g.frost, glassOn ? g.mode : 0, g.stroke * dpr, 0);
+    this._4f('uMaskRect', g.rect[0], g.rect[1], g.rect[2], g.rect[3]);
+    this._2f('uMaskPx', g.maskW, g.maskH);
+    this._2f('uRes', cw, ch);
+    this._3f('uLight', g.light);
+    this._3f('uLightCol', g.lightCol);
+    gl.bindVertexArray(this.vaoEmpty);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  /** Clock glyph mask (alpha channel) covering rect = [x, y, w, h] in canvas uv, y down. */
+  setGlassMask(canvas, rect, strokeCssPx) {
+    const gl = this.gl, g = this.glass;
+    gl.bindTexture(gl.TEXTURE_2D, this.maskTex);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    g.rect = rect; g.maskW = canvas.width; g.maskH = canvas.height; g.stroke = strokeCssPx; g.hasMask = true;
+    this.redrawGlass();
+  }
+
+  /** Updates glass settings ({mode, frost, light, lightCol}) and redraws without re-rendering the sky. */
+  setGlass(patch) {
+    Object.assign(this.glass, patch);
+    this.redrawGlass();
+  }
+
+  /** Cheap repaint: only the final pass, reusing the last scene. */
+  redrawGlass() {
+    if (!this.sceneTarget) { this.dirty = true; return; }
+    this._blit(!this._mipsValid && this.glass.mode > 0);
+    if (this.glass.mode > 0) this._mipsValid = true;
   }
 
   _bindSkyUniforms(sky, sunAz, sunAlt, sunLux, moonAz, moonAlt, moonLux, natural, lp, camH) {

@@ -87,7 +87,9 @@ export var conf = createPersistentConfig("conf", {
   // time travel (never persisted as "on" across reloads)
   simSpeed: 1,
   // clock
-  clockColor: 'auto'          // auto | classic | white
+  clockStyle: 'glass',        // glass (liquid glass) | stained | solid
+  glassFrost: 0.35,           // 0 clear .. 1 heavily frosted
+  clockColor: 'auto'          // solid style only: auto | classic | white
 });
 
 //Set clock size

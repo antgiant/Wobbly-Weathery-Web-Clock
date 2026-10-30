@@ -300,3 +300,9 @@ body.idle .fab {
   font-size: .8rem;
   color: #555;
 }
+
+/* the glass styles are drawn by the sky renderer from the same shapes; keep the SVG for layout only */
+body[data-clockstyle="glass"] #clock,
+body[data-clockstyle="stained"] #clock {
+  visibility: hidden;
+}
