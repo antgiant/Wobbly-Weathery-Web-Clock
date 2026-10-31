@@ -1,6 +1,6 @@
 import { conf, vars, dd, adjustTimeSize, use24h } from './config.js';
 import { easing } from './easing.js'
-import { now as simNow } from './simtime.js'
+import { now as simNow, getSim } from './simtime.js'
 
 function ci(c, i) {
   var k = i * 6;
@@ -78,20 +78,23 @@ function getTime(date) {
   return temp;
 }
 
+// Draws the digits for this instant. Returns true while any visible digit is morphing into the next one (the digits
+// that change at the next second morph all through this one), which is when it needs ~15 frames a second.
 function clock() {
-  if (document.hidden) return;                 // nothing to animate in a background tab
+  if (document.hidden) return false;           // nothing to animate in a background tab
   var now = simNow();
   var time = getTime(now);
   var nTime = getTime(new Date(now.getTime() + 1000));
   var cStep = now.getMilliseconds() / vars.step;
-  
+  var morphing = false;
+
   vars.t.map(function(t) {
+    if (t === 's' && conf.hideSeconds) return;  // not shown: do not draw it
     for (var i = 0; i < 2; i++) {
       var d = time[t][i],
         nd = nTime[t][i];
-      if (d != nd || !vars.inited) {
-        setDigit(t + i, morph(dd[d], dd[nd], cStep));
-      }
+      if (d != nd) morphing = true;
+      setDigit(t + i, morph(dd[d], dd[nd], cStep));
     }
   });
   if (layoutStale) {
@@ -106,7 +109,25 @@ function clock() {
   if (document.title !== tempTime) {
     document.title = tempTime;
   }
+  return morphing;
 }
+
+// Not a constant 15 Hz timer: while something morphs it ticks every frame step, otherwise it sleeps until the next
+// second (hidden seconds: one wake-up a second instead of fifteen), and not at all in a background tab.
+var clockTimer = 0;
+function loop() {
+  clockTimer = 0;
+  var morphing = clock();
+  if (document.hidden) return;                 // the visibilitychange below restarts it
+  var sim = getSim();
+  var delay = morphing || (sim && sim.scale > 1) ? vars.step : 1005 - simNow().getMilliseconds();
+  clockTimer = setTimeout(loop, delay);
+}
+function kickClock() {
+  clearTimeout(clockTimer);
+  loop();
+}
+document.addEventListener('visibilitychange', function() { if (!document.hidden) kickClock(); });
 
 function updateSvgWidths() {
   const svgs = document.querySelectorAll("#clock svg");
@@ -137,13 +158,9 @@ function updateSvgWidths() {
 
 function initalize() {
   //start the clock ticking 
-  setInterval(function() {
-    clock();
-  }, vars.step);
-  
   // Set up widths so that clock fills the horizontal space
   updateSvgWidths();
-  clock();                                     // draw the digits now, not after the first 66 ms tick (they start as crossed lines)
+  kickClock();                                 // draw the digits now (they start as crossed lines)
   
   //Set up config option actions
   document.addEventListener('DOMContentLoaded', () => {
@@ -163,6 +180,7 @@ function initalize() {
       conf.hideSeconds = event.target.checked;
       adjustTimeSize();
       updateSvgWidths();
+      kickClock();
     });
   });
   

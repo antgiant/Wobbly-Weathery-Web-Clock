@@ -61,7 +61,7 @@ function createPersistentConfig(key, initialValue = {}) {
   });
 }
 
-const DEFAULTS = {
+export const DEFAULTS = {
   steps: 15,
   easing: 'easeInOutBack',
   twentyFourHourClock: null,  // null = follow the browser's locale until the user chooses
@@ -112,6 +112,8 @@ const DEFAULTS = {
   // settings panel
   settingsTab: 'clock',
   holidayTree: true,          // a lit Christmas tree in the scene from Thanksgiving to Christmas
+  nightDim: 'off',            // off | auto (dim between dusk and dawn) | on
+  nightDimLevel: 0.6,         // how much light the veil takes away at full dimming
   rainAlert: false,           // show an umbrella / slicker indicator when enough rain is coming today
   settingsLevel: 'simple',    // simple | advanced
   // first-run choice

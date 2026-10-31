@@ -254,7 +254,7 @@ uniform vec3 uLightCol;
 uniform vec4 uGlow;        // x: light from inside the glass, 0..1; y: LED cell size in px when the LED panel is on (else 0)
 uniform vec3 uGlowCol;     // colour of that light (liquid glass)
 uniform vec3 uInk;         // flat ink colour (solid clock style while the LED panel is on)
-uniform float uContrast;   // least luminance contrast ratio between the digits and the sky around them (0 = off)
+uniform float uContrast;   // strength of the readability outline and tone, 0 off .. 1
 in vec2 vUv;
 out vec4 oColor;
 
@@ -274,49 +274,41 @@ vec3 sceneAt(vec2 uv, float lod) { return textureLod(uTex, uv, lod).rgb; }
 
 float linLum(vec3 c) { return dot(pow(max(c, 0.0), vec3(2.2)), vec3(0.2126, 0.7152, 0.0722)); }
 
-// The time must stay readable on any sky and for any eyes. Colour-blind readers can still see differences in
-// brightness, so the guarantee is about luminance: compared with the sky next to each pixel (four samples a stroke
-// away plus the sky under it), the glass is pushed lighter or darker, whichever is closer and possible, until
-// the contrast ratio (the WCAG one) reaches uContrast. Hue is kept as far as the brightness allows.
-vec3 ensureContrast(vec3 c, vec2 uv, float stroke, bool allowLighter) {
-  if (uContrast < 1.01) return c;
-  vec2 px = 1.0 / uRes;
-  float lod = max(log2(stroke * 0.4 * float(textureSize(uTex, 0).x) / uRes.x), 0.0);
-  float r = stroke * 0.95;
-  float l0 = linLum(sceneAt(uv, lod));
-  float l1 = linLum(sceneAt(uv + vec2(r * px.x, 0.0), lod));
-  float l2 = linLum(sceneAt(uv - vec2(r * px.x, 0.0), lod));
-  float l3 = linLum(sceneAt(uv + vec2(0.0, r * px.y), lod));
-  float l4 = linLum(sceneAt(uv - vec2(0.0, r * px.y), lod));
-  float hiL = max(max(max(l0, l1), max(l2, l3)), l4), loL = min(min(min(l0, l1), min(l2, l3)), l4);
-  float R = uContrast;
-  c = clamp(c, 0.0, 1.0);
-  float Lg = linLum(c);
-  float hiN = R * (hiL + 0.05) - 0.05;           // brightness needed to beat the brightest sky nearby by lighter
-  float loN = (loL + 0.05) / R - 0.05;           // brightness allowed to beat the darkest sky nearby by darker
-  if (Lg >= hiN || Lg <= loN) return c;           // already readable
-  bool canHi = hiN <= 1.0, canLo = loN >= 0.0;
-  bool lighter;
-  if (canHi && canLo) lighter = (hiN - Lg) < (Lg - loN);
-  else if (canHi) lighter = true;
-  else if (canLo) lighter = false;
-  else lighter = (1.05 / (hiL + 0.05)) > ((loL + 0.05) / 0.05);     // sky spans bright and dark: take the better ratio
-  if (lighter && !allowLighter) { if (canLo) lighter = false; else return c; }   // a lit tube keeps its colours: no washing it out to white
-  vec3 lin = pow(c, vec3(2.2));
-  if (lighter) lin = mix(lin, vec3(1.0), clamp((min(hiN, 1.0) - Lg) / max(1.0 - Lg, 1e-3), 0.0, 1.0));
-  else lin *= clamp(max(loN, 0.0) / max(Lg, 1e-4), 0.0, 1.0);
-  return pow(lin, vec3(1.0 / 2.2));
+// ---- readability ----
+// The time has to stay readable on any sky and for any eyes. Colour-blind readers can still see differences in
+// brightness, so this is about luminance, and it is done like the outline round subtitles, not by recolouring the
+// glass: a thin outline hugs the digits, near-black where the sky behind it is bright and near-white where it is
+// dark, so the edge of every digit beats the sky at least ~3.8:1 whatever that sky is. The outline's colour follows
+// the sky smoothly, so where a horizon crosses a digit the top edge is dark and the bottom edge light, and the glass
+// itself stays glass. On top of that the body is eased a little darker under a bright sky and a little lighter under
+// a dark one, by a gentle amount that depends on the sky around the whole stroke, so it never flips inside a digit.
+// uContrast is the strength: 0 off, 0.85 normal, 1 extra strong.
+vec3 withOutline(vec3 outside, vec3 inside, float cover) {
+  float k = uContrast;
+  if (k < 0.01) return mix(outside, inside, cover);
+  float cell = uGlow.y;                                    // LED cell size in px (0 when the LED panel is off)
+  float t = max(uGlass.z * 0.085, 1.6);                    // outline width in canvas px: about 8% of the stroke
+  if (cell > 0.0) t = max(t, cell);                        // on the LED panel never thinner than one LED
+  float maskScale = uMaskPx.x / (uMaskRect.z * uRes.x);
+  float m0 = maskAt(vUv, 0.0);
+  float mw = maskAt(vUv, max(log2(t * maskScale), 0.0));
+  float inner = m0 * (1.0 - smoothstep(0.55, 0.92, mw));   // inside the glyph, near its edge
+  float outer = (1.0 - m0) * smoothstep(0.06, 0.5, mw);    // outside it, near its edge
+  float texScale = float(textureSize(uTex, 0).x) / uRes.x;
+  float Lb = linLum(sceneAt(vUv, max(log2(max(uGlass.z * 0.15, t) * texScale), 0.0)));
+  float pol = smoothstep(0.10, 0.26, Lb);                  // 1: bright sky behind, dark outline
+  vec3 oc = mix(vec3(0.98, 0.98, 1.0), vec3(0.012), pol);
+  vec3 o = mix(outside, oc, outer * k * 0.85);
+  vec3 i = mix(inside, oc, inner * k * 0.6);
+  return mix(o, i, cover);
 }
 
-// On the LED panel a pixel averages digit and sky, which can wash a digit out against a bright sky. A dark one-LED
-// outline around the digits (only where the sky is bright; against a dark sky the digits already stand out) keeps their shape.
-vec3 ledRing(vec3 col, vec3 bg) {
-  float cell = uGlow.y;
-  if (cell < 1.0) return col;
-  float maskScale = uMaskPx.x / (uMaskRect.z * uRes.x);
-  float w = maskAt(vUv, max(log2(cell * 0.9 * maskScale), 0.0));
-  float ring = smoothstep(0.08, 0.45, w) * (1.0 - smoothstep(0.3, 0.9, maskAt(vUv, 0.0)));
-  return mix(col, vec3(0.02), ring * 0.9 * smoothstep(0.25, 0.5, lumaOf(bg)));
+// gentle, spatially smooth tone for the body of the glass
+vec3 bodyTone(vec3 c, float stroke) {
+  float Lbig = linLum(sceneAt(vUv, max(log2(stroke * 2.5 * float(textureSize(uTex, 0).x) / uRes.x), 0.0)));
+  float dark = smoothstep(0.22, 0.6, Lbig), light = 1.0 - smoothstep(0.03, 0.14, Lbig);
+  c *= 1.0 - 0.38 * dark * uContrast;
+  return mix(c, vec3(1.0), 0.22 * light * uContrast);
 }
 
 void body() {
@@ -325,7 +317,7 @@ void body() {
   if (mode < 0.5) { oColor = vec4(base, 1.0); return; }
   if (mode > 2.5) {                                          // flat ink: the LED panel has no glass here, but the digits still need drawing
     float cv = smoothstep(0.1, 0.9, maskAt(vUv, 0.0));
-    oColor = vec4(ledRing(mix(base, ensureContrast(uInk, vUv, uGlass.z, true), cv), base), 1.0);
+    oColor = vec4(withOutline(base, mix(base, uInk, cv), cv), 1.0);
     return;
   }
 
@@ -396,15 +388,13 @@ void body() {
   float core = smoothstep(0.10, 0.80, h);
   float inner = glow * (0.28 + 0.72 * core) * (1.0 - 0.45 * rim);
   if (stained) c *= mix(0.75, 1.0, smoothstep(0.30, 0.85, h));         // round tube: a little darker towards the sides
-  if (stained) c = ensureContrast(c, vUv, stroke, false);              // against a bright sky the glass darkens; against a dark one the lights themselves carry it
   vec3 lamp = emit * inner;
   if (stained) lamp *= 1.0 + 0.9 * pow(smoothstep(0.45, 0.98, h), 2.0);   // brightest down the middle of the tube
   c += lamp * (stained ? 1.15 : 0.80);
-  if (stained && uGlow.y > 0.5) c = ensureContrast(c, vUv, stroke, false);   // LED panel: the lit tube must still beat the sky after averaging
   if (!stained) c += emit * glow * 0.10 * (1.0 - frost * 0.4);        // faint all-over fill so thin strokes light up too
 
   // the body of the glass is made readable first; the glints and the rim go on top, so it still looks like glass
-  if (!stained) c = ensureContrast(c, vUv, stroke, true);
+  if (!stained) c = bodyTone(c, stroke);                               // (a lit tube keeps its colours: the outline carries it)
   c += uLightCol * spec * mix(1.1, 0.35, frost) * (stained ? 0.7 : 1.0);   // frost scatters the glint into a soft sheen
   c += uLightCol * rim * facing * (0.30 + 0.45 * uLight.z) * mix(1.0, 0.65, frost) * (stained ? 0.8 : 1.0);
   c += uLightCol * rim * 0.05;
@@ -421,7 +411,7 @@ void body() {
   }
   shaded += haloCol * halo * glow * (1.0 - cover) * haloK;
 
-  oColor = vec4(ledRing(mix(shaded, glass, cover), base), 1.0);
+  oColor = vec4(withOutline(shaded, glass, cover), 1.0);
 }
 
 void main() {
