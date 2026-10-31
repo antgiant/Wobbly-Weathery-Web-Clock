@@ -10,7 +10,7 @@ import { fetchBiome, fallbackBiome, seasonFromClimate, paletteFor } from './biom
 import { generatePlants } from './plants.js';
 import { estimateBortle, fetchPlaces } from './lightpollution.js';
 import { isChristmasSeason } from '../season.js';
-import { engine, state, ov, num, DEFAULT_LAT, defaultLon, lsGet, lsSet, coarse, ymd, histActive, setStatus, cachedFetch } from './core.js';
+import { engine, state, ov, num, DEFAULT_LAT, defaultLon, lsGet, lsSet, coarse, ymd, histActive, setStatus, cachedFetch, agoText } from './core.js';
 
 export function bortleFromSettings() {
   const v = ov.lp ?? conf.lightPollution;
@@ -47,7 +47,10 @@ export function applyWeather() {
     setStatus('weather', hw ? `Weather on ${hw.label}${tempText(hw)}` : (state.histError ? 'No weather record for that date, showing clear sky' : 'Loading the weather for that date…'));
   } else if (mode === 'live') {
     w = state.liveWeather || CLEAR;
-    setStatus('weather', state.liveWeather ? `Live: ${state.liveWeather.label}${tempText(state.liveWeather)}` : 'Live weather not loaded yet, showing clear sky');
+    const age = Date.now() - state.weatherT;
+    setStatus('weather', state.liveWeather
+      ? `Live: ${state.liveWeather.label}${tempText(state.liveWeather)}${age > 40 * 60000 ? ` · saved ${agoText(age)} ago, refreshes when a connection is back` : ''}`
+      : (navigator.onLine === false ? 'Offline: a clear sky until a connection is back' : 'Live weather not loaded yet, showing clear sky'));
   } else {
     w = PRESETS[mode] || CLEAR;
     setStatus('weather', `Manual: ${w.label}`);
@@ -138,7 +141,7 @@ export async function loadSea() {
   else if (!seaBusy) {
     seaBusy = true;
     try { m = await fetchMarine(coarse(lat, 0.1), coarse(lon, 0.1)); lsSet(key, { t: Date.now(), sea: m }); }
-    catch (e) { console.info('[sky] marine fetch failed:', e.message); }
+    catch (e) { console.info('[sky] marine fetch failed:', e.message); state.needRetry = true; if (cached) m = cached.sea; }   // offline: the last sea state
     seaBusy = false;
   }
   state.seaText = m ? `Sea: ${m.label} (live)` : 'Sea: waves grown from the wind (no marine data here)';
@@ -231,7 +234,7 @@ export async function loadLightPollution(lat, lon) {
       const r = estimateBortle(clat, clon, places);
       est = { bortle: r.bortle, nearest: r.nearest, n: places.length };
       lsSet(key, est);
-    } catch (e) { console.info('[sky] light pollution lookup failed:', e.message); setStatus('lp', 'Estimated from the time zone (nearby towns could not be looked up)'); }
+    } catch (e) { console.info('[sky] light pollution lookup failed:', e.message); state.needRetry = true; setStatus('lp', 'Estimated from the time zone (nearby towns could not be looked up)'); }
     lpBusy = '';
   }
   if (!est) return;
@@ -245,6 +248,7 @@ export async function loadLightPollution(lat, lon) {
 // -------------------------------------------------------- live data fetch --
 let fetchAbort = null;
 export async function loadLiveData() {
+  state.needRetry = false;                          // set again by any lookup that fails
   const lat = num(ov.lat ?? conf.location_latitude, NaN), lon = num(ov.lon ?? conf.location_longitude, NaN);
   if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat === -1 && lon === -1) return;
   fetchAbort?.abort();
@@ -260,7 +264,7 @@ export async function loadLiveData() {
     let bio = lsGet(bioKey);
     if (!bio) {
       try { bio = await fetchBiome(lat, lon, state.elevation ?? 0); lsSet(bioKey, bio); }
-      catch (e) { console.info('[sky] land cover fetch failed:', e.message); }
+      catch (e) { console.info('[sky] land cover fetch failed:', e.message); state.needRetry = true; }
     }
     if (bio) { state.biome = bio; applyLandscape(); loadLightPollution(lat, lon); }
   }
@@ -273,7 +277,7 @@ export async function loadLiveData() {
       try {
         state.dem = await fetchDem(coarse(lat, 0.05), coarse(lon, 0.05), signal);
         lsSet(demKey, state.dem);
-      } catch (e) { if (e.name !== 'AbortError') console.info('[sky] terrain fetch failed:', e.message); }
+      } catch (e) { if (e.name !== 'AbortError') { console.info('[sky] terrain fetch failed:', e.message); state.needRetry = true; } }
     }
     applyLandscape();
   }
@@ -281,14 +285,21 @@ export async function loadLiveData() {
   // weather: cached for 15 minutes
   if ((ov.weather ?? conf.weatherMode) === 'live') {
     const cached = lsGet('wx');
-    if (cached && cached.key === key && Date.now() - cached.t < 15 * 60000) {
-      state.liveWeather = cached.weather; state.elevation = cached.elevation;
+    const here = cached && cached.key === key;
+    if (here && Date.now() - cached.t < 15 * 60000) {
+      state.liveWeather = cached.weather; state.elevation = cached.elevation; state.weatherT = cached.t;
     } else {
       try {
         const r = await fetchLiveWeather(coarse(lat, 0.1), coarse(lon, 0.1), signal);
-        state.liveWeather = r.weather; state.elevation = r.elevation;
-        lsSet('wx', { key, t: Date.now(), weather: r.weather, elevation: r.elevation });
-      } catch (e) { if (e.name !== 'AbortError') console.info('[sky] weather fetch failed:', e.message); }
+        state.liveWeather = r.weather; state.elevation = r.elevation; state.weatherT = Date.now();
+        lsSet('wx', { key, t: state.weatherT, weather: r.weather, elevation: r.elevation });
+      } catch (e) {
+        if (e.name === 'AbortError') return;
+        console.info('[sky] weather fetch failed:', e.message);
+        state.needRetry = true;
+        // offline, or the service is down: the last weather we saw for this place beats a clear sky
+        if (here) { state.liveWeather = cached.weather; state.elevation = cached.elevation; state.weatherT = cached.t; }
+      }
     }
     applyLocation();
     applyWeather();

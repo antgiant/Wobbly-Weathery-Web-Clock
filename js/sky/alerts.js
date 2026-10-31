@@ -44,13 +44,11 @@ export async function updateRain() {
         const lat0 = num(ov.lat ?? conf.location_latitude, NaN), lon0 = num(ov.lon ?? conf.location_longitude, NaN);
         if (Number.isFinite(lat0) && Number.isFinite(lon0) && !(lat0 === -1 && lon0 === -1)) {
           const lat = coarse(lat0, 0.1), lon = coarse(lon0, 0.1), key = `${lat.toFixed(1)},${lon.toFixed(1)}`;
-          if (rainState.key !== key || !rainState.data) {
-            if (!rainState.busy) {
-              rainState.busy = true;
-              try { rainState.data = await cachedFetch(`rain:${key}`, 30 * 60000, () => fetchRainHours(lat, lon)); rainState.key = key; }
-              catch (e) { console.info('[sky] rain forecast failed:', e.message); }
-              rainState.busy = false;
-            }
+          if (!rainState.busy) {                                  // cachedFetch returns the saved forecast until it is 30 min old, then asks again
+            rainState.busy = true;
+            try { rainState.data = await cachedFetch(`rain:${key}`, 30 * 60000, () => fetchRainHours(lat, lon)); rainState.key = key; }
+            catch (e) { console.info('[sky] rain forecast failed:', e.message); if (rainState.key !== key) rainState.data = null; }
+            rainState.busy = false;
           }
           if (rainState.data) a = assessRain(rainState.data.hours, +d, rainState.data.offset);
         }

@@ -202,6 +202,10 @@
         <section class="panel" role="tabpanel" id="panel-presets" aria-labelledby="tab-presets" data-panel="presets">
           <p class="hint intro">Start here: one tap sets up the clock for a purpose. Everything can still be changed in the other tabs.</p>
           <div id="presetList" class="presets"></div>
+          <div class="group">
+            <h3>Offline</h3>
+            <p class="hint" id="offlineStatus"></p>
+          </div>
           <div class="group" id="installGroup" hidden>
             <h3>Install</h3>
             <p class="hint" id="installHint"></p>
@@ -556,8 +560,8 @@
 <script src="js/vendor/astronomy.browser.min.js"></script>
 <script type="module" src="js/index.js"></script>
 <script>
-  // repeat visits come from the device's cache (sw.js); not on localhost, where it would hide edits
-  if ('serviceWorker' in navigator && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+  // repeat visits come from the device's cache (sw.js); not on localhost, where it would hide edits (add ?sw=1 to test it there)
+  if ('serviceWorker' in navigator && ((location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') || /[?&]sw=1/.test(location.search))) {
     window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
   }
 </script>

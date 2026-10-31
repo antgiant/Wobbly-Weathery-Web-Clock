@@ -44,6 +44,16 @@ With thanks to
 
 A loading screen (in the colours of the last sky you saw) covers the page until the first frame is drawn with the stars, Milky Way and moon loaded; the digits stay hidden until the clock has drawn them once. All scripts and data are fetched in parallel (`modulepreload` / `preload`), and `sw.js` keeps them on the device so a returning visit does not wait for the network. It serves the cached copy and refreshes it in the background, so a change you deploy shows on the visit after next. It is not registered on localhost.
 
+## Offline
+
+After one visit with a connection the whole app is stored on the device (`sw.js` saves every script, the star catalogue, Milky Way and moon textures, and the icons), so it opens and runs with no connection at all, in a browser tab or installed. Settings → Presets → Offline says how much is saved. What keeps working offline: the clock, the sun, moon, planets and stars (computed on the device), the sky and landscape, glass and LED looks, presets, countdowns, time travel, your GPS or time-zone location. What needs a connection and how it behaves without one:
+
+- **Weather, sea state, rain forecast:** the last saved values for your place are used however old (the status line says how old, for example "saved 5 h ago, refreshes when a connection is back"); with nothing saved the sky is clear.
+- **Terrain, land cover, light pollution, weather history, seasons:** saved for good (or for 30 days) after the first successful look-up, so places you have been are complete offline; a new place falls back to a procedural landscape and the time-zone light pollution estimate until it can look it up.
+- **When the connection returns** (the browser's `online` event) everything that failed is fetched at once, and a lookup that failed while online is retried every minute.
+
+Limits: the first visit must be online; Safari may clear a web page's stored data after a week of not opening it, though an app added to the Home Screen is exempt.
+
 ## Waking up as little as possible
 
 For an always-on clock the idle cost matters. Eleven independent `setInterval`s became one scheduler (`scheduler.js`): each job has a period that can be a function and returns Infinity while it has nothing to do (labels off, no countdown, rain alert off, no time travel...), a single timeout sleeps until the next job is due (capped at 5 s so a changed setting is noticed), and nothing runs while the page is hidden. The sky's render loop sleeps on a timer between redraws instead of asking for 60 animation frames a second, and wakes at once when anything marks the scene dirty; the clock's loop ticks only while a digit is morphing, then sleeps until the next second. Measured in a headless browser with a still sky and hidden seconds, wake-ups fell from about 80 a second to about 6.
