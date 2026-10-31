@@ -82,31 +82,41 @@ export class SkyEngine {
   }
 
   // ------------------------------------------------------------- setup ----
-  _compile(type, src) {
-    const gl = this.gl, sh = gl.createShader(type);
-    gl.shaderSource(sh, src);
-    gl.compileShader(sh);
-    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
-      const log = gl.getShaderInfoLog(sh);
-      throw new Error('Shader compile failed:\n' + log + '\n--- source ---\n' +
-        src.split('\n').map((l, i) => `${i + 1}: ${l}`).join('\n'));
-    }
-    return sh;
-  }
+  // Shaders are compiled and linked without asking how it went: asking forces the page to wait for the driver. With
+  // KHR_parallel_shader_compile the driver builds all of them side by side on other threads while the page carries on,
+  // and the result is checked the first time a program is used (_ready). (Measured with a software renderer the total
+  // time is the same whichever way it is done; on a GPU driver it keeps the main thread free while they build.)
   _program(vs, fs, attribs) {
     const gl = this.gl, p = gl.createProgram();
-    gl.attachShader(p, this._compile(gl.VERTEX_SHADER, vs));
-    gl.attachShader(p, this._compile(gl.FRAGMENT_SHADER, fs));
+    const shaders = [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].map(([type, src]) => {
+      const sh = gl.createShader(type);
+      gl.shaderSource(sh, src);
+      gl.compileShader(sh);
+      gl.attachShader(p, sh);
+      return { sh, src };
+    });
     if (attribs) for (const [name, idx] of Object.entries(attribs)) gl.bindAttribLocation(p, idx, name);
     gl.linkProgram(p);
-    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('Link failed: ' + gl.getProgramInfoLog(p));
-    return { prog: p, locs: {} };
+    return { prog: p, locs: {}, shaders, checked: false };
+  }
+  _ready(P) {
+    if (P.checked) return;
+    const gl = this.gl;
+    if (!gl.getProgramParameter(P.prog, gl.LINK_STATUS)) {
+      let msg = 'Link failed: ' + gl.getProgramInfoLog(P.prog);
+      for (const { sh, src } of P.shaders) {
+        if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) msg += '\nShader compile failed:\n' + gl.getShaderInfoLog(sh) + '\n--- source ---\n' + src.split('\n').map((l, i) => `${i + 1}: ${l}`).join('\n');
+      }
+      throw new Error(msg);
+    }
+    P.checked = true;
+    P.shaders = null;
   }
   _u(P, name) {
     if (!(name in P.locs)) P.locs[name] = this.gl.getUniformLocation(P.prog, name);
     return P.locs[name];
   }
-  _use(P) { this.gl.useProgram(P.prog); this._cur = P; }
+  _use(P) { this._ready(P); this.gl.useProgram(P.prog); this._cur = P; }
   _1f(n, v) { this.gl.uniform1f(this._u(this._cur, n), v); }
   _1i(n, v) { this.gl.uniform1i(this._u(this._cur, n), v); }
   _2f(n, a, b) { this.gl.uniform2f(this._u(this._cur, n), a, b); }
@@ -133,6 +143,7 @@ export class SkyEngine {
 
   _init() {
     const gl = this.gl;
+    gl.getExtension('KHR_parallel_shader_compile');                    // opt in: compiles then run on other threads
     this.vaoEmpty = gl.createVertexArray();
 
     this.pTrans = this._program(VERT_FULLSCREEN, FRAG_TRANSMITTANCE);
@@ -142,6 +153,7 @@ export class SkyEngine {
     this.pAdapt = this._program(VERT_FULLSCREEN, FRAG_ADAPT);
     this.pScene = this._program(VERT_FULLSCREEN, FRAG_SCENE);
     this.pBlit = this._program(VERT_FULLSCREEN, FRAG_BLIT);
+    performance.mark('sky:programs-compiled');
     this.pLed = this._program(VERT_FULLSCREEN, FRAG_LED);
     this.pStars = this._program(VERT_STARS, FRAG_STARS, { aStar: 0, aBV: 1 });
     this.pPlants = this._program(VERT_PLANTS, FRAG_PLANTS, { aInst: 0, aSeed: 1 });
@@ -277,6 +289,7 @@ export class SkyEngine {
     results.filter(r => r.status === 'rejected').forEach(r => console.warn('[sky] asset:', r.reason));
     this.dirty = true;
     this.assetsDone = true;
+    performance.mark('sky:assets-done');
   }
 
   // ------------------------------------------------------------ state ----
@@ -488,6 +501,8 @@ export class SkyEngine {
 
   render(t) {
     const gl = this.gl, s = this.s;
+    const firstRender = !this._rendered;
+    if (firstRender) performance.mark('sky:first-render-start');
     const perfNow = performance.now();
 
     // canvas / scene size
@@ -620,6 +635,11 @@ export class SkyEngine {
     this._mipsValid = this.glass.mode > 0 && this.glass.hasMask;
 
     this.dirty = false;
+    if (firstRender) {
+      this._rendered = true;
+      if (/[?&]perf\b/.test(location.search)) gl.finish();               // ?perf: wait for the GPU, so the mark below is when the frame is really done
+      performance.mark('sky:first-render-end');
+    }
     this._autoScale(perfNow);
     for (const fn of this.listeners) fn(this);
   }
@@ -719,6 +739,28 @@ export class SkyEngine {
   setGlass(patch) {
     Object.assign(this.glass, patch);
     this.redrawGlass();
+  }
+
+  /**
+   * A tiny picture of the sky as it looks now (no clock, no glass), as a canvas w x h. Saved by the page, it is what the
+   * next launch shows behind the loading screen, so the sky is there the instant the page paints.
+   */
+  snapshot(w, h) {
+    const gl = this.gl, T = this.sceneTarget;
+    if (!T) return null;
+    if (!this._snap || this._snap.w !== w || this._snap.h !== h) this._snap = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, T.fbo);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this._snap.fbo);
+    gl.blitFramebuffer(0, 0, T.w, T.h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.LINEAR);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this._snap.fbo);
+    const px = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const img = new ImageData(w, h);
+    for (let y = 0; y < h; y++) img.data.set(px.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);   // GL rows run bottom to top
+    c.getContext('2d').putImageData(img, 0, 0);
+    return c;
   }
 
   /** Cheap repaint: only the final pass, reusing the last scene. */

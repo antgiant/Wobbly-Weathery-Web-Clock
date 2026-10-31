@@ -1236,3 +1236,22 @@ body:not(.ready) #clock {
     color: #b3261e;
   }
 }
+
+/* with the last sky's picture behind it the loading screen is just that sky, and a small spinner only if it takes a while */
+html[data-snap] #loading {
+  background: var(--ls-img) center / cover no-repeat, linear-gradient(var(--ls-top, #0b1020), var(--ls-bot, #0b1020));
+}
+
+html[data-snap] #loading p {
+  display: none;
+}
+
+html[data-snap] #loading .spin {
+  margin: 0 auto;
+  opacity: 0;
+  animation: spin 0.9s linear infinite, spin-in 300ms ease 1.4s forwards;
+}
+
+@keyframes spin-in {
+  to { opacity: 0.9; }
+}

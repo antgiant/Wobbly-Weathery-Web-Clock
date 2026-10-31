@@ -25,25 +25,19 @@ const simActive = () => !!getSim();
 const simFast = () => (getSim()?.scale || 1) > 1;
 
 function init() {
+  performance.mark('app:init');
   try {
     setEngine(new SkyEngine(canvas, { baseUrl: '.' }));
   } catch (e) {
     startFallback(e.message);
     return;
   }
+  performance.mark('sky:engine-created');
   window.__sky = engine;                         // handy for debugging / tests
   setControls(new Controls(engine, { onToast: toast, onChange: () => { glassRef?.updateLight(); }, onUserMove: () => updateHomeButton(), onReset: () => returnToDefaultView() }));
   window.__controls = controls;
   const glassRef = initGlass(engine, () => engine._basis());
   setGlass(glassRef);
-
-  applyQuality(); applyLocation(); applyView(); applyWeather(); applyLandscape();
-  engine.start();
-  engine.onFrame(() => { window.__frames = (window.__frames || 0) + 1; });
-
-  const { simEn, simTime, toLocalInput } = bindSettings();
-  initPresets();
-  initDim();
 
   // dev / test deep links (not persisted):
   //   ?t=2026-06-21T20:30:00Z&speed=60&az=280&pitch=10&weather=storm&landscape=ocean&lat=40.7&lon=-74
@@ -57,12 +51,31 @@ function init() {
   if (q.has('xmas')) ov.xmas = q.get('xmas');            // 1 / 0: force the Christmas tree on / off
   if (q.has('waves')) ov.waves = q.get('waves');
   if (q.has('lat') && q.has('lon')) { ov.lat = num(q.get('lat'), 40); ov.lon = num(q.get('lon'), -74); }
+  let simBase = null;
   if (q.has('t')) {
     const base = new Date(q.get('t'));
-    if (!isNaN(base)) { simEn.checked = true; simTime.value = toLocalInput(base); engine.set({ sim: { base, startPerf: performance.now(), scale: num(q.get('speed'), 0) } }); syncTimeData(); }
+    if (!isNaN(base)) { simBase = base; engine.set({ sim: { base, startPerf: performance.now(), scale: num(q.get('speed'), 0) } }); }
   }
-  if (Object.keys(ov).length) { applyQuality(); applyLocation(); applyView(); applyWeather(); applyLandscape(); }
+
+  // The first frame needs only the sky itself. Wiring the settings panel, presets and the rest waits until that frame
+  // is on screen, so none of it delays it.
+  applyQuality(); applyLocation(); applyView(); applyWeather(); applyLandscape();
+  engine.start();
+  engine.onFrame(() => { window.__frames = (window.__frames || 0) + 1; });
   scheduleLiveData();
+  if (simBase) syncTimeData();
+
+  const finishSetup = () => {
+    const { simEn, simTime, toLocalInput } = bindSettings();
+    initPresets();
+    initDim();
+    if (simBase) { simEn.checked = true; simTime.value = toLocalInput(simBase); }
+    performance.mark('app:setup-done');
+  };
+  let setUp = false;
+  const once = () => { if (setUp) return; setUp = true; setTimeout(finishSetup, 0); };
+  engine.onFrame(once);
+  setTimeout(once, 1500);                                  // even if no frame comes (hidden tab), do it
 
   // ---- the page's periodic work: one scheduler, and a period of Infinity while a job has nothing to do ----
   const t0 = performance.now();
