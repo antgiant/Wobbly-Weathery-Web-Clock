@@ -280,7 +280,7 @@ float linLum(vec3 c) { return dot(pow(max(c, 0.0), vec3(2.2)), vec3(0.2126, 0.71
 // brightness, so the guarantee is about luminance: compared with the sky next to each pixel (four samples a stroke
 // away plus the sky under it), the glass is pushed lighter or darker, whichever is closer and possible, until
 // the contrast ratio (the WCAG one) reaches uContrast. Hue is kept as far as the brightness allows.
-vec3 ensureContrast(vec3 c, vec2 uv, float stroke) {
+vec3 ensureContrast(vec3 c, vec2 uv, float stroke, bool allowLighter) {
   if (uContrast < 1.01) return c;
   vec2 px = 1.0 / uRes;
   float lod = max(log2(stroke * 0.4 * float(textureSize(uTex, 0).x) / uRes.x), 0.0);
@@ -303,6 +303,7 @@ vec3 ensureContrast(vec3 c, vec2 uv, float stroke) {
   else if (canHi) lighter = true;
   else if (canLo) lighter = false;
   else lighter = (1.05 / (hiL + 0.05)) > ((loL + 0.05) / 0.05);     // sky spans bright and dark: take the better ratio
+  if (lighter && !allowLighter) { if (canLo) lighter = false; else return c; }   // a lit tube keeps its colours: no washing it out to white
   vec3 lin = pow(c, vec3(2.2));
   if (lighter) lin = mix(lin, vec3(1.0), clamp((min(hiN, 1.0) - Lg) / max(1.0 - Lg, 1e-3), 0.0, 1.0));
   else lin *= clamp(max(loN, 0.0) / max(Lg, 1e-4), 0.0, 1.0);
@@ -315,7 +316,7 @@ void body() {
   if (mode < 0.5) { oColor = vec4(base, 1.0); return; }
   if (mode > 2.5) {                                          // flat ink: the LED panel has no glass here, but the digits still need drawing
     float cv = smoothstep(0.1, 0.9, maskAt(vUv, 0.0));
-    oColor = vec4(mix(base, ensureContrast(uInk, vUv, uGlass.z), cv), 1.0);
+    oColor = vec4(mix(base, ensureContrast(uInk, vUv, uGlass.z, true), cv), 1.0);
     return;
   }
 
@@ -386,14 +387,14 @@ void body() {
   float core = smoothstep(0.10, 0.80, h);
   float inner = glow * (0.28 + 0.72 * core) * (1.0 - 0.45 * rim);
   if (stained) c *= mix(0.75, 1.0, smoothstep(0.30, 0.85, h));         // round tube: a little darker towards the sides
-  if (stained) c = ensureContrast(c, vUv, stroke);                     // the glass is made readable first, then the lights are switched on in it
+  if (stained) c = ensureContrast(c, vUv, stroke, false);              // against a bright sky the glass darkens; against a dark one the lights themselves carry it
   vec3 lamp = emit * inner;
   if (stained) lamp *= 1.0 + 0.9 * pow(smoothstep(0.45, 0.98, h), 2.0);   // brightest down the middle of the tube
   c += lamp * (stained ? 1.15 : 0.80);
   if (!stained) c += emit * glow * 0.10 * (1.0 - frost * 0.4);        // faint all-over fill so thin strokes light up too
 
   // the body of the glass is made readable first; the glints and the rim go on top, so it still looks like glass
-  if (!stained) c = ensureContrast(c, vUv, stroke);
+  if (!stained) c = ensureContrast(c, vUv, stroke, true);
   c += uLightCol * spec * mix(1.1, 0.35, frost) * (stained ? 0.7 : 1.0);   // frost scatters the glint into a soft sheen
   c += uLightCol * rim * facing * (0.30 + 0.45 * uLight.z) * mix(1.0, 0.65, frost) * (stained ? 0.8 : 1.0);
   c += uLightCol * rim * 0.05;

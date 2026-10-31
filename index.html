@@ -8,9 +8,44 @@
   <meta name="theme-color" content="#0b1020">
   <meta name="description" content="A wobbly clock in front of a physically based, real-time sky simulation.">
   <meta charset="utf-8">
+  <script>
+    // paint the colours of the last sky we drew while the real one loads
+    try { var ls = JSON.parse(localStorage.getItem('lastsky')); if (ls) { var r = document.documentElement.style; r.setProperty('--ls-top', ls[0]); r.setProperty('--ls-bot', ls[1]); } } catch (e) {}
+  </script>
+  <!-- fetch the whole script graph and the data in parallel instead of one import at a time -->
+  <link rel="modulepreload" href="js/clock.js">
+  <link rel="modulepreload" href="js/config.js">
+  <link rel="modulepreload" href="js/easing.js">
+  <link rel="modulepreload" href="js/location.js">
+  <link rel="modulepreload" href="js/settings_gear.js">
+  <link rel="modulepreload" href="js/simtime.js">
+  <link rel="modulepreload" href="js/sky/app.js">
+  <link rel="modulepreload" href="js/sky/astro.js">
+  <link rel="modulepreload" href="js/sky/biome.js">
+  <link rel="modulepreload" href="js/sky/controls.js">
+  <link rel="modulepreload" href="js/sky/engine.js">
+  <link rel="modulepreload" href="js/sky/glass.js">
+  <link rel="modulepreload" href="js/sky/glsl-atmosphere.js">
+  <link rel="modulepreload" href="js/sky/glsl-plants.js">
+  <link rel="modulepreload" href="js/sky/glsl-scene.js">
+  <link rel="modulepreload" href="js/sky/landscape.js">
+  <link rel="modulepreload" href="js/sky/lightpollution.js">
+  <link rel="modulepreload" href="js/sky/orientation.js">
+  <link rel="modulepreload" href="js/sky/plants.js">
+  <link rel="modulepreload" href="js/sky/sunpath.js">
+  <link rel="modulepreload" href="js/sky/weather.js">
+  <link rel="modulepreload" href="js/units.js">
+  <link rel="modulepreload" href="js/virgo/lib/timezone_centroids.js">
+  <link rel="modulepreload" href="js/virgo/lib/timezone_links.js">
+  <link rel="modulepreload" href="js/virgo/virgo.js">
+  <link rel="modulepreload" href="js/wakelock.js">
+  <link rel="preload" href="data/stars.bin" as="fetch" crossorigin>
+  <link rel="preload" href="data/milkyway.png" as="image">
+  <link rel="preload" href="data/moon.jpg" as="image">
 </head>
 
 <body>
+  <div id="loading" role="status" aria-live="polite"><div><div class="spin" aria-hidden="true"></div><p>Loading the sky…</p></div></div>
   <canvas id="sky" aria-hidden="true"></canvas>
   <div id="hud" hidden aria-hidden="true"></div>
   <div id="sunCountdown" role="timer" aria-live="off" hidden></div>
@@ -454,5 +489,11 @@
 </body>
 <script src="js/vendor/astronomy.browser.min.js"></script>
 <script type="module" src="js/index.js"></script>
+<script>
+  // repeat visits come from the device's cache (sw.js); not on localhost, where it would hide edits
+  if ('serviceWorker' in navigator && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+  }
+</script>
 
 </html>
