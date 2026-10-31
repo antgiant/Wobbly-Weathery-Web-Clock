@@ -567,79 +567,87 @@ function toast(msg) {
 }
 
 // ------------------------------------------------------ countdown / readout --
-// On the LED panel the countdown cannot be a page overlay, so it is painted into the picture before the
-// pixels are taken: a sun on the horizon with an arrow (up = sunrise, down = sunset), the time left in big
-// digits, and a bar that runs down to nothing. It goes in whichever strip above or below the clock is
-// bigger, and shrinks to fit, so it never covers the time.
+// On the LED panel the countdown cannot be a page overlay, so it is drawn as LEDs: a card the size of the LED grid
+// (one canvas pixel = one LED), painted with a 5x7 pixel font so every glyph lands on whole LEDs. The card sits
+// along the top edge and the clock is laid out in what is left (--led-top, read by styles.css), so it never
+// covers the time. Landscape (64x32): sun icon left, time right. Upright (32x64): icon above, time below.
 const ledCard = window.__ledCard = document.createElement('canvas');
 let ledCardKey = '';
 
-/** Top and bottom of the digits as fractions of the canvas height (y down), or null. */
-function clockSpan() {
-  const m = clockBottom();
-  if (!m) return null;
-  let top = Infinity;
-  document.querySelectorAll('#clock svg').forEach((el) => {
-    if (getComputedStyle(el).display === 'none') return;
-    const r = el.getBoundingClientRect();
-    if (r.width < 1) return;
-    const k = Math.min(r.width / 100, r.height / 116);
-    top = Math.min(top, r.top + (r.height - 116 * k) / 2 - canvas.getBoundingClientRect().top);
-  });
-  return Number.isFinite(top) ? { top: Math.max(0, top) / m.h, bottom: m.bottom / m.h } : null;
-}
+const FONT = {   // 5 wide x 7 tall, one string per row ('#' lit)
+  '0': ['.###.', '#...#', '#..##', '#.#.#', '##..#', '#...#', '.###.'],
+  '1': ['..#..', '.##..', '..#..', '..#..', '..#..', '..#..', '.###.'],
+  '2': ['.###.', '#...#', '....#', '...#.', '..#..', '.#...', '#####'],
+  '3': ['####.', '....#', '....#', '.###.', '....#', '....#', '####.'],
+  '4': ['...#.', '..##.', '.#.#.', '#..#.', '#####', '...#.', '...#.'],
+  '5': ['#####', '#....', '####.', '....#', '....#', '#...#', '.###.'],
+  '6': ['..##.', '.#...', '#....', '####.', '#...#', '#...#', '.###.'],
+  '7': ['#####', '....#', '...#.', '..#..', '.#...', '.#...', '.#...'],
+  '8': ['.###.', '#...#', '#...#', '.###.', '#...#', '#...#', '.###.'],
+  '9': ['.###.', '#...#', '#...#', '.####', '....#', '...#.', '.##..'],
+  ':': ['.', '#', '.', '.', '.', '#', '.'],
+  N: ['#...#', '##..#', '#.#.#', '#.#.#', '#..##', '#...#', '#...#'],
+  O: ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+  W: ['#...#', '#...#', '#...#', '#.#.#', '#.#.#', '##.##', '#...#'],
+};
+const ICON_ARROW = { up: ['....#....', '...###...', '..#####..'], down: ['..#####..', '...###...', '....#....'] };
+const ICON_SUN = ['...###...', '..#####..', '.#######.', '#########'];          // dome, then the horizon line
+
+const textWidth = (t) => [...t].reduce((w, ch) => w + FONT[ch][0].length + 1, -1);
 
 function drawLedCard(st, leadMs) {
+  const set = (k) => { if (ledCardKey !== k) { ledCardKey = k; } };
+  const clear = () => {
+    if (!ledCardKey) return;
+    ledCardKey = '';
+    engine.setOverlay(null);
+    document.body.style.removeProperty('--led-top');
+    window.dispatchEvent(new Event('clocklayout'));
+  };
   const cw = engine.canvas.width, ch = engine.canvas.height;
-  if (!st || !(cw > 0 && ch > 0)) { if (ledCardKey) { ledCardKey = ''; engine.setOverlay(null); } return; }
-  const W = 384, H = Math.max(2, Math.round(W * ch / cw));
+  if (!st || !(cw > 0 && ch > 0)) { clear(); return; }
+  const portrait = ch > cw;
+  const cols = portrait ? 32 : 64, rows = portrait ? 64 : 32;
   const total = Math.ceil(Math.max(0, st.msLeft) / 1000);
   const text = st.msLeft <= 0 ? 'NOW' : `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
-
-  // the free strip above or below the digits
-  const span = clockSpan() || { top: 0.34, bottom: 0.66 };
-  const pad = 0.025;
-  const above = span.top - 2 * pad, below = 1 - span.bottom - 2 * pad;
-  const wide = W > H;
-  const want = wide ? 0.42 : 0.25;
-  const useTop = above >= below;
-  const room = Math.max(above, below);
-  const hFrac = Math.min(want, room);
-  if (hFrac < 0.09) { if (ledCardKey) { ledCardKey = ''; engine.setOverlay(null); } return; }   // no room that would be legible
-  const yFrac = useTop ? pad + (room - hFrac) / 2 : span.bottom + pad + (room - hFrac) / 2;
-
-  const x = wide ? W * 0.12 : W * 0.05, y = H * yFrac, w = wide ? W * 0.76 : W * 0.9, h = H * hFrac;
-  const key = `${st.kind}|${text}|${W}x${H}|${y.toFixed(0)}|${h.toFixed(0)}`;
+  const tw = textWidth(text);
+  const rise = st.kind === 'sunrise';
+  // card size in LEDs: 1 pad, content (7 tall; stacked: icon 7 + 1 + time 7), 1 gap, 1 bar, 1 pad
+  const inner = portrait ? 7 + 1 + 7 : 7;
+  const cardH = 1 + inner + 1 + 1 + 1;
+  const cardW = Math.min(cols, 2 + (portrait ? Math.max(tw, 9) : 9 + 2 + tw) + 2);
+  const x0 = Math.floor((cols - cardW) / 2), y0 = 1;
+  const innerW = cardW - 2;
+  const filled = Math.round(Math.max(0, Math.min(1, st.msLeft / leadMs)) * innerW);
+  const key = `${st.kind}|${text}|${cols}x${rows}|${filled}`;
   if (key === ledCardKey) return;
-  ledCardKey = key;
-  ledCard.width = W; ledCard.height = H;
+  set(key);
+
+  ledCard.width = cols; ledCard.height = rows;
   const c = ledCard.getContext('2d');
-  c.clearRect(0, 0, W, H);
-  const rise = st.kind === 'sunrise', col = rise ? '#ffd24a' : '#ff7a2e';
-  c.fillStyle = 'rgba(0,0,0,0.9)';
-  c.beginPath(); c.roundRect(x, y, w, h, Math.min(w, h) * 0.12); c.fill();
-  // icon on the left of the time when the card is wide, above it when it is not
-  const sideBySide = w / h > 2.2;
-  const ib = sideBySide ? { x: x, y: y, w: w * 0.3, h: h } : { x: x, y: y, w: w, h: h * 0.42 };
-  const tb = sideBySide ? { x: x + w * 0.3, y: y, w: w * 0.7, h: h * 0.9 } : { x: x, y: y + h * 0.4, w: w, h: h * 0.52 };
-  const cx = ib.x + ib.w / 2, r = Math.min(ib.w, ib.h) * 0.3, hy = ib.y + ib.h * 0.72;
-  c.fillStyle = col; c.beginPath(); c.arc(cx, hy, r, Math.PI, 0); c.fill();          // half sun on the horizon
-  c.strokeStyle = '#fff'; c.lineWidth = Math.max(2, r * 0.18); c.lineCap = 'round';
-  c.beginPath(); c.moveTo(cx - r * 1.6, hy); c.lineTo(cx + r * 1.6, hy); c.stroke();  // horizon
-  const ay = hy - r * 1.55, d = rise ? -1 : 1;                                       // arrow above it
-  c.fillStyle = '#fff'; c.beginPath();
-  c.moveTo(cx, ay + d * r * 0.55); c.lineTo(cx - r * 0.5, ay - d * r * 0.35); c.lineTo(cx + r * 0.5, ay - d * r * 0.35); c.closePath(); c.fill();
-  // time, as large as the box allows
-  let fs = tb.h;
-  c.font = `800 ${fs}px ui-monospace, Menlo, Consolas, monospace`;
-  const tw = c.measureText(text).width; if (tw > tb.w * 0.94) fs *= tb.w * 0.94 / tw;
-  c.font = `800 ${fs}px ui-monospace, Menlo, Consolas, monospace`;
-  c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle';
-  c.fillText(text, tb.x + tb.w / 2, tb.y + tb.h / 2 + fs * 0.04);
-  // remaining time as a bar
-  const frac = Math.max(0, Math.min(1, st.msLeft / leadMs));
-  c.fillStyle = col; c.fillRect(x + w * 0.06, y + h - h * 0.08, (w * 0.88) * frac, h * 0.045);
+  c.clearRect(0, 0, cols, rows);
+  const px = (x, y, col) => { c.fillStyle = col; c.fillRect(x, y, 1, 1); };
+  const blit = (rowsArr, x, y, col, map) => rowsArr.forEach((line, j) => [...line].forEach((v, i) => { if (v !== '.') px(x + i, y + j, map ? map(j) : col); }));
+  c.fillStyle = '#000'; c.fillRect(x0, y0, cardW, cardH);
+
+  const sun = rise ? '#ffd24a' : '#ff7a2e';
+  const iconX = portrait ? x0 + 1 + Math.floor((innerW - 9) / 2) : x0 + 2, iconY = y0 + 1;
+  blit(rise ? ICON_ARROW.up : ICON_ARROW.down, iconX, iconY, '#fff');
+  // the sun sits on the horizon: the arrow shows which way it is going
+  blit(ICON_SUN, iconX, iconY + 3, sun, (j) => (j === 3 ? '#cfd6ff' : sun));
+  const tx = portrait ? x0 + 1 + Math.floor((innerW - tw) / 2) : x0 + 2 + 9 + 2, ty = portrait ? iconY + 7 + 1 : iconY;
+  let pen = tx;
+  for (const chr of text) { blit(FONT[chr], pen, ty, '#fff'); pen += FONT[chr][0].length + 1; }
+  // time left as a row of LEDs that burns down
+  for (let i = 0; i < filled; i++) px(x0 + 1 + i, y0 + cardH - 2, sun);
+
   engine.setOverlay(ledCard);
+  // the clock gets whatever is below the card
+  const top = String((cardH + 2) / rows);
+  if (document.body.style.getPropertyValue('--led-top') !== top) {
+    document.body.style.setProperty('--led-top', top);
+    window.dispatchEvent(new Event('clocklayout'));
+  }
 }
 
 function updateCountdown() {

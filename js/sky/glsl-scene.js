@@ -254,8 +254,6 @@ uniform vec3 uLightCol;
 uniform vec4 uGlow;        // x: light from inside the glass, 0..1
 uniform vec3 uGlowCol;     // colour of that light (liquid glass)
 uniform vec3 uInk;         // flat ink colour (solid clock style while the LED panel is on)
-uniform sampler2D uOverlay;   // countdown card, drawn into the picture when the LED panel is on (straight alpha)
-uniform float uOverlayOn;
 uniform float uContrast;   // least luminance contrast ratio between the digits and the sky around them (0 = off)
 in vec2 vUv;
 out vec4 oColor;
@@ -416,10 +414,6 @@ void body() {
 
 void main() {
   body();
-  if (uOverlayOn > 0.5) {
-    vec4 o = texture(uOverlay, vec2(vUv.x, 1.0 - vUv.y));
-    oColor.rgb = mix(oColor.rgb, o.rgb, o.a);
-  }
 }`;
 
 // ---- LED panel: the finished picture (glass and all) averaged into a grid of square pixels ----
@@ -428,6 +422,8 @@ precision highp float;
 uniform sampler2D uComp;   // the normal picture, with mip levels
 uniform vec2 uRes;         // canvas size in px
 uniform vec4 uLed;         // x columns, y rows, z gap as a fraction of a cell, w brightness
+uniform sampler2D uOverlay;   // countdown card: one texel per LED, straight alpha
+uniform float uOverlayOn;
 in vec2 vUv;
 out vec4 oColor;
 void main() {
@@ -446,6 +442,10 @@ void main() {
   // LED panels are punchy: more saturation and contrast than the soft picture
   float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
   c = pow(max(mix(vec3(l), c, 1.2), 0.0), vec3(1.08));
+  if (uOverlayOn > 0.5) {                                                   // drawn per LED, after averaging, so its pixels stay whole LEDs
+    vec4 o = texelFetch(uOverlay, ivec2(int(id.x), int(uLed.y - 1.0 - id.y)), 0);
+    c = mix(c, o.rgb, o.a);
+  }
   oColor = vec4(c * (lit + 0.035) * uLed.w, 1.0);
 }`;
 

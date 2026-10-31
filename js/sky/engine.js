@@ -614,8 +614,6 @@ export class SkyEngine {
     this._3f('uGlowCol', g.glowCol);
     this._3f('uInk', g.ink);
     this._1f('uContrast', g.contrast);
-    this._1i('uOverlay', 2); this._bind(2, this.overlayTex);
-    this._1f('uOverlayOn', led && g.overlay ? 1 : 0);
     gl.bindVertexArray(this.vaoEmpty);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     if (led) this._ledPass(cw, ch);
@@ -641,6 +639,8 @@ export class SkyEngine {
     this._2f('uRes', cw, ch);
     const portrait = ch > cw;
     this._4f('uLed', portrait ? L.rows : L.cols, portrait ? L.cols : L.rows, L.gap, L.brightness);
+    this._1i('uOverlay', 1); this._bind(1, this.overlayTex);
+    this._1f('uOverlayOn', this.glass.overlay ? 1 : 0);
     gl.bindVertexArray(this.vaoEmpty);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
@@ -652,6 +652,8 @@ export class SkyEngine {
       gl.bindTexture(gl.TEXTURE_2D, this.overlayTex);
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);       // one texel per LED: no smoothing
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     }
     this.glass.overlay = !!canvas;
     this.redrawGlass();
