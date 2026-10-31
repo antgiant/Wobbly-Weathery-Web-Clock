@@ -11,6 +11,8 @@ import { updateCountdown, updateRain } from './alerts.js';
 import { updateDim } from './dim.js';
 import { applyLedPanel } from './ledpanel.js';
 import { updateBurnIn } from './burnin.js';
+import { updateWind } from './windsway.js';
+import { poke } from './scheduler.js';
 import { LED_PRESETS, MIN_LEDS, MAX_LEDS, presetIdFor } from './ledgrid.js';
 
 /** @returns {{simEn: HTMLInputElement, simTime: HTMLInputElement, toLocalInput: (d: Date) => string}} handles the deep links need */
@@ -72,6 +74,7 @@ export function bindSettings() {
   $('ledTurn').checked = conf.ledTurn !== false;
   $('ledTurn').addEventListener('change', (e) => { conf.ledTurn = e.target.checked; applyLedPanel(); updateCountdown(); });
   bindSelect('countdown', 'countdown', updateCountdown);
+  bindSelect('windSway', 'windSway', () => { updateWind(); poke('wind'); });
   bindSelect('antiBurnIn', 'antiBurnIn', updateBurnIn);
   bindSelect('countdownKind', 'countdownKind', updateCountdown);
   bindSelect('countdownLead', 'countdownLead', updateCountdown, parseFloat);

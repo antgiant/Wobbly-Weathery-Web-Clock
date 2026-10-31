@@ -26,6 +26,7 @@
   <!-- fetch the whole script graph and the data in parallel instead of one import at a time -->
   <link rel="modulepreload" href="js/clock.js">
   <link rel="modulepreload" href="js/config.js">
+  <link rel="modulepreload" href="js/wind.js">
   <link rel="modulepreload" href="js/easing.js">
   <link rel="modulepreload" href="js/location.js">
   <link rel="modulepreload" href="js/settings_gear.js">
@@ -64,6 +65,7 @@
   <link rel="modulepreload" href="js/sky/ledgrid.js">
   <link rel="modulepreload" href="js/sky/ledpanel.js">
   <link rel="modulepreload" href="js/sky/burnin.js">
+  <link rel="modulepreload" href="js/sky/windsway.js">
   <link rel="preload" href="data/stars.bin" as="fetch" crossorigin>
   <link rel="preload" href="data/milkyway.png" as="image">
   <link rel="preload" href="data/moon.jpg" as="image">
@@ -247,6 +249,15 @@
             <h3>The digits</h3>
             <label class="field toggle"><span class="field__text">24-hour time</span><input type="checkbox" id="twentyFourHourClock"><span class="switch" aria-hidden="true"></span></label>
             <label class="field toggle"><span class="field__text">Hide seconds</span><input type="checkbox" id="hideSeconds"><span class="switch" aria-hidden="true"></span></label>
+            <div class="field adv">
+              <label class="field__label" for="windSway">Wind sway</label>
+              <select id="windSway">
+                <option value="off">Off</option>
+                <option value="lean">Lean downwind (steady)</option>
+                <option value="full">Lean and gusts</option>
+              </select>
+              <p class="hint">The digits lean like palm trees, the bottoms fixed and the tops pushed downwind: the stronger the wind, the further they lean, and the lean follows the way you are looking. Only the part of the wind across the screen shows as lean; wind blowing straight at you or away just flutters. The lean is capped so the time stays readable. Gusts redraw the digits 15 times a second, so they are not used while saving power.</p>
+            </div>
             <div class="field">
               <label class="field__label" for="clockStyle">Style</label>
               <select id="clockStyle">

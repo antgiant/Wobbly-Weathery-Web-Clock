@@ -1,6 +1,7 @@
 import { conf, vars, dd, adjustTimeSize, use24h } from './config.js';
 import { easing } from './easing.js'
 import { now as simNow, getSim } from './simtime.js'
+import { sway, topOffset, bend } from './wind.js'
 
 function ci(c, i) {
   var k = i * 6;
@@ -21,7 +22,10 @@ function setCurve(id, val) {
   }
 }
 
-function setDigit(t, d) {
+// wind sway (wind.js): each digit leans by its own amount, so they do not move as one block
+var PHASE = { h0: 0.4, h1: 2.1, m0: 3.7, m1: 5.2, s0: 1.3, s1: 4.4 };
+function setDigit(t, d, nowMs) {
+  if (sway.mode !== 'off') d = bend(d, topOffset(nowMs, PHASE[t] || 0));
   for (var i = 0; i < 4; i++) {
     setCurve(t + "p" + i, ci(d, i));
   }
@@ -94,7 +98,7 @@ function clock() {
       var d = time[t][i],
         nd = nTime[t][i];
       if (d != nd) morphing = true;
-      setDigit(t + i, morph(dd[d], dd[nd], cStep));
+      setDigit(t + i, morph(dd[d], dd[nd], cStep), performance.now());   // gusts run on the real clock, even while time travel holds the time still
     }
   });
   if (layoutStale) {
@@ -120,7 +124,7 @@ function loop() {
   var morphing = clock();
   if (document.hidden) return;                 // the visibilitychange below restarts it
   var sim = getSim();
-  var delay = morphing || (sim && sim.scale > 1) ? vars.step : 1005 - simNow().getMilliseconds();
+  var delay = morphing || sway.flutter || (sim && sim.scale > 1) ? vars.step : 1005 - simNow().getMilliseconds();
   clockTimer = setTimeout(loop, delay);
 }
 function kickClock() {
@@ -128,6 +132,7 @@ function kickClock() {
   loop();
 }
 document.addEventListener('visibilitychange', function() { if (!document.hidden) kickClock(); });
+window.addEventListener('windchange', kickClock);                 // the sway was switched on, off, or changed: redraw the digits now
 
 function updateSvgWidths() {
   const svgs = document.querySelectorAll("#clock svg");
