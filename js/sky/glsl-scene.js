@@ -237,9 +237,8 @@ void main() {
 //                   specular glints and a bright rim facing the real sun/moon, and
 //                   a soft shadow on the sky behind. Optionally lit from inside: the
 //                   thick middle of each stroke glows and a halo spills onto the sky
-//   stained glass - coloured glass tubes, like LED tube lights: the same liquid glass, tinted, each
-//                   tube a saturated colour that lights up with a hot line down its middle,
-//                   with a thin dark gap where one tube ends and the next begins
+//   coloured tube - a plain glass tube with LEDs inside, like a tube light: evenly spaced lights of
+//                   varying colours (placed by glass.js) glow through the glass, no lines on it
 //   LED panel     - the whole picture sampled onto a 64x32 (or 32x64) grid of square
 //                   pixels with black lines between them
 export const FRAG_BLIT = `#version 300 es
@@ -356,37 +355,14 @@ void body() {
   float rim = smoothstep(0.02, 0.55, slope);
   float frost = uGlass.x;
 
-  // Stained glass: the panes are baked into the mask by glass.js. Every stroke is cut into pieces along
-  // its length (and into an inner and an outer lane), each filled with its own id colour. Because the
-  // pieces are slices of the morphing curves, the leading stretches and bends with the digit. Lead lines
-  // are simply where the pane id changes.
-  vec3 tint = vec3(1.0);
+  // Coloured tube: glass.js paints the lights into the mask's colour channels (alpha stays coverage), evenly
+  // spaced along each digit and fixed to their place in it, so the colour here is how brightly each light
+  // shines on this spot. The tube itself is plain glass; there are no lines on it.
   vec3 emit = uGlowCol;
-  float lead = 0.0;
   if (stained) {
-    vec4 mk = textureLod(uMask, (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw, 0.0);
-    float pid = floor(mk.r * 255.0 / 40.0 + 0.5);
-    float shade = mk.g;
-    float lr = max(stroke * 0.035, 0.9);
-    float diffN = 0.0;
-    for (int i = 0; i < 8; i++) {
-      float a8 = float(i) * 0.785398;
-      vec2 o = vec2(cos(a8), sin(a8)) * lr * px;
-      vec2 mm = (vec2(vUv.x + o.x, 1.0 - (vUv.y + o.y)) - uMaskRect.xy) / uMaskRect.zw;
-      vec4 q = textureLod(uMask, mm, 0.0);
-      diffN += step(0.5, q.a) * step(0.04, abs(q.r - mk.r) + abs(q.g - mk.g));
-    }
-    lead = smoothstep(0.0, 2.5, diffN);
-    vec3 pal;
-    if (pid < 0.5)      pal = vec3(1.00, 0.12, 0.16);                 // red
-    else if (pid < 1.5) pal = vec3(1.00, 0.55, 0.05);                 // orange
-    else if (pid < 2.5) pal = vec3(0.12, 0.95, 0.32);                 // green
-    else if (pid < 3.5) pal = vec3(0.05, 0.85, 1.00);                 // cyan
-    else if (pid < 4.5) pal = vec3(0.22, 0.32, 1.00);                 // blue
-    else                pal = vec3(0.95, 0.20, 0.85);                 // magenta
-    float pane = 0.92 + 0.16 * shade;                                 // every tube is slightly different
-    tint = mix(vec3(1.0), pal, 0.92) * pane;
-    emit = pal * pane;
+    vec2 mUv = (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw;
+    vec4 mk = textureLod(uMask, mUv, lodH * 0.5);                      // a little blur: glass spreads the light
+    emit = min(mk.rgb / max(mk.a, 0.05), vec3(1.3));
   }
 
   // ---- liquid glass (stained glass is the same glass with a colour in it) ----
@@ -402,37 +378,37 @@ void body() {
   c = mix(c, mix(avg, c, 0.5), frost * 0.6);
   float lum = lumaOf(c);
   c = mix(c, vec3(lum), 0.12 * frost);
-  if (stained) c *= tint * 1.25;                                      // colour the light passing through the pane
-  c += uLightCol * (0.012 + 0.26 * frost * frost + 0.06 * frost) * (0.45 + 0.55 * uLight.z) * (stained ? tint * 0.35 : vec3(1.0));
+  c += uLightCol * (0.012 + 0.26 * frost * frost + 0.06 * frost) * (0.45 + 0.55 * uLight.z);
   c += (hash21(gl_FragCoord.xy) - 0.5) * 0.05 * frost;               // fine grain of etched glass
   c *= 1.0 - 0.10 * rim * away;                                       // bevel facing away from the light darkens
 
   // light from inside: brightest in the thick middle of the stroke, the bevelled edge stays glassy
   float core = smoothstep(0.10, 0.80, h);
   float inner = glow * (0.28 + 0.72 * core) * (1.0 - 0.45 * rim);
-  if (stained) c *= mix(0.55, 1.0, smoothstep(0.30, 0.85, h));         // round tube: darker towards the sides
+  if (stained) c *= mix(0.75, 1.0, smoothstep(0.30, 0.85, h));         // round tube: a little darker towards the sides
+  if (stained) c = ensureContrast(c, vUv, stroke);                     // the glass is made readable first, then the lights are switched on in it
   vec3 lamp = emit * inner;
-  c += lamp * (stained ? 0.95 : 0.80);
-  c += emit * glow * 0.10 * (1.0 - frost * 0.4);                      // faint all-over fill so thin strokes light up too
-  if (stained) c += mix(emit, vec3(1.0), 0.55) * pow(smoothstep(0.45, 0.98, h), 2.0) * glow * 0.65;   // the hot line down the middle of a lit tube
+  if (stained) lamp *= 1.0 + 0.9 * pow(smoothstep(0.45, 0.98, h), 2.0);   // brightest down the middle of the tube
+  c += lamp * (stained ? 1.15 : 0.80);
+  if (!stained) c += emit * glow * 0.10 * (1.0 - frost * 0.4);        // faint all-over fill so thin strokes light up too
 
   // the body of the glass is made readable first; the glints and the rim go on top, so it still looks like glass
-  c = ensureContrast(c, vUv, stroke);
+  if (!stained) c = ensureContrast(c, vUv, stroke);
   c += uLightCol * spec * mix(1.1, 0.35, frost) * (stained ? 0.7 : 1.0);   // frost scatters the glint into a soft sheen
   c += uLightCol * rim * facing * (0.30 + 0.45 * uLight.z) * mix(1.0, 0.65, frost) * (stained ? 0.8 : 1.0);
   c += uLightCol * rim * 0.05;
   c += uLightCol * exp(-pow((h - 0.62) * 5.0, 2.0)) * spec * 0.35 * (1.0 - frost);
-  if (stained) {
-    // the dark gap between tubes: nearly opaque, blocks the glow, and the bevel still catches light on it
-    vec3 leadCol = vec3(0.035, 0.03, 0.028) + uLightCol * spec * 0.12;
-    c = mix(c, leadCol, clamp(lead, 0.0, 1.0) * 0.88);
-  }
   vec3 glass = min(c, vec3(1.6));
 
   // halo on the sky around lit glass
   vec3 shaded = base * (1.0 - shadow * (1.0 - cover));
-  vec3 haloCol = stained ? mix(vec3(1.0, 0.92, 0.82), vec3(0.8, 0.9, 1.0), 0.3) : uGlowCol;
-  shaded += haloCol * halo * glow * (1.0 - cover) * 0.30;
+  vec3 haloCol = uGlowCol;
+  float haloK = 0.30;
+  if (stained) {                                                      // the tube's lights colour the air around it
+    vec4 hm = textureLod(uMask, (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw, lodG);
+    haloCol = hm.rgb / max(hm.a, 0.04); haloK = 0.85;
+  }
+  shaded += haloCol * halo * glow * (1.0 - cover) * haloK;
 
   oColor = vec4(mix(shaded, glass, cover), 1.0);
 }
