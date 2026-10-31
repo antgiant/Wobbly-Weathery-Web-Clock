@@ -216,6 +216,7 @@ export function applyQuality() {
     twinkle: false,                        // saves power: twinkle forces a redraw every frame all night
     fps: conf.quality === 'low' ? 8 : 15,
     lowPower: lowPower(),
+    digitWeather: conf.digitWeather !== 'off',
     bortle: bortleFromSettings(),
   });
   engine._resetScale();

@@ -146,5 +146,19 @@ export async function startHarness({ headless = true } = {}) {
     }, { a64: a.toString('base64'), b64: b.toString('base64'), threshold });
   }
 
-  return { open, analyze, diff, url: srv.url, root, browser, close: async () => { for (const h of opened) { try { await h.ctx.close(); } catch (_) { /* gone */ } } await browser.close(); await srv.close(); } };
+  /** Of the pixels that differ between two screenshots, the share that lies inside `box` ({x0, y0, x1, y1}, css px) grown by `pad`. */
+  async function diffBox(page, a, b, threshold, box, pad = 0) {
+    return page.evaluate(async ({ a64, b64, threshold, box, pad }) => {
+      const load = async (s) => { const i = new Image(); i.src = 'data:image/png;base64,' + s; await i.decode(); const c = document.createElement('canvas'); c.width = i.width; c.height = i.height; const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(i, 0, 0); return x.getImageData(0, 0, c.width, c.height); };
+      const A = await load(a64), B = await load(b64);
+      let n = 0, inside = 0;
+      for (let i = 0; i < A.data.length; i += 4) {
+        const d = Math.max(Math.abs(A.data[i] - B.data[i]), Math.abs(A.data[i + 1] - B.data[i + 1]), Math.abs(A.data[i + 2] - B.data[i + 2]));
+        if (d > threshold) { n++; const p = i / 4, x = p % A.width, y = Math.floor(p / A.width); if (x >= box.x0 - pad && x <= box.x1 + pad && y >= box.y0 - pad && y <= box.y1 + pad) inside++; }
+      }
+      return { count: n, inside, share: n ? inside / n : 1 };
+    }, { a64: a.toString('base64'), b64: b.toString('base64'), threshold, box, pad });
+  }
+
+  return { open, analyze, diff, diffBox, url: srv.url, root, browser, close: async () => { for (const h of opened) { try { await h.ctx.close(); } catch (_) { /* gone */ } } await browser.close(); await srv.close(); } };
 }

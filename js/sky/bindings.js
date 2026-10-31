@@ -74,6 +74,7 @@ export function bindSettings() {
   $('ledTurn').checked = conf.ledTurn !== false;
   $('ledTurn').addEventListener('change', (e) => { conf.ledTurn = e.target.checked; applyLedPanel(); updateCountdown(); });
   bindSelect('countdown', 'countdown', updateCountdown);
+  bindSelect('digitWeather', 'digitWeather', applyQuality);
   bindSelect('windSway', 'windSway', () => { updateWind(); poke('wind'); });
   bindSelect('antiBurnIn', 'antiBurnIn', updateBurnIn);
   bindSelect('countdownKind', 'countdownKind', updateCountdown);

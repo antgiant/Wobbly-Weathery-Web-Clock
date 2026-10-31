@@ -257,6 +257,7 @@ uniform vec3 uInk;         // flat ink colour (solid clock style while the LED p
 uniform sampler2D uFull;       // full-size overlay (the pills on panels the tuned layout does not cover), straight alpha
 uniform float uFullOn;
 uniform float uContrast;   // strength of the readability outline and tone, 0 off .. 1
+uniform vec4 uWx;          // weather on the digits: x snow settled on them 0..1, y rain on the glass 0..1, w time in seconds
 in vec2 vUv;
 out vec4 oColor;
 
@@ -313,13 +314,102 @@ vec3 bodyTone(vec3 c, float stroke) {
   return mix(c, vec3(1.0), 0.22 * light * uContrast);
 }
 
+
+// ---- weather on the digits ----
+// Snow settles on the upper edges of the digits as a lumpy cap (a few steps up from each pixel: if there is open air within
+// the cap's depth above it, it is snow). Rain beads up on the glass, some of the beads slide down leaving a thin wet trail,
+// and drops bounce off the top edges as tiny splashes. All of it is thin and stays on the edges or in small spots, and it goes
+// on before the readability outline, so the outline still frames every digit.
+float vnoise(float x) { float i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(hash21(vec2(i, 7.1)), hash21(vec2(i + 1.0, 7.1)), f); }
+
+float snowCap(float stroke, float amount) {
+  if (amount < 0.01) return 0.0;
+  float lump = 0.7 + 0.6 * vnoise(gl_FragCoord.x / (stroke * 0.30));
+  float depth = stroke * (0.06 + 0.24 * amount) * lump;           // canvas px: at most about 30% of the stroke
+  float cap = 0.0;
+  for (int k = 1; k <= 6; k++) {
+    float f = float(k) / 6.0;
+    float m = maskAt(vUv + vec2(0.0, depth * f / uRes.y), 0.0);
+    cap = max(cap, (1.0 - smoothstep(0.2, 0.8, m)) * (1.0 - 0.5 * f));
+  }
+  return cap;
+}
+
+vec3 snowOn(vec3 col, float cap, vec3 sky) {
+  float L = lumaOf(sky);
+  vec3 white = vec3(0.93, 0.96, 1.0) * (0.45 + 0.6 * smoothstep(0.02, 0.45, L));   // lit by the sky: dim at night
+  white = mix(white, vec3(0.78, 0.86, 1.0) * white, smoothstep(0.55, 1.0, cap) * 0.5);   // a cool shade where it is thick
+  return mix(col, white, smoothstep(0.0, 0.7, cap) * 0.92);
+}
+
+// beads and trails on the glass; returns (darken, highlight, refract amount, trail)
+vec4 rainBeads(float stroke, float wet) {
+  float cell = stroke * 0.42;
+  vec2 p = gl_FragCoord.xy / cell;
+  float dark = 0.0, hi = 0.0, refr = 0.0, trail = 0.0;
+  for (int j = -1; j <= 1; j++) {
+    for (int i = -1; i <= 1; i++) {
+      vec2 id = floor(p) + vec2(float(i), float(j));
+      vec2 h = hash22(id);
+      if (h.x > wet * 0.95) continue;
+      vec2 c = id + 0.2 + 0.6 * hash22(id + 3.7);
+      float r = 0.17 + 0.15 * h.y;
+      float ph = fract(uWx.w * (0.03 + 0.05 * h.x) + h.y * 7.0);       // each bead's own slow cycle
+      float slide = smoothstep(0.0, 0.18, ph) * 1.5 * step(0.55, h.y);  // some beads slide down, the rest sit
+      float life = smoothstep(0.0, 0.06, ph) * (1.0 - smoothstep(0.92, 1.0, ph));
+      vec2 cc = c - vec2(0.0, slide);
+      vec2 q = p - cc;
+      float d = length(q) / r;
+      if (d < 1.2) {
+        float inside = 1.0 - smoothstep(0.92, 1.0, d);
+        dark = max(dark, smoothstep(0.62, 1.0, d) * inside * life);
+        hi = max(hi, smoothstep(0.55, 0.0, length(q / r - uLight.xy * 0.42)) * inside * life);
+        refr = max(refr, inside * life);
+      }
+      if (slide > 0.01 && abs(p.x - c.x) < r * 0.34 && p.y > cc.y && p.y < c.y + 0.1) {
+        trail = max(trail, (1.0 - (p.y - cc.y) / (slide + 0.1)) * 0.5 * life);
+      }
+    }
+  }
+  return vec4(dark, hi, refr, trail);
+}
+
+vec3 rainOn(vec3 col, vec4 b, vec3 lightCol, vec3 skyHere) {
+  col = mix(col, skyHere * 0.9, b.z * 0.55);                                    // the bead shows the sky, bent
+  col *= 1.0 - 0.28 * b.x;                                                      // its rim is darker
+  col += lightCol * b.y * 0.55;                                                 // and it catches the light
+  col = mix(col, col * 0.9 + lightCol * 0.06, b.w);                             // a trail is a thin wet line
+  return col;
+}
+
+// drops bouncing off the top edge of a digit: a few tiny flashes just above it, never the same place twice
+float splash(float stroke, float rate) {
+  if (rate < 0.02) return 0.0;
+  float r = stroke * 0.12;
+  float above = 1.0 - smoothstep(0.1, 0.4, maskAt(vUv, 0.0));
+  float below = maskAt(vUv - vec2(0.0, r * 0.7 / uRes.y), 0.0);
+  float edge = above * smoothstep(0.5, 0.95, below);
+  if (edge < 0.01) return 0.0;
+  float cx = floor(gl_FragCoord.x / (stroke * 0.18));
+  float tt = floor(uWx.w * 6.0 + hash21(vec2(cx, 2.0)) * 5.0);
+  float on = step(1.0 - rate * 0.45, hash21(vec2(cx, tt)));
+  return edge * on * (0.6 + 0.4 * hash21(vec2(cx, tt + 9.0)));
+}
+
 void body() {
   vec3 base = texture(uTex, vUv).rgb;
   float mode = uGlass.y;
   if (mode < 0.5) { oColor = vec4(base, 1.0); return; }
   if (mode > 2.5) {                                          // flat ink: the LED panel has no glass here, but the digits still need drawing
     float cv = smoothstep(0.1, 0.9, maskAt(vUv, 0.0));
-    oColor = vec4(withOutline(base, mix(base, uInk, cv), cv), 1.0);
+    vec3 ink = uInk, bs = base;
+    float stk = uGlass.z;
+    if (cv > 0.02 && uWx.x > 0.01) ink = snowOn(ink, snowCap(stk, uWx.x), base);
+    if (uWx.y > 0.01 && stk > 0.0) {
+      if (cv > 0.02) ink = rainOn(ink, rainBeads(stk, uWx.y) * vec4(0.7, 0.8, 0.0, 0.8), uLightCol, base);
+      bs += splash(stk, uWx.y) * vec3(0.8, 0.9, 1.0) * 0.55;
+    }
+    oColor = vec4(withOutline(bs, mix(bs, ink, cv), cv), 1.0);
     return;
   }
 
@@ -402,6 +492,10 @@ void body() {
   c += uLightCol * rim * 0.05;
   c += uLightCol * exp(-pow((h - 0.62) * 5.0, 2.0)) * spec * 0.35 * (1.0 - frost);
   vec3 glass = min(c, vec3(1.6));
+  if (cover > 0.02) {                                                  // snow and rain on the digits
+    if (uWx.x > 0.01) glass = snowOn(glass, snowCap(stroke, uWx.x), base);
+    if (uWx.y > 0.01) glass = rainOn(glass, rainBeads(stroke, uWx.y), uLightCol, sceneAt(vUv - (gl_FragCoord.xy / (stroke * 0.42) - floor(gl_FragCoord.xy / (stroke * 0.42)) - 0.5) * (stroke * 0.42) * px * 1.4, 1.0));
+  }
 
   // halo on the sky around lit glass
   vec3 shaded = base * (1.0 - shadow * (1.0 - cover));
@@ -412,6 +506,7 @@ void body() {
     haloCol = hm.rgb / max(hm.a, 0.04); haloK = 0.85;
   }
   shaded += haloCol * halo * glow * (1.0 - cover) * haloK;
+  if (uWx.y > 0.01) shaded += splash(stroke, uWx.y) * vec3(0.8, 0.9, 1.0) * 0.55;
 
   oColor = vec4(withOutline(shaded, glass, cover), 1.0);
 }

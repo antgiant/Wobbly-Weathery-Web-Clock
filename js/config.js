@@ -89,6 +89,7 @@ export const DEFAULTS = {
   viewFov: 80,
   showLabels: false,
   plants: true,               // grass, trees, cacti ... swaying in the wind
+  digitWeather: 'on',         // on | off: rain beads and splashes, snow settling on the digits (glass, tube and LED styles)
   windSway: 'off',            // off | lean | full: the digits lean downwind like palm trees (steady lean, or lean and gusts)
   antiBurnIn: 'auto',         // auto (while the screen is kept on) | on | off: step the digits a few pixels round a small square, once a minute
   keepAwake: true,            // Screen Wake Lock

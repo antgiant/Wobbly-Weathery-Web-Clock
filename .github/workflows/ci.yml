@@ -39,11 +39,16 @@ jobs:
         run: node tests/run.mjs unit
 
   browser:
-    name: Browser tests
+    name: Browser tests (share ${{ matrix.shard }} of 3)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]                      # three machines side by side: the whole run takes the time of the slowest third
     env:
       TEST_ARTIFACTS: test-results
+      SHARD: ${{ matrix.shard }}/3
       # Picture baselines are compared strictly (the browser version is pinned by package-lock.json). If a deliberate
       # visual change needs new baselines, run the workflow by hand with update_baselines ticked, or `npm run test:visual:update`.
     steps:
@@ -65,19 +70,19 @@ jobs:
         if: ${{ !inputs.update_baselines }}
         run: node tests/run.mjs browser
       - name: Redraw the picture baselines
-        if: ${{ inputs.update_baselines }}
-        run: UPDATE_BASELINES=1 node tests/run.mjs browser visual
+        if: ${{ inputs.update_baselines && matrix.shard == 1 }}
+        run: SHARD=1/1 UPDATE_BASELINES=1 node tests/run.mjs browser visual
       - name: Keep the pictures
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-pictures
+          name: test-pictures-${{ matrix.shard }}
           path: |
             test-results
             tests/visual/__actual__
           if-no-files-found: ignore
       - name: Keep the new baselines
-        if: ${{ inputs.update_baselines }}
+        if: ${{ inputs.update_baselines && matrix.shard == 1 }}
         uses: actions/upload-artifact@v4
         with:
           name: visual-baselines
