@@ -6,7 +6,7 @@
 //   bindings.js    settings controls                 presets.js     presets, reset to defaults
 //   dim.js         night dimming                     scheduler.js   the single timer
 
-import { conf, clockStyleNow } from '../config.js';
+import { conf, clockStyleNow, lowPower } from '../config.js';
 import { getSim } from '../simtime.js';
 import { SkyEngine } from './engine.js';
 import { Controls } from './controls.js';
@@ -19,6 +19,7 @@ import { updateCountdown, updateRain, countdownPeriod } from './alerts.js';
 import { bindSettings } from './bindings.js';
 import { initDim, updateDim } from './dim.js';
 import { initPresets } from './presets.js';
+import { updateBurnIn, burnInPeriod, toNextMinute } from './burnin.js';
 import { every } from './scheduler.js';
 
 const simActive = () => !!getSim();
@@ -88,7 +89,7 @@ function init() {
   every('live-retry', loadLiveData, () => (state.needRetry && navigator.onLine !== false ? 60000 : Infinity));   // a lookup failed: try again soon
   // the connection came back: bring in everything that could not be fetched, at once
   window.addEventListener('online', () => { dayLoad.key = ''; scheduleLiveData(); syncTimeData(); updateRain(); });
-  window.addEventListener('powerchange', () => glassRef.apply());       // the battery ran low (or was plugged in): the automatic clock style follows
+  window.addEventListener('powerchange', () => { engine.set({ lowPower: lowPower() }); glassRef.apply(); });       // the battery ran low (or was plugged in): the automatic clock style follows
   window.addEventListener('offline', () => applyWeather());               // the status line says "offline"
   every('timedata', syncTimeData, () => (simActive() ? 4000 : 60000));     // history and seasons follow the (simulated) date
   every('tree', applyTree, () => (simActive() ? 4000 : 60000));            // Thanksgiving arrives, or time travel moves the date
@@ -98,6 +99,7 @@ function init() {
   every('hud', () => { updateHud(); updateVrReadout(); }, () => (conf.showLabels || controls?.mode === 'look' || conf.vrDebug ? 250 : Infinity));
   every('countdown', updateCountdown, countdownPeriod, 600);                  // first look soon after start: a countdown may already be running
   every('rain', updateRain, () => (conf.rainAlert ? 60000 : Infinity), 2500);
+  every('burnin', updateBurnIn, burnInPeriod, toNextMinute());                // anti burn-in: a tiny step once a minute while the screen is kept on
   every('dim', updateDim, () => (conf.nightDim && conf.nightDim !== 'off' ? (simFast() ? 1000 : 20000) : Infinity), 500);
   window.addEventListener('resize', () => { if (atDefault()) applyView(); });
   void applyPlants;

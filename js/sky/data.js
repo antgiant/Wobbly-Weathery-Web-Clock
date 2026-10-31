@@ -1,7 +1,7 @@
 // The world around the clock: location, live and historical weather, landscape, plants, the Christmas tree, quality,
 // light pollution, and time travel.
 
-import { conf, formatTemp } from '../config.js';
+import { conf, formatTemp, lowPower } from '../config.js';
 import { now } from '../simtime.js';
 import { PRESETS, fetchLiveWeather, fetchMarine, CLEAR, fetchWeatherDay, weatherFromDay, fetchClimate } from './weather.js';
 import { fetchDem, demSkyline, LANDSCAPES } from './landscape.js';
@@ -215,6 +215,7 @@ export function applyQuality() {
     reducedMotion: !!rm,
     twinkle: false,                        // saves power: twinkle forces a redraw every frame all night
     fps: conf.quality === 'low' ? 8 : 15,
+    lowPower: lowPower(),
     bortle: bortleFromSettings(),
   });
   engine._resetScale();

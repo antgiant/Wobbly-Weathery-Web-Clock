@@ -56,7 +56,7 @@ export class SkyEngine {
       mie: 2.0,
       quality: 'auto', scale: 0.75, maxDpr: 2,
       bodySize: 2.0, nightBoost: 1.0, bortle: 3, cloudMotion: 1, twinkle: true,
-      fps: 15, reducedMotion: false,
+      fps: 15, reducedMotion: false, lowPower: false,
       landscape: { type: 'hills', skyline: null, albedo: [0.12, 0.17, 0.07], haze: [0.35, 0.3, 0.55], ocean: false, seed: 1 },
       snowCover: 0,
       sea: null,                    // marine forecast {windHs, windTp, windDir, swellHs, swellTp, swellDir} or null: derive from the wind
@@ -451,7 +451,7 @@ export class SkyEngine {
   interval() {
     const sim = getSim();
     if (this.fast || (sim && sim.scale > 1)) return 0;
-    if (this._animated()) return 1000 / this.s.fps;
+    if (this._animated()) return this.s.lowPower ? 900 : 1000 / this.s.fps;    // saving power: an animated scene (the sea) redraws only with the clock's tick, once a second
     return 1000;
   }
 
@@ -481,7 +481,8 @@ export class SkyEngine {
 
   _schedule() {
     if (!this._running || this._raf || this._to || document.hidden) return;   // hidden: visibilitychange wakes us
-    const wait = this._dirty || this._fast ? 0 : Math.max(0, this.interval() - (performance.now() - this.lastRender));
+    let wait = this._dirty || this._fast ? 0 : Math.max(0, this.interval() - (performance.now() - this.lastRender));
+    if (wait > 0 && this.s.lowPower && this._animated()) wait = Math.max(wait, 1000 - (this.now.getTime() % 1000) + 25);   // ... and just after the second turns, when the digits change too
     if (wait <= 4) this._raf = requestAnimationFrame(this._frame);
     else this._to = setTimeout(() => { this._to = 0; this._raf = requestAnimationFrame(this._frame); }, wait);
   }
