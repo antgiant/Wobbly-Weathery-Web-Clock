@@ -590,13 +590,39 @@ const FONT = {   // 5 wide x 7 tall, one string per row ('#' lit)
   O: ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
   W: ['#...#', '#...#', '#...#', '#.#.#', '#.#.#', '##.##', '#...#'],
 };
-const ICON_ARROW = { up: ['....#....', '...###...', '..#####..'], down: ['..#####..', '...###...', '....#....'] };
-const ICON_SUN = ['...###...', '..#####..', '.#######.', '#########'];          // dome, then the horizon line
+// Two sizes. The countdown must always be clearly smaller than the clock's own digits. The ink of a digit is about
+// 70% of its box (measured on the panel), and the countdown may be at most 65% of that, so the big font (7 rows)
+// needs a digit box of 7 / (0.7 * 0.65) = 15.4 rows or more; otherwise the small one (5 rows) is used.
+const FONT3 = {
+  '0': ['###', '#.#', '#.#', '#.#', '###'], '1': ['.#.', '##.', '.#.', '.#.', '###'], '2': ['###', '..#', '###', '#..', '###'],
+  '3': ['###', '..#', '###', '..#', '###'], '4': ['#.#', '#.#', '###', '..#', '..#'], '5': ['###', '#..', '###', '..#', '###'],
+  '6': ['###', '#..', '###', '#.#', '###'], '7': ['###', '..#', '.#.', '.#.', '.#.'], '8': ['###', '#.#', '###', '#.#', '###'],
+  '9': ['###', '#.#', '###', '..#', '###'], ':': ['.', '#', '.', '#', '.'],
+  N: ['#.#', '###', '###', '#.#', '#.#'], O: ['###', '#.#', '#.#', '#.#', '###'], W: ['#.#', '#.#', '###', '###', '#.#'],
+};
+const SIZES = {
+  big: { font: FONT, h: 7, iw: 9,
+    arrow: { up: ['....#....', '...###...', '..#####..'], down: ['..#####..', '...###...', '....#....'] },
+    sun: ['...###...', '..#####..', '.#######.'], horizon: '#########' },
+  small: { font: FONT3, h: 5, iw: 7,
+    arrow: { up: ['...#...', '..###..'], down: ['..###..', '...#...'] },
+    sun: ['..###..', '.#####.'], horizon: '#######' },
+};
 
-const textWidth = (t) => [...t].reduce((w, ch) => w + FONT[ch][0].length + 1, -1);
+const textWidth = (font, t) => [...t].reduce((w, ch) => w + font[ch][0].length + 1, -1);
+
+/** Rows tall the clock's digit boxes end up, given a card of cardH rows (same maths as the LED rules in styles.css). */
+function clockDigitRows(portrait, cols, rows, cardH) {
+  const cs = document.getElementById('clock').style;
+  const units = parseFloat(cs.getPropertyValue('--units')) || 7, nr = parseFloat(cs.getPropertyValue('--rows')) || 3;
+  const free = rows * (1 - (cardH + 2) / rows);
+  return portrait
+    ? 1.16 * Math.min(0.93 * cols / 2, free * 0.95 / (nr * 1.16))
+    : 1.16 * Math.min(0.93 * cols / units, free * 0.9 / 1.16);
+}
+const cardHeight = (sz, portrait) => 1 + (portrait ? sz.h + 1 + sz.h : sz.h) + 1 + 1 + 1;
 
 function drawLedCard(st, leadMs) {
-  const set = (k) => { if (ledCardKey !== k) { ledCardKey = k; } };
   const clear = () => {
     if (!ledCardKey) return;
     ledCardKey = '';
@@ -608,36 +634,39 @@ function drawLedCard(st, leadMs) {
   if (!st || !(cw > 0 && ch > 0)) { clear(); return; }
   const portrait = ch > cw;
   const cols = portrait ? 32 : 64, rows = portrait ? 64 : 32;
+  // the big size only if the clock's digits would still be big enough with the big card in place (decided from that
+  // layout, not the current one, so the choice cannot flip back and forth as the clock resizes)
+  const sz = clockDigitRows(portrait, cols, rows, cardHeight(SIZES.big, portrait)) >= SIZES.big.h / (0.7 * 0.65) ? SIZES.big : SIZES.small;
+  const { font, h: fh, iw } = sz;
   const total = Math.ceil(Math.max(0, st.msLeft) / 1000);
   const text = st.msLeft <= 0 ? 'NOW' : `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
-  const tw = textWidth(text);
+  const tw = textWidth(font, text);
   const rise = st.kind === 'sunrise';
-  // card size in LEDs: 1 pad, content (7 tall; stacked: icon 7 + 1 + time 7), 1 gap, 1 bar, 1 pad
-  const inner = portrait ? 7 + 1 + 7 : 7;
-  const cardH = 1 + inner + 1 + 1 + 1;
-  const cardW = Math.min(cols, 2 + (portrait ? Math.max(tw, 9) : 9 + 2 + tw) + 2);
+  const cardH = cardHeight(sz, portrait);
+  const cardW = Math.min(cols, 2 + (portrait ? Math.max(tw, iw) : iw + 2 + tw) + 2);
   const x0 = Math.floor((cols - cardW) / 2), y0 = 1;
   const innerW = cardW - 2;
   const filled = Math.round(Math.max(0, Math.min(1, st.msLeft / leadMs)) * innerW);
-  const key = `${st.kind}|${text}|${cols}x${rows}|${filled}`;
+  const key = `${st.kind}|${text}|${cols}x${rows}|${filled}|${fh}`;
   if (key === ledCardKey) return;
-  set(key);
+  ledCardKey = key;
 
   ledCard.width = cols; ledCard.height = rows;
   const c = ledCard.getContext('2d');
   c.clearRect(0, 0, cols, rows);
   const px = (x, y, col) => { c.fillStyle = col; c.fillRect(x, y, 1, 1); };
-  const blit = (rowsArr, x, y, col, map) => rowsArr.forEach((line, j) => [...line].forEach((v, i) => { if (v !== '.') px(x + i, y + j, map ? map(j) : col); }));
+  const blit = (lines, x, y, col) => lines.forEach((line, j) => [...line].forEach((v, i) => { if (v !== '.') px(x + i, y + j, col); }));
   c.fillStyle = '#000'; c.fillRect(x0, y0, cardW, cardH);
 
   const sun = rise ? '#ffd24a' : '#ff7a2e';
-  const iconX = portrait ? x0 + 1 + Math.floor((innerW - 9) / 2) : x0 + 2, iconY = y0 + 1;
-  blit(rise ? ICON_ARROW.up : ICON_ARROW.down, iconX, iconY, '#fff');
-  // the sun sits on the horizon: the arrow shows which way it is going
-  blit(ICON_SUN, iconX, iconY + 3, sun, (j) => (j === 3 ? '#cfd6ff' : sun));
-  const tx = portrait ? x0 + 1 + Math.floor((innerW - tw) / 2) : x0 + 2 + 9 + 2, ty = portrait ? iconY + 7 + 1 : iconY;
+  const iconX = portrait ? x0 + 1 + Math.floor((innerW - iw) / 2) : x0 + 2, iconY = y0 + 1;
+  const arrow = rise ? sz.arrow.up : sz.arrow.down;
+  blit(arrow, iconX, iconY, '#fff');                                           // which way the sun is going
+  blit(sz.sun, iconX, iconY + arrow.length, sun);                              // the sun ...
+  blit([sz.horizon], iconX, iconY + arrow.length + sz.sun.length, '#cfd6ff');  // ... on the horizon
+  const tx = portrait ? x0 + 1 + Math.floor((innerW - tw) / 2) : x0 + 2 + iw + 2, ty = portrait ? iconY + fh + 1 : iconY;
   let pen = tx;
-  for (const chr of text) { blit(FONT[chr], pen, ty, '#fff'); pen += FONT[chr][0].length + 1; }
+  for (const chr of text) { blit(font[chr], pen, ty, '#fff'); pen += font[chr][0].length + 1; }
   // time left as a row of LEDs that burns down
   for (let i = 0; i < filled; i++) px(x0 + 1 + i, y0 + cardH - 2, sun);
 
