@@ -6,17 +6,18 @@
 // refracts the real sky behind it. The SVG itself is hidden (visibility, so it
 // still lays out) while a glass style is active.
 //
-// Stained glass: coloured glass tubes, like LED tube lights. Each stroke is cut into tubes along its length;
-// every tube is filled with an id colour that the shader turns into a saturated glowing colour, and a thin dark
-// line appears where one tube ends and the next begins. The tubes are slices of the live curves, so they
-// stretch and bend with the digit as it morphs instead of sitting still on the screen.
+// Coloured tube: a glass tube lit from inside by LEDs, like a tube light. The tube itself is plain glass with
+// no lines on it. Each digit is one line (its four curves end to end); a fixed number of lights sit at fixed
+// fractions of that line's length, so laid flat they would be evenly spaced, and as the digit stretches and
+// bends the lights stay at their spot along it. The lights are painted into the mask's colour channels
+// (coverage stays in alpha), and the shader turns them into a glow inside the glass.
 
 import { conf } from '../config.js';
 
 const VB_W = 100, VB_H = 116, VB_Y0 = -8;      // viewBox of each digit svg: "0 -8 100 116"
 const STROKE = 80 * 0.2;                        // stroke-width 80 under transform scale(0.2), in viewBox units
-const PIECES = 4;                               // tubes along each stroke
-const OVERLAP = 5;                              // path units of overlap so pieces leave no anti-aliasing seams
+const LIGHTS = 18;                                // lights along each digit
+const LED_COLORS = [[255, 40, 50], [255, 150, 20], [40, 240, 90], [20, 215, 255], [70, 90, 255], [240, 60, 215]];   // red orange green cyan blue magenta
 
 // ---- path -> polyline (handles the M / L / C commands the clock produces) ----
 function flatten(d) {
@@ -39,29 +40,6 @@ function flatten(d) {
   }
   return pts;
 }
-
-/** Sub-polyline between arc lengths a..b. */
-function slice(pts, cum, a, b) {
-  const out = [];
-  const at = (s) => {
-    let j = 1;
-    while (j < cum.length - 1 && cum[j] < s) j++;
-    const seg = cum[j] - cum[j - 1] || 1, u = Math.min(1, Math.max(0, (s - cum[j - 1]) / seg));
-    return [pts[j - 1][0] + (pts[j][0] - pts[j - 1][0]) * u, pts[j - 1][1] + (pts[j][1] - pts[j - 1][1]) * u];
-  };
-  out.push(at(a));
-  for (let j = 1; j < pts.length - 1; j++) if (cum[j] > a && cum[j] < b) out.push(pts[j]);
-  out.push(at(b));
-  return out;
-}
-
-const hash = (a, b, c, d) => {
-  let h = (a * 374761393 + b * 668265263 + c * 2147483647 + d * 1274126177) | 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-};
-// id colour: red channel = palette index (x40 + 20), green = per-pane brightness
-const idColor = (k, shade) => `rgb(${Math.floor(k * 6) * 40 + 20},${Math.round(shade * 255)},0)`;
 
 export function initGlass(engine, getBasis) {
   const clock = document.getElementById('clock');
@@ -102,6 +80,44 @@ export function initGlass(engine, getBasis) {
     return { svgs, x0, y0, scale, strokePx, rect: [x0 / W, y0 / H, (x1 - x0) / W, (y1 - y0) / H] };
   }
 
+  // Evenly spaced along the digit as one line, at fixed fractions of its length: the lights stick to their place
+  // in the line while the digit moves. (The two colon dots are lines of their own, one light each.)
+  function paintLights(s, lines) {
+    const strokes = lines.filter(l => !l.dot), dots = lines.filter(l => l.dot);
+    const segs = [];
+    let total = 0;
+    for (const l of strokes) for (let j = 1; j < l.pts.length; j++) {
+      const len = Math.hypot(l.pts[j][0] - l.pts[j - 1][0], l.pts[j][1] - l.pts[j - 1][1]);
+      if (len > 0) { segs.push({ a: l.pts[j - 1], b: l.pts[j], from: total, len }); total += len; }
+    }
+    const lights = [];
+    if (total > 0) {
+      let si = 0;
+      for (let k = 0; k < LIGHTS; k++) {
+        const t = ((k + 0.5) / LIGHTS) * total;
+        while (si < segs.length - 1 && segs[si].from + segs[si].len < t) si++;
+        const g = segs[si], u = Math.min(1, Math.max(0, (t - g.from) / g.len));
+        lights.push({ x: g.a[0] + (g.b[0] - g.a[0]) * u, y: g.a[1] + (g.b[1] - g.a[1]) * u, c: (k + s.idx) % LED_COLORS.length });
+      }
+    }
+    const R = total > 0 ? Math.max(70, (total / LIGHTS) * 1.15) : 70;
+    dots.forEach((l, i) => {
+      const m = l.pts[Math.floor(l.pts.length / 2)];
+      lights.push({ x: m[0], y: m[1], c: (s.idx * 2 + i + 3) % LED_COLORS.length });
+    });
+    ctx.globalCompositeOperation = 'source-atop';                   // only ever paints inside the tube
+    for (const L of lights) {
+      const c = LED_COLORS[L.c], hot = c.map(v => Math.round(v + (255 - v) * 0.45));
+      const g = ctx.createRadialGradient(L.x, L.y, 0, L.x, L.y, R);
+      g.addColorStop(0, `rgba(${hot[0]},${hot[1]},${hot[2]},1)`);
+      g.addColorStop(0.22, `rgba(${c[0]},${c[1]},${c[2]},0.95)`);
+      g.addColorStop(1, `rgba(${c[0]},${c[1]},${c[2]},0)`);
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(L.x, L.y, R, 0, 6.2832); ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
   function draw() {
     raf = 0;
     if (!active()) return;
@@ -114,43 +130,20 @@ export function initGlass(engine, getBasis) {
     ctx.strokeStyle = '#fff';
     ctx.lineJoin = 'round';                                          // rounded corners and ends, like the solid style
 
-    const strokePath = (pts, lineWidth, cap) => {
-      ctx.lineWidth = lineWidth; ctx.lineCap = cap;
-      ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
-      for (let j = 1; j < pts.length; j++) ctx.lineTo(pts[j][0], pts[j][1]);
-      if (pts.length === 1) ctx.lineTo(pts[0][0] + 0.01, pts[0][1]);
-      ctx.stroke();
-    };
-
     for (const s of svgs) {
       ctx.setTransform(scale, 0, 0, scale, 0, 0);
       ctx.translate(s.ox - x0, s.oy - y0);
       ctx.scale(s.k * 0.2, s.k * 0.2);
-      s.paths.forEach((p, pi) => {
+      const lines = [];
+      s.paths.forEach((p) => {
         const d = p.el.getAttribute('d');
         if (!d) return;
-        if (!stained) { ctx.lineWidth = 80; ctx.lineCap = 'round'; ctx.stroke(new Path2D(d)); return; }
-
-        const pts = flatten(d);
-        if (pts.length < 2) return;
-        const cum = [0];
-        for (let j = 1; j < pts.length; j++) cum.push(cum[j - 1] + Math.hypot(pts[j][0] - pts[j - 1][0], pts[j][1] - pts[j - 1][1]));
-        const len = cum[cum.length - 1];
-        const n = p.round ? 1 : PIECES;                              // the colon dots stay a single pane
-        // one tube per piece, full width; where neighbours differ the shader draws the dark line between them
-        for (let j = 0; j < n; j++) {
-          const a = Math.max(0, (j / n) * len - (j ? OVERLAP : 0)), b = Math.min(len, ((j + 1) / n) * len + (j < n - 1 ? OVERLAP : 0));
-          const pc = slice(pts, cum, a, b);
-          ctx.strokeStyle = idColor(hash(s.idx, pi, j, 0), hash(j, pi, s.idx, 7));
-          strokePath(pc, 80, p.round ? 'round' : 'butt');
-          // the outer ends of a stroke are rounded; the joints between tubes stay square so the gap shows
-          if (!p.round) {
-            ctx.fillStyle = ctx.strokeStyle;
-            if (j === 0) { ctx.beginPath(); ctx.arc(pc[0][0], pc[0][1], 40, 0, 6.2832); ctx.fill(); }
-            if (j === n - 1) { const e = pc[pc.length - 1]; ctx.beginPath(); ctx.arc(e[0], e[1], 40, 0, 6.2832); ctx.fill(); }
-          }
-        }
+        if (stained) ctx.strokeStyle = '#000';                      // the tube: opaque, colourless until the lights are painted on
+        ctx.lineWidth = 80; ctx.lineCap = 'round';
+        ctx.stroke(new Path2D(d));
+        if (stained) { const pts = flatten(d); if (pts.length >= 2) lines.push({ pts, dot: p.round }); }
       });
+      if (stained) paintLights(s, lines);
     }
     engine.setGlassMask(mask, L.rect, L.strokePx);
   }
