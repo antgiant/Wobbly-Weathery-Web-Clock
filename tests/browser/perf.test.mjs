@@ -74,8 +74,25 @@ export async function run(t) {
   }
   const stillFps = Math.min(...rates);
   note('still sky pictures per second', stillFps);
+  t.check('the engine is not left in its fast (every frame) mode when nobody is touching the page', await q.page.evaluate(() => window.__sky.fast === false && window.__controls.mode !== 'look'));
   t.check(`a still sky draws under ${BUDGET.stillFps} pictures a second`, stillFps < BUDGET.stillFps, `${stillFps.toFixed(2)} per second`);
   await q.close();
+
+  // ---- saving power: the sea redraws with the clock's tick, not at 8 to 15 pictures a second ----
+  const rate = async (conf) => {
+    const o = await t.open({ query: 't=2026-06-21T17:00:00Z&speed=0&landscape=ocean', conf: { clockStyle: 'solid', hideSeconds: true, cloudMotion: 0, weatherMode: 'clear', plants: false, ...conf } });
+    await o.page.waitForTimeout(3000);
+    const f0 = await o.page.evaluate(() => window.__frames);
+    await o.page.waitForTimeout(8000);
+    const fps = (await o.page.evaluate(() => window.__frames) - f0) / 8;
+    const lp = await o.page.evaluate(() => window.__sky.s.lowPower);
+    await o.close();
+    return { fps, lp };
+  };
+  const seaNormal = await rate({ quality: 'medium' }), seaSaver = await rate({ quality: 'low' });
+  note('sea pictures per second, normal / saving power', `${seaNormal.fps.toFixed(2)} / ${seaSaver.fps.toFixed(2)}`);
+  t.check('the sea animates normally (more than 3 pictures a second)', seaNormal.fps > 3 && seaNormal.lp === false, `${seaNormal.fps.toFixed(2)} per second`);
+  t.check('saving power, the sea redraws once a second, like a still sky', seaSaver.fps < 1.6 && seaSaver.fps > 0.6 && seaSaver.lp === true, `${seaSaver.fps.toFixed(2)} per second`);
 
   // ---- memory: fast time travel for a while must not keep growing the heap ----
   const m = await t.open({ query: 't=2026-06-21T12:00:00Z&speed=600', conf: { clockStyle: 'solid' } });

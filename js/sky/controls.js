@@ -87,7 +87,7 @@ export class Controls {
 
   // ------------------------------------------------------- pointer -------
   _bindPointer() {
-    this.lastInput = 0;
+    this.lastInput = -1e9;              // no input yet (0 would count as "just now" for the first 1.2 s of the page, and leave the engine drawing every frame)
     const el = window;
     const ignore = (e) => e.target.closest?.('.modal, #settings, .fab, #hud button, input, select, button, a');
     el.addEventListener('pointerdown', (e) => {

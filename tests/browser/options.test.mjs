@@ -120,4 +120,46 @@ export async function run(t) {
   t.check('LED panel: the moonrise countdown is a pixel card (and the panel is not blank)', await h.page.evaluate(() => window.__sky.glass.overlay === true));
   t.check('LED panel: no errors', h.errors.length === 0, h.errors.join(' | '));
   await h.close();
+
+  // ---- anti burn-in: the digits step round a small square once a minute while the screen is kept on ----
+  const walk = async (h) => h.page.evaluate(async () => {
+    const m = await import('/js/sky/burnin.js');
+    const out = [];
+    for (let i = 0; i < 10; i++) {
+      m.updateBurnIn();
+      const clock = document.getElementById('clock'), svgs = [...clock.querySelectorAll('svg')].filter((e) => getComputedStyle(e).display !== 'none').map((e) => e.getBoundingClientRect());
+      out.push({ x: parseFloat(document.documentElement.style.getPropertyValue('--burn-x')) || 0, y: parseFloat(document.documentElement.style.getPropertyValue('--burn-y')) || 0,
+        left: Math.min(...svgs.map((r) => r.left)), right: Math.max(...svgs.map((r) => r.right)), top: Math.min(...svgs.map((r) => r.top)), bottom: Math.max(...svgs.map((r) => r.bottom)), tx: new DOMMatrix(getComputedStyle(clock).transform).m41 });
+    }
+    return { out, w: innerWidth, h: innerHeight };
+  });
+  h = await t.open({ query: 't=2026-06-21T17:00:00Z&speed=0', width: 420, height: 800, conf: { keepAwake: true, clockStyle: 'solid' } });
+  let b = await walk(h);
+  const places = new Set(b.out.map((o) => `${o.x},${o.y}`));
+  t.check('keep-awake on: the digits visit nine places in ten steps and come back to the first', places.size === 9 && b.out[0].x === b.out[9].x && b.out[0].y === b.out[9].y, [...places].join(' | '));
+  t.check('no step is more than 10 px, and the page really moves by it', b.out.every((o) => Math.abs(o.x) <= 10 && Math.abs(o.y) <= 10 && Math.abs(o.tx - o.x) < 0.01) && b.out.some((o) => o.x !== 0));
+  t.check('the digits stay on the screen at every step', b.out.every((o) => o.left >= 0 && o.right <= b.w && o.top >= 0 && o.bottom <= b.h));
+  await h.page.waitForTimeout(300);
+  t.check('and nothing went wrong', h.errors.length === 0, h.errors.join(' | '));
+  await h.close();
+  for (const [label, cf] of [['Never', { keepAwake: true, antiBurnIn: 'off' }], ['Automatic with the screen not kept on', { keepAwake: false }]]) {
+    h = await t.open({ query: 't=2026-06-21T17:00:00Z&speed=0', width: 420, height: 800, conf: { clockStyle: 'solid', ...cf } });
+    b = await walk(h);
+    t.check(`${label}: the digits never move`, b.out.every((o) => o.x === 0 && o.y === 0 && o.tx === 0));
+    await h.close();
+  }
+  h = await t.open({ query: 't=2026-06-21T17:00:00Z&speed=0', width: 420, height: 800, conf: { keepAwake: false, antiBurnIn: 'on', clockStyle: 'solid' } });
+  b = await walk(h);
+  t.check('Always: it moves even when the screen is not kept on', b.out.some((o) => o.x !== 0));
+  await h.page.evaluate(() => { const s = document.getElementById('antiBurnIn'); s.value = 'off'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+  await h.page.waitForTimeout(300);
+  t.check('switching it off puts the digits back in the middle at once', await h.page.evaluate(() => document.documentElement.style.getPropertyValue('--burn-x') === '0px' && document.documentElement.style.getPropertyValue('--burn-y') === '0px'));
+  await h.close();
+  h = await t.open({ query: 't=2026-06-21T17:00:00Z&speed=0', width: 800, height: 500, conf: { keepAwake: true, screenMode: 'led', ledCols: 64, ledRows: 32, clockStyle: 'solid' } });
+  b = await walk(h);
+  const cell = await h.page.evaluate(() => { const p = window.__sky.glass.led; return Math.min(window.__sky.canvas.clientWidth / p.cols, window.__sky.canvas.clientHeight / p.rows); });
+  t.check('LED panel: every step is a whole number of LEDs', b.out.every((o) => Math.abs(o.x / cell - Math.round(o.x / cell)) < 0.02 && Math.abs(o.y / cell - Math.round(o.y / cell)) < 0.02), `cell ${cell.toFixed(2)} px: ${[...new Set(b.out.map((o) => `${o.x},${o.y}`))].join(' | ')}`);
+  t.check('LED panel: the digits stay on the screen', b.out.every((o) => o.left >= 0 && o.right <= b.w && o.top >= 0 && o.bottom <= b.h));
+  t.check('LED panel: no errors', h.errors.length === 0, h.errors.join(' | '));
+  await h.close();
 }

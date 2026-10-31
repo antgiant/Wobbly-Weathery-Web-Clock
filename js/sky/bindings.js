@@ -10,6 +10,7 @@ import { updateClockColor } from './appearance.js';
 import { updateCountdown, updateRain } from './alerts.js';
 import { updateDim } from './dim.js';
 import { applyLedPanel } from './ledpanel.js';
+import { updateBurnIn } from './burnin.js';
 import { LED_PRESETS, MIN_LEDS, MAX_LEDS, presetIdFor } from './ledgrid.js';
 
 /** @returns {{simEn: HTMLInputElement, simTime: HTMLInputElement, toLocalInput: (d: Date) => string}} handles the deep links need */
@@ -71,6 +72,7 @@ export function bindSettings() {
   $('ledTurn').checked = conf.ledTurn !== false;
   $('ledTurn').addEventListener('change', (e) => { conf.ledTurn = e.target.checked; applyLedPanel(); updateCountdown(); });
   bindSelect('countdown', 'countdown', updateCountdown);
+  bindSelect('antiBurnIn', 'antiBurnIn', updateBurnIn);
   bindSelect('countdownKind', 'countdownKind', updateCountdown);
   bindSelect('countdownLead', 'countdownLead', updateCountdown, parseFloat);
   bindSelect('sensorRotation', 'sensorRotation', applySensorFixes);

@@ -1335,3 +1335,9 @@ body[data-screen="led"] .ledsize {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+
+/* anti burn-in: the digits and the pills step a few pixels (set once a minute by burnin.js) */
+#clock,
+#alerts {
+  transform: translate(var(--burn-x, 0px), var(--burn-y, 0px));
+}

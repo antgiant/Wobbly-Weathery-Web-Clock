@@ -42,6 +42,8 @@ export async function run(t) {
   // on land: switching the tree off changes a compact patch of the picture and nothing else (nothing else moves on a still hill)
   const land = { query: 't=2026-12-10T22:30:00Z&speed=0&az=190&pitch=8', width: 900, height: 500, conf: { clockStyle: 'solid', clockColor: 'white', landscape: 'hills' } };   // a fixed ink: the automatic ink is re-chosen from the picture, and the picture differs by the tree
   const on = await t.open(land), off = await t.open({ ...land, query: land.query + '&xmas=0' });
+  for (const p of [on.page, off.page]) await p.evaluate(() => document.querySelectorAll('#settings, #homeButton, .fab').forEach((e) => { e.style.visibility = 'hidden'; }));   // the settings button fades after a few seconds: it must not be in one picture and not the other
+  await on.page.waitForTimeout(500);
   const dl = await t.diff(on.page, await on.shot('christmas-land'), await off.shot('christmas-land-no-tree'), 60);
   t.check('on land the tree is drawn: it is a compact, tall patch of the picture', dl.size && dl.count > 400 && dl.core && (dl.core[3] - dl.core[1]) > (dl.core[2] - dl.core[0]) * 1.2 && dl.share < 0.05, JSON.stringify(dl));
   await on.close(); await off.close();
