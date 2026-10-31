@@ -47,6 +47,7 @@ body {
   /* fade the whole glyph, not the stroke: overlapping path segments would show seams */
   opacity: 0.92;
   transition: stroke 1.5s ease;
+  filter: drop-shadow(0 0 0.35vmin var(--clock-halo, transparent));
 }
 
 #clock svg:nth-child(3n -1) {

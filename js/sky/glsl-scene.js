@@ -257,6 +257,7 @@ uniform vec3 uGlowCol;     // colour of that light (liquid glass)
 uniform vec3 uInk;         // flat ink colour (solid clock style while the LED panel is on)
 uniform sampler2D uOverlay;   // countdown card, drawn into the picture when the LED panel is on (straight alpha)
 uniform float uOverlayOn;
+uniform float uContrast;   // least luminance contrast ratio between the digits and the sky around them (0 = off)
 in vec2 vUv;
 out vec4 oColor;
 
@@ -274,13 +275,48 @@ float maskAt(vec2 uv, float lod) {
 float lumaOf(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 vec3 sceneAt(vec2 uv, float lod) { return textureLod(uTex, uv, lod).rgb; }
 
+float linLum(vec3 c) { return dot(pow(max(c, 0.0), vec3(2.2)), vec3(0.2126, 0.7152, 0.0722)); }
+
+// The time must stay readable on any sky and for any eyes. Colour-blind readers can still see differences in
+// brightness, so the guarantee is about luminance: compared with the sky next to each pixel (four samples a stroke
+// away plus the sky under it), the glass is pushed lighter or darker, whichever is closer and possible, until
+// the contrast ratio (the WCAG one) reaches uContrast. Hue is kept as far as the brightness allows.
+vec3 ensureContrast(vec3 c, vec2 uv, float stroke) {
+  if (uContrast < 1.01) return c;
+  vec2 px = 1.0 / uRes;
+  float lod = max(log2(stroke * 0.4 * float(textureSize(uTex, 0).x) / uRes.x), 0.0);
+  float r = stroke * 0.95;
+  float l0 = linLum(sceneAt(uv, lod));
+  float l1 = linLum(sceneAt(uv + vec2(r * px.x, 0.0), lod));
+  float l2 = linLum(sceneAt(uv - vec2(r * px.x, 0.0), lod));
+  float l3 = linLum(sceneAt(uv + vec2(0.0, r * px.y), lod));
+  float l4 = linLum(sceneAt(uv - vec2(0.0, r * px.y), lod));
+  float hiL = max(max(max(l0, l1), max(l2, l3)), l4), loL = min(min(min(l0, l1), min(l2, l3)), l4);
+  float R = uContrast;
+  c = clamp(c, 0.0, 1.0);
+  float Lg = linLum(c);
+  float hiN = R * (hiL + 0.05) - 0.05;           // brightness needed to beat the brightest sky nearby by lighter
+  float loN = (loL + 0.05) / R - 0.05;           // brightness allowed to beat the darkest sky nearby by darker
+  if (Lg >= hiN || Lg <= loN) return c;           // already readable
+  bool canHi = hiN <= 1.0, canLo = loN >= 0.0;
+  bool lighter;
+  if (canHi && canLo) lighter = (hiN - Lg) < (Lg - loN);
+  else if (canHi) lighter = true;
+  else if (canLo) lighter = false;
+  else lighter = (1.05 / (hiL + 0.05)) > ((loL + 0.05) / 0.05);     // sky spans bright and dark: take the better ratio
+  vec3 lin = pow(c, vec3(2.2));
+  if (lighter) lin = mix(lin, vec3(1.0), clamp((min(hiN, 1.0) - Lg) / max(1.0 - Lg, 1e-3), 0.0, 1.0));
+  else lin *= clamp(max(loN, 0.0) / max(Lg, 1e-4), 0.0, 1.0);
+  return pow(lin, vec3(1.0 / 2.2));
+}
+
 void body() {
   vec3 base = texture(uTex, vUv).rgb;
   float mode = uGlass.y;
   if (mode < 0.5) { oColor = vec4(base, 1.0); return; }
   if (mode > 2.5) {                                          // flat ink: the LED panel has no glass here, but the digits still need drawing
     float cv = smoothstep(0.1, 0.9, maskAt(vUv, 0.0));
-    oColor = vec4(mix(base, uInk, cv), 1.0);
+    oColor = vec4(mix(base, ensureContrast(uInk, vUv, uGlass.z), cv), 1.0);
     return;
   }
 
@@ -378,6 +414,8 @@ void body() {
   c += lamp * (stained ? 0.95 : 0.80);
   c += emit * glow * 0.10 * (1.0 - frost * 0.4);                      // faint all-over fill so thin strokes light up too
 
+  // the body of the glass is made readable first; the glints and the rim go on top, so it still looks like glass
+  c = ensureContrast(c, vUv, stroke);
   c += uLightCol * spec * mix(1.1, 0.35, frost) * (stained ? 0.7 : 1.0);   // frost scatters the glint into a soft sheen
   c += uLightCol * rim * facing * (0.30 + 0.45 * uLight.z) * mix(1.0, 0.65, frost) * (stained ? 0.8 : 1.0);
   c += uLightCol * rim * 0.05;

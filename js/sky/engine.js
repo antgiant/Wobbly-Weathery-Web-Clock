@@ -211,7 +211,7 @@ export class SkyEngine {
     gl.bindVertexArray(null);
 
     this.sceneTarget = null;
-    this.glass = { mode: 0, frost: 0.35, glow: 0, glowCol: [1, 0.85, 0.6], led: { on: false, cols: 64, rows: 32, gap: 0.16, brightness: 1 }, overlay: false, ink: [0.96, 0.97, 1], stroke: 30, light: [-0.5, 0.8, 0.6], lightCol: [1, 1, 1], rect: [0, 0, 1, 1], maskW: 1, maskH: 1, hasMask: false };
+    this.glass = { mode: 0, frost: 0.35, contrast: 3, glow: 0, glowCol: [1, 0.85, 0.6], led: { on: false, cols: 64, rows: 32, gap: 0.16, brightness: 1 }, overlay: false, ink: [0.96, 0.97, 1], stroke: 30, light: [-0.5, 0.8, 0.6], lightCol: [1, 1, 1], rect: [0, 0, 1, 1], maskW: 1, maskH: 1, hasMask: false };
     this.overlayTex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.overlayTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
@@ -613,6 +613,7 @@ export class SkyEngine {
     this._4f('uGlow', g.glow, 0, 0, 0);
     this._3f('uGlowCol', g.glowCol);
     this._3f('uInk', g.ink);
+    this._1f('uContrast', g.contrast);
     this._1i('uOverlay', 2); this._bind(2, this.overlayTex);
     this._1f('uOverlayOn', led && g.overlay ? 1 : 0);
     gl.bindVertexArray(this.vaoEmpty);
