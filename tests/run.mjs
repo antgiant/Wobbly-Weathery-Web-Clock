@@ -2,7 +2,8 @@
 //   unit     every tests/unit/*.test.mjs, each in its own node process (fast, no browser)
 //   browser  every tests/browser/*.test.mjs in one headless Chromium against the real page
 // Environment: TEST_ARTIFACTS=dir saves screenshots there; VISUAL=warn makes picture comparisons report instead of fail;
-// UPDATE_BASELINES=1 rewrites the picture baselines.
+// UPDATE_BASELINES=1 rewrites the picture baselines. SHARD=2/3 runs only the second of three equal shares of the browser suites
+// (CI runs the shares side by side on separate machines).
 import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
@@ -31,7 +32,10 @@ if (kind === 'browser' || kind === 'all') {
   const { startHarness } = await import('./lib/harness.mjs');
   let h;
   try { h = await startHarness(); } catch (e) { console.log('  FAIL  could not start the browser: ' + e.message); process.exit(1); }
-  for (const f of fs.readdirSync(path.join(here, 'browser')).filter((x) => x.endsWith('.test.mjs') && want(x)).sort()) {
+  const [shard, shards] = (process.env.SHARD || '1/1').split('/').map(Number);
+  const files = fs.readdirSync(path.join(here, 'browser')).filter((x) => x.endsWith('.test.mjs') && want(x)).sort().filter((_, i) => i % shards === shard - 1);
+  if (shards > 1) console.log(`  (share ${shard} of ${shards}: ${files.map((f) => f.replace('.test.mjs', '')).join(', ')})`);
+  for (const f of files) {
     const mod = await import(path.join(here, 'browser', f));
     const t0 = Date.now(), results = [];
     const t = {

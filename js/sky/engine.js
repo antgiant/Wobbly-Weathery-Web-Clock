@@ -56,7 +56,7 @@ export class SkyEngine {
       mie: 2.0,
       quality: 'auto', scale: 0.75, maxDpr: 2,
       bodySize: 2.0, nightBoost: 1.0, bortle: 3, cloudMotion: 1, twinkle: true,
-      fps: 15, reducedMotion: false, lowPower: false,
+      fps: 15, reducedMotion: false, lowPower: false, digitWeather: true,
       landscape: { type: 'hills', skyline: null, albedo: [0.12, 0.17, 0.07], haze: [0.35, 0.3, 0.55], ocean: false, seed: 1 },
       snowCover: 0,
       sea: null,                    // marine forecast {windHs, windTp, windDir, swellHs, swellTp, swellDir} or null: derive from the wind
@@ -682,6 +682,12 @@ export class SkyEngine {
     this._3f('uGlowCol', g.glowCol);
     this._3f('uInk', g.ink);
     this._1f('uContrast', g.contrast);
+    {                                                                  // snow and rain on the digits: from the weather being drawn
+      const w = this.s.weather, on = this.s.digitWeather !== false && !this.s.reducedMotion;
+      const snowRate = (w.precip || 0) * (w.snowfall || 0), rainRate = (w.precip || 0) * (1 - (w.snowfall || 0));
+      this.wx = { snow: on ? Math.min(1, snowRate * 1.4) : 0, rain: on ? Math.min(1, rainRate * 1.3) : 0 };       // (read by the tests)
+      this._4f('uWx', this.wx.snow, this.wx.rain, 0, (performance.now() / 1000) % 3600);
+    }
     this._1i('uFull', 3); this._bind(3, this.overlayFullTex);
     this._1f('uFullOn', led && g.overlayFull ? 1 : 0);
     gl.bindVertexArray(this.vaoEmpty);
