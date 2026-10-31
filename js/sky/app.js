@@ -459,13 +459,60 @@ function toast(msg) {
 }
 
 // ------------------------------------------------------ countdown / readout --
+// On the LED panel the countdown cannot be a page overlay, so it is painted into the picture before the
+// pixels are taken: a sun on the horizon with an arrow (up = sunrise, down = sunset), the time left in big
+// digits, and a bar along the bottom that runs down to nothing. Black card behind it so it reads on any sky.
+const ledCard = window.__ledCard = document.createElement('canvas');
+let ledCardKey = '';
+function drawLedCard(st, leadMs) {
+  const cw = engine.canvas.width, ch = engine.canvas.height;
+  if (!st || !(cw > 0 && ch > 0)) { if (ledCardKey) { ledCardKey = ''; engine.setOverlay(null); } return; }
+  const W = 384, H = Math.max(2, Math.round(W * ch / cw)), portrait = H > W;
+  const total = Math.ceil(Math.max(0, st.msLeft) / 1000);
+  const text = st.msLeft <= 0 ? 'NOW' : `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  const key = `${st.kind}|${text}|${W}x${H}`;
+  if (key === ledCardKey) return;
+  ledCardKey = key;
+  ledCard.width = W; ledCard.height = H;
+  const c = ledCard.getContext('2d');
+  c.clearRect(0, 0, W, H);
+  const rise = st.kind === 'sunrise', col = rise ? '#ffd24a' : '#ff7a2e';
+  const x = portrait ? W * 0.05 : W * 0.12, y = H * 0.035, w = portrait ? W * 0.9 : W * 0.76, h = portrait ? H * 0.25 : H * 0.42;
+  c.fillStyle = 'rgba(0,0,0,0.9)';
+  c.beginPath(); c.roundRect(x, y, w, h, Math.min(w, h) * 0.12); c.fill();
+  // icon box: left of the time on a wide panel, above it on a tall one
+  const ib = portrait ? { x: x, y: y, w: w, h: h * 0.42 } : { x: x, y: y, w: w * 0.3, h: h };
+  const tb = portrait ? { x: x, y: y + h * 0.4, w: w, h: h * 0.52 } : { x: x + w * 0.3, y: y, w: w * 0.7, h: h * 0.9 };
+  const cx = ib.x + ib.w / 2, r = Math.min(ib.w, ib.h) * 0.3, hy = ib.y + ib.h * 0.72;
+  c.fillStyle = col; c.beginPath(); c.arc(cx, hy, r, Math.PI, 0); c.fill();          // half sun on the horizon
+  c.strokeStyle = '#fff'; c.lineWidth = Math.max(2, r * 0.18); c.lineCap = 'round';
+  c.beginPath(); c.moveTo(cx - r * 1.6, hy); c.lineTo(cx + r * 1.6, hy); c.stroke();  // horizon
+  const ay = hy - r * 1.55, d = rise ? -1 : 1;                                       // arrow above it
+  c.fillStyle = '#fff'; c.beginPath();
+  c.moveTo(cx, ay + d * r * 0.55); c.lineTo(cx - r * 0.5, ay - d * r * 0.35); c.lineTo(cx + r * 0.5, ay - d * r * 0.35); c.closePath(); c.fill();
+  // time, as large as the box allows
+  let fs = tb.h;
+  c.font = `800 ${fs}px ui-monospace, Menlo, Consolas, monospace`;
+  const tw = c.measureText(text).width; if (tw > tb.w * 0.94) fs *= tb.w * 0.94 / tw;
+  c.font = `800 ${fs}px ui-monospace, Menlo, Consolas, monospace`;
+  c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.fillText(text, tb.x + tb.w / 2, tb.y + tb.h / 2 + fs * 0.04);
+  // remaining time as a bar
+  const frac = Math.max(0, Math.min(1, st.msLeft / leadMs));
+  c.fillStyle = col; c.fillRect(x + w * 0.06, y + h - h * 0.08, (w * 0.88) * frac, h * 0.045);
+  engine.setOverlay(ledCard);
+}
+
 function updateCountdown() {
   const el = document.getElementById('sunCountdown');
   if (!el || !engine) return;
-  const mode = conf.countdown;
-  if (!mode || mode === 'off') { el.hidden = true; return; }
+  const mode = conf.countdown, led = conf.screenMode === 'led';
+  if (!mode || mode === 'off') { el.hidden = true; if (led) drawLedCard(null); return; }
   const d = now();
-  const st = countdownState(getSunEvents(d).ev, +d, mode, num(conf.countdownLead, 20));
+  const lead = num(conf.countdownLead, 20);
+  const st = countdownState(getSunEvents(d).ev, +d, mode, lead);
+  if (led) { el.hidden = true; drawLedCard(st, lead * 60000); return; }
+  if (ledCardKey) drawLedCard(null);
   if (!st) { el.hidden = true; return; }
   const rise = st.kind === 'sunrise', name = rise ? 'Sunrise' : 'Sunset';
   const total = Math.ceil(Math.max(0, st.msLeft) / 1000);
@@ -563,7 +610,7 @@ function init() {
   bindRange('glassFrost', 'glassFrost', () => glass.apply(), 'glassFrostOut');
   bindRange('glassGlow', 'glassGlow', () => glass.apply(), 'glassGlowOut');
   bindSelect('glassGlowColor', 'glassGlowColor', () => glass.apply());
-  bindSelect('screenMode', 'screenMode', () => { glass.apply(); updateClockColor(); engine.dirty = true; });
+  bindSelect('screenMode', 'screenMode', () => { glass.apply(); updateClockColor(); updateCountdown(); engine.dirty = true; });
   bindSelect('countdown', 'countdown', updateCountdown);
   bindSelect('countdownLead', 'countdownLead', updateCountdown, parseFloat);
   bindSelect('sensorRotation', 'sensorRotation', applySensorFixes);

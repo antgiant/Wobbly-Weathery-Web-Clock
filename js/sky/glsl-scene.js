@@ -254,8 +254,9 @@ uniform vec3 uLight;       // xy: screen direction towards the light (y up), z: 
 uniform vec3 uLightCol;
 uniform vec4 uGlow;        // x: light from inside the glass, 0..1
 uniform vec3 uGlowCol;     // colour of that light (liquid glass)
-uniform vec4 uLed;         // x columns, y rows, z gap as a fraction of a cell, w brightness
-uniform vec3 uInk;         // LED digits colour
+uniform vec3 uInk;         // flat ink colour (solid clock style while the LED panel is on)
+uniform sampler2D uOverlay;   // countdown card, drawn into the picture when the LED panel is on (straight alpha)
+uniform float uOverlayOn;
 in vec2 vUv;
 out vec4 oColor;
 
@@ -273,36 +274,15 @@ float maskAt(vec2 uv, float lod) {
 float lumaOf(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 vec3 sceneAt(vec2 uv, float lod) { return textureLod(uTex, uv, lod).rgb; }
 
-// ---- LED panel ----
-vec3 ledPanel() {
-  float cell = max(floor(min(uRes.x / uLed.x, uRes.y / uLed.y)), 2.0);      // whole pixels, so the lines stay crisp
-  vec2 panel = vec2(uLed.x, uLed.y) * cell;
-  vec2 org = floor((uRes - panel) * 0.5);
-  vec2 p = gl_FragCoord.xy - org;
-  if (p.x < 0.0 || p.y < 0.0 || p.x >= panel.x || p.y >= panel.y) return vec3(0.0);   // the bezel
-  vec2 id = floor(p / cell);
-  vec2 f = p / cell - id;
-  vec2 e = min(f, 1.0 - f);
-  float g = uLed.z * 0.5, aa = 0.9 / cell;
-  float lit = smoothstep(g - aa, g + aa, e.x) * smoothstep(g - aa, g + aa, e.y);
-
-  vec2 cuv = (org + (id + 0.5) * cell) / uRes;
-  float lod = max(log2(cell * float(textureSize(uTex, 0).x) / uRes.x), 0.0);   // average the scene over the cell
-  vec3 sc = sceneAt(cuv, lod);
-  float maskScale = uMaskPx.x / (uMaskRect.z * uRes.x);
-  float cov = maskAt(cuv, max(log2(cell * maskScale), 0.0));
-  // LED panels are punchy: more saturation and contrast than the soft sky
-  float l = lumaOf(sc);
-  sc = pow(max(mix(vec3(l), sc, 1.25), 0.0), vec3(1.12));
-  vec3 col = mix(sc, uInk, smoothstep(0.12, 0.7, cov));
-  return col * (lit + 0.035) * uLed.w;
-}
-
-void main() {
+void body() {
   vec3 base = texture(uTex, vUv).rgb;
   float mode = uGlass.y;
   if (mode < 0.5) { oColor = vec4(base, 1.0); return; }
-  if (mode > 2.5) { oColor = vec4(ledPanel(), 1.0); return; }
+  if (mode > 2.5) {                                          // flat ink: the LED panel has no glass here, but the digits still need drawing
+    float cv = smoothstep(0.1, 0.9, maskAt(vUv, 0.0));
+    oColor = vec4(mix(base, uInk, cv), 1.0);
+    return;
+  }
 
   vec2 px = 1.0 / uRes;
   float stroke = uGlass.z;                                  // canvas px
@@ -415,6 +395,41 @@ void main() {
   shaded += haloCol * halo * glow * (1.0 - cover) * 0.30;
 
   oColor = vec4(mix(shaded, glass, cover), 1.0);
+}
+
+void main() {
+  body();
+  if (uOverlayOn > 0.5) {
+    vec4 o = texture(uOverlay, vec2(vUv.x, 1.0 - vUv.y));
+    oColor.rgb = mix(oColor.rgb, o.rgb, o.a);
+  }
+}`;
+
+// ---- LED panel: the finished picture (glass and all) averaged into a grid of square pixels ----
+export const FRAG_LED = `#version 300 es
+precision highp float;
+uniform sampler2D uComp;   // the normal picture, with mip levels
+uniform vec2 uRes;         // canvas size in px
+uniform vec4 uLed;         // x columns, y rows, z gap as a fraction of a cell, w brightness
+in vec2 vUv;
+out vec4 oColor;
+void main() {
+  float cell = max(floor(min(uRes.x / uLed.x, uRes.y / uLed.y)), 2.0);      // whole pixels, so the lines stay crisp
+  vec2 panel = vec2(uLed.x, uLed.y) * cell;
+  vec2 org = floor((uRes - panel) * 0.5);
+  vec2 p = gl_FragCoord.xy - org;
+  if (p.x < 0.0 || p.y < 0.0 || p.x >= panel.x || p.y >= panel.y) { oColor = vec4(0.0, 0.0, 0.0, 1.0); return; }   // the bezel
+  vec2 id = floor(p / cell);
+  vec2 f = p / cell - id;
+  vec2 e = min(f, 1.0 - f);
+  float g = uLed.z * 0.5, aa = 0.9 / cell;
+  float lit = smoothstep(g - aa, g + aa, e.x) * smoothstep(g - aa, g + aa, e.y);
+  vec2 cuv = (org + (id + 0.5) * cell) / uRes;
+  vec3 c = textureLod(uComp, cuv, max(log2(cell), 0.0)).rgb;                // average the picture over the cell
+  // LED panels are punchy: more saturation and contrast than the soft picture
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  c = pow(max(mix(vec3(l), c, 1.2), 0.0), vec3(1.08));
+  oColor = vec4(c * (lit + 0.035) * uLed.w, 1.0);
 }`;
 
 // ------------------------------------------------------------- composite ---

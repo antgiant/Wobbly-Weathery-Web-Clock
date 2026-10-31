@@ -116,7 +116,6 @@
 
         <!-- ================= CLOCK ================= -->
         <section class="panel" role="tabpanel" id="panel-clock" aria-labelledby="tab-clock" data-panel="clock">
-          <p class="hint led-note">The LED panel is on (Display tab), so the digits are drawn as plain LED pixels and the glass settings below have no effect.</p>
           <div class="group">
             <h3>The digits</h3>
             <label class="field toggle"><span class="field__text">24-hour time</span><input type="checkbox" id="twentyFourHourClock"><span class="switch" aria-hidden="true"></span></label>
@@ -354,7 +353,7 @@
                 <option value="normal">Normal</option>
                 <option value="led">LED panel (64 &times; 32 pixels)</option>
               </select>
-              <p class="hint" id="screenHint">Turns the whole scene into a chunky LED matrix. It turns itself sideways (32 &times; 64) when the screen is upright.</p>
+              <p class="hint" id="screenHint">Shows exactly what the normal screen would, averaged into chunky LED pixels, glass styles included. It turns itself sideways (32 &times; 64) when the screen is upright, and the sunrise / sunset countdown is drawn on it too.</p>
             </div>
             <label class="field toggle"><span class="field__text">Keep the screen on<small id="wakeStatus">Stops the phone dimming and locking while this page is open, handy as a bedside or travel clock. It lasts only while the page is visible, and it uses battery, so plug in if you can.</small></span><input type="checkbox" id="keepAwake"><span class="switch" aria-hidden="true"></span></label>
           </div>

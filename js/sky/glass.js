@@ -71,9 +71,11 @@ export function initGlass(engine, getBasis) {
   const ctx = mask.getContext('2d');
   let raf = 0;
 
-  // the LED panel replaces the clock style: its digits are plain pixels
-  const style = () => (conf.screenMode === 'led' ? 'led' : (conf.clockStyle || 'solid'));
-  const active = () => style() !== 'solid';
+  // The LED panel is the normal picture, glass and all, averaged into pixels. With the solid style the
+  // shader has to draw the digits itself (flat ink), because the SVG cannot be pixelated.
+  const style = () => conf.clockStyle || 'solid';
+  const led = () => conf.screenMode === 'led';
+  const active = () => style() !== 'solid' || led();
 
   // Positions are measured against the canvas's own rectangle on every redraw, so scrolling,
   // zooming or a changing mobile toolbar can never leave the glass at a stale position.
@@ -203,11 +205,12 @@ export function initGlass(engine, getBasis) {
 
   function apply() {
     const st = style();
-    const on = st !== 'solid';
-    document.body.dataset.clockstyle = st;
-    document.body.dataset.screen = st === 'led' ? 'led' : 'normal';
+    const on = active();
+    document.body.dataset.clockstyle = on && st === 'solid' ? 'led' : st;
+    document.body.dataset.screen = led() ? 'led' : 'normal';
+    engine.glass.led.on = led();
     engine.setGlass({
-      mode: st === 'glass' ? 1 : st === 'stained' ? 2 : st === 'led' ? 3 : 0,
+      mode: st === 'glass' ? 1 : st === 'stained' ? 2 : led() ? 3 : 0,
       frost: Math.min(1, Math.max(0, +conf.glassFrost)),
       glow: glowAmount(),
       glowCol: glowColor(),

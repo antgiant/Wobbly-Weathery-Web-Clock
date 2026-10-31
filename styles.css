@@ -855,7 +855,7 @@ body[data-clockstyle="led"] #clock {
   color: #ff9a5c;
 }
 
-/* the LED panel draws everything itself; DOM overlays would break the illusion */
+/* the LED panel draws the countdown itself (see drawLedCard in app.js); a page overlay would break the illusion */
 body[data-screen="led"] #sunCountdown {
   display: none;
 }
@@ -911,12 +911,4 @@ body.no-webgl video {
 
 #vrReadout[hidden] {
   display: none;
-}
-
-.led-note {
-  display: none;
-}
-
-body[data-screen="led"] .led-note {
-  display: block;
 }
