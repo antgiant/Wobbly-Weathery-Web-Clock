@@ -1,5 +1,5 @@
-// Run: node tools/test-lightpollution.mjs
-import { estimateBortle, bortleFromRatio, parsePlaces, haversine } from '../js/sky/lightpollution.js';
+// Run: node tests/unit/lightpollution.mjs
+import { estimateBortle, bortleFromRatio, parsePlaces, haversine } from '../../js/sky/lightpollution.js';
 let fails = 0;
 const check = (n, ok, x = '') => { console.log((ok ? 'PASS ' : 'FAIL ') + n + ' ' + x); if (!ok) fails++; };
 const city = (lat, lon, population, place = 'city') => ({ lat, lon, place, population });

@@ -1,6 +1,6 @@
 // Checks the device-orientation -> camera math used by VR look-around mode.
-// Run: node tools/test-orientation.mjs
-import { basisFromOrientation, CompassCalibrator } from '../js/sky/orientation.js';
+// Run: node tests/unit/orientation.mjs
+import { basisFromOrientation, CompassCalibrator } from '../../js/sky/orientation.js';
 const az = f => ((Math.atan2(f[0], f[2]) * 180 / Math.PI) + 360) % 360;
 const alt = f => Math.asin(f[1]) * 180 / Math.PI;
 const near = (a, b, t = 0.01) => Math.abs(a - b) < t;

@@ -63,7 +63,7 @@ function init() {
   engine.start();
   engine.onFrame(() => { window.__frames = (window.__frames || 0) + 1; });
   scheduleLiveData();
-  if (simBase) syncTimeData();
+  if (simBase) { syncTimeData(); glassRef.apply(); }          // the clock style (and the season) follow the date being shown
 
   const finishSetup = () => {
     const { simEn, simTime, toLocalInput } = bindSettings();

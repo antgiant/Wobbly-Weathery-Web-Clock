@@ -1,5 +1,5 @@
-// Run: node tools/test-season.mjs
-import { thanksgivingDay, isChristmasSeason } from '../js/season.js';
+// Run: node tests/unit/season.mjs
+import { thanksgivingDay, isChristmasSeason } from '../../js/season.js';
 let fails = 0;
 const check = (n, ok, x = '') => { console.log((ok ? 'PASS ' : 'FAIL ') + n + ' ' + x); if (!ok) fails++; };
 const known = { 2023: 23, 2024: 28, 2025: 27, 2026: 26, 2027: 25, 2028: 23 };   // Thanksgiving dates

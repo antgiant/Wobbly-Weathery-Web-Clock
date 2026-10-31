@@ -1,0 +1,23 @@
+{
+  "name": "wobbly-weathery-web-clock",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A wobbly morphing clock in front of a physically based, real-time sky. Static files: this package.json only holds the tests and the linter.",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "test": "npm run lint && node tests/run.mjs all",
+    "test:unit": "node tests/run.mjs unit",
+    "test:browser": "node tests/run.mjs browser",
+    "test:visual:update": "UPDATE_BASELINES=1 node tests/run.mjs browser visual",
+    "serve": "python3 -m http.server 8000"
+  },
+  "devDependencies": {
+    "eslint": "^10.1.0",
+    "globals": "^16.0.0",
+    "playwright": "1.63.0"
+  },
+  "engines": {
+    "node": ">=20.19"
+  }
+}

@@ -1,5 +1,5 @@
-// Run: node tools/test-rain.mjs
-import { assessRain, hoursFromHourly } from '../js/sky/rain.js';
+// Run: node tests/unit/rain.mjs
+import { assessRain, hoursFromHourly } from '../../js/sky/rain.js';
 let fails = 0;
 const check = (n, ok, x = '') => { console.log((ok ? 'PASS ' : 'FAIL ') + n + ' ' + x); if (!ok) fails++; };
 const H = 3600e3, day = Date.parse('2026-06-10T00:00:00Z');       // offset 0: UTC is local

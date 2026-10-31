@@ -157,7 +157,26 @@ These are not saved to your settings:
     js/sky/dim.js                     night dimming
     js/sky/scheduler.js               the one timer for periodic work (a period of Infinity = nothing to do)
     data/                             star catalogue, Milky Way, moon map (built by tools/build-data.py)
-    tools/                            data builder; tests: node tools/test-orientation.mjs, node tools/test-sunpath.mjs, tools/test-weather.mjs, tools/test-lightpollution.mjs, tools/test-season.mjs, tools/test-rain.mjs, tools/test-pwa.mjs, tools/test-ledgrid.mjs
+    tools/                            data builder (build-data.py), icon maker (make-icons.mjs)
+    tests/                            unit and browser tests, the test harness, picture baselines (see Testing)
+    .github/workflows/ci.yml          lint, unit tests and browser tests on every push
+
+## Testing
+
+    npm ci                                  once: installs the linter and Playwright (npx playwright install chromium for the browser)
+    npm test                                lint, then every test
+    npm run lint                            real mistakes only: undefined names, unused variables
+    node tests/run.mjs unit                 13 suites in about 3 s, no browser
+    node tests/run.mjs browser [name]       the real page in headless Chromium (software WebGL), a few minutes
+    npm run test:visual:update              redraw the picture baselines (tests/visual/baseline) after a deliberate visual change
+
+**Unit tests** (`tests/unit`) cover the pure logic: sun path and follow-the-sun, orientation and compass calibration, weather and seasons, rain rules, light pollution, LED grid maths, the Christmas dates, saved settings and their one-time migration, presets, night dimming, the scheduler, and `static.test` (every element id a script looks up exists in the page, every `conf.x` is a defined setting, every drop-down offers its default, no stray `console.log`, the PWA files are complete). `tests/lib/dom-stub.mjs` gives node just enough of a browser to import modules that touch the page.
+
+**Browser tests** (`tests/browser`) start a static server and one Chromium, give each test a fresh page with the weather, terrain and town look-ups mocked (so they are fast, offline and repeatable), and use `?t=` (time travel) or a frozen page clock to pin the date. They check: startup and the loading screen; 12/24-hour by locale; the sky (day bright and blue, night dark, twilight warm at the horizon, a storm is grey); every settings-panel behaviour on a phone and a wide screen; the first-run question and the upgrade of old saved settings; the countdown and umbrella pills and the LED card (including that nothing covers the time); the LED panel for eight sizes (grid, layout, nothing cropped, centred, black lines between LEDs, black bezel) and its size controls; the Christmas season by date and the tree on land and at sea; the service worker, offline opening, saved weather and catching up when the connection returns; the idle wake-up budget; and seven pictures compared with baselines.
+
+**CI** (`.github/workflows/ci.yml`) runs lint and unit tests, then the browser tests, on every push and pull request, and keeps the screenshots as artifacts. The browser is pinned (Playwright 1.63.0), and the picture baselines drawn on a developer machine matched on GitHub's runner on its first run, so pictures are compared strictly. After a deliberate visual change, redraw them with `npm run test:visual:update`, or run the workflow by hand with `update_baselines` ticked and commit the `visual-baselines` artifact to `tests/visual/baseline/`. `VISUAL=warn` turns picture differences into warnings.
+
+What the tests do not cover: real phones and tablets (the iPad VR fix, install prompts, real GPUs), the live weather, terrain and town services (they are mocked), and a human's judgement of how it looks beyond the seven baselines.
 
 ## What is and is not verified
 

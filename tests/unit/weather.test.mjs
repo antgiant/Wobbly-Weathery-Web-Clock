@@ -1,7 +1,7 @@
-// Historical weather mapping and weather-driven seasons. Run: node tools/test-weather.mjs
-import { serviceFor, hoursOf, weatherFromDay, climateOf } from '../js/sky/weather.js';
-import { seasonFromClimate } from '../js/sky/biome.js';
-import { unitFor, hour24 } from '../js/units.js';
+// Historical weather mapping and weather-driven seasons. Run: node tests/unit/weather.mjs
+import { serviceFor, hoursOf, weatherFromDay, climateOf } from '../../js/sky/weather.js';
+import { seasonFromClimate } from '../../js/sky/biome.js';
+import { unitFor, hour24 } from '../../js/units.js';
 let fails = 0;
 const check = (n, ok, x = '') => { console.log((ok ? 'PASS ' : 'FAIL ') + n + ' ' + x); if (!ok) fails++; };
 const now = Date.parse('2026-10-31T12:00:00Z');

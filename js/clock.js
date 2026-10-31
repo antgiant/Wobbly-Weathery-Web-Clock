@@ -105,7 +105,7 @@ function clock() {
     clockChanged = false;
     window.dispatchEvent(new Event('clockchange'));
   }
-  var tempTime = Number(time.h[0] + time.h[1]) + ":" + time.m[0] + time.m[1] + (conf.hideSeconds ? "" : ":" + time.s[0] + time.s[1]);
+  var tempTime = Number(String(time.h[0]) + String(time.h[1])) + ":" + time.m[0] + time.m[1] + (conf.hideSeconds ? "" : ":" + time.s[0] + time.s[1]);
   if (document.title !== tempTime) {
     document.title = tempTime;
   }
