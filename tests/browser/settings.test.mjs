@@ -66,7 +66,9 @@ export async function run(t) {
   const d = await t.open({ query: 't=2026-06-21T17:00:00Z&speed=0', width: 1200, height: 700 });
   await open(d.page);
   await d.page.waitForTimeout(400);
-  t.check('on a wide screen the panel is a side drawer at most 440 px wide', await d.page.evaluate(() => { const r = document.querySelector('.modal__content').getBoundingClientRect(); return r.width <= 441 && Math.abs(r.right - innerWidth) < 2 && r.top < 2; }));
+  await d.page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {}))));       // the drawer slides in: measure it once it has
+  const dr = await d.page.evaluate(() => { const r = document.querySelector('.modal__content').getBoundingClientRect(); return { w: Math.round(r.width), left: Math.round(r.left), right: Math.round(r.right), top: Math.round(r.top), bottom: Math.round(r.bottom), vw: innerWidth, vh: innerHeight }; });
+  t.check('on a wide screen the panel is a side drawer at most 440 px wide, full height, against the right edge', dr.w <= 441 && Math.abs(dr.right - dr.vw) <= 2 && dr.top <= 2 && Math.abs(dr.bottom - dr.vh) <= 2, JSON.stringify(dr));
   t.check('the tabs are above Simple / Advanced there', await d.page.evaluate(() => document.querySelector('.tab').getBoundingClientRect().bottom <= document.querySelector('.levelbar').getBoundingClientRect().top + 1));
   await d.close();
 }

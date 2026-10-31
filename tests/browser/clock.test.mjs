@@ -24,13 +24,16 @@ export async function run(t) {
   t.check('seconds hidden: the seconds digits and colon are not displayed', shown.length >= 3 && shown.every((d) => d === 'none'), shown.join());
   await h.close();
 
-  // the digits morph: a minute later the shapes differ, and the clock runs in real time with no pinned time
-  h = await t.open({ query: 't=2026-06-21T17:00:58Z&speed=1', conf: { twentyFourHourClock: true, clockStyle: 'solid' } });
-  const before = await h.page.evaluate(() => ['m1p0', 'm1p1', 'm1p2', 'm1p3'].map((i) => document.getElementById(i).getAttribute('d')).join('|'));
-  await h.page.waitForTimeout(3300);
-  const after = await h.page.evaluate(() => ['m1p0', 'm1p1', 'm1p2', 'm1p3'].map((i) => document.getElementById(i).getAttribute('d')).join('|'));
-  const title = await h.page.title();
-  t.check('time runs: the minute digit changed shape after the minute turned', before !== after && /^13:01/.test(title), `${title}`);
+  // time runs: start ten seconds before a minute turns and watch the minute digit change shape (however long the page took to load)
+  h = await t.open({ query: 't=2026-06-21T17:00:50Z&speed=1', conf: { twentyFourHourClock: true, clockStyle: 'solid' } });
+  const read = () => h.page.evaluate(() => ({ title: document.title, d: ['m1p0', 'm1p1', 'm1p2', 'm1p3'].map((i) => document.getElementById(i).getAttribute('d')).join('|') }));
+  const first = await read();
+  let later = first;
+  for (let i = 0; i < 100 && later.title.slice(0, 5) === first.title.slice(0, 5); i++) { await h.page.waitForTimeout(250); later = await read(); }
+  await h.page.waitForTimeout(1500);
+  later = await read();
+  t.check('time runs: the minute turned over while watching', later.title.slice(0, 5) !== first.title.slice(0, 5), `${first.title} -> ${later.title}`);
+  t.check('and the minute digit changed shape with it', later.d !== first.d);
   t.check('each digit is drawn with four curves', await h.page.evaluate(() => document.querySelectorAll('#clock svg path[id]').length === 24));
   await h.close();
 }

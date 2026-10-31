@@ -44,9 +44,8 @@ jobs:
     timeout-minutes: 30
     env:
       TEST_ARTIFACTS: test-results
-      # The picture baselines were drawn on another machine's software renderer: until they are redrawn here, picture
-      # differences are reported as warnings instead of failing the build.
-      VISUAL: warn
+      # Picture baselines are compared strictly (the browser version is pinned by package-lock.json). If a deliberate
+      # visual change needs new baselines, run the workflow by hand with update_baselines ticked, or `npm run test:visual:update`.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
