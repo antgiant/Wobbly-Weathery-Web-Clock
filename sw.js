@@ -3,8 +3,9 @@
 // (stale-while-revalidate): a returning visit does not wait for the network. Other origins (weather, terrain,
 // satellite tiles) are never touched. A change you deploy shows up on the visit after next; bump VERSION to
 // make old caches go.
-const VERSION = 'v3';
+const VERSION = 'v4';
 const CACHE = 'wwwc-' + VERSION;
+const opened = () => (opened.p || (opened.p = caches.open(CACHE)));     // one handle for all requests: opening it each time is the slow part of a cached start
 
 // keep in step with the files of the app: tools/test-pwa.mjs checks that every script and data file is listed
 const PRECACHE = [
@@ -42,7 +43,7 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   e.respondWith((async () => {
-    const cache = await caches.open(CACHE);
+    const cache = await opened();
     // the page itself is the same file whatever the ?query (deep links, tests)
     const hit = await cache.match(req, { ignoreSearch: req.mode === 'navigate' });
     const fresh = fetch(req).then((r) => { if (r && r.ok) cache.put(req, r.clone()); return r; }).catch(() => hit);

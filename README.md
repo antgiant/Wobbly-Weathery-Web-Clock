@@ -42,7 +42,15 @@ With thanks to
 
 ## Loading
 
-A loading screen (in the colours of the last sky you saw) covers the page until the first frame is drawn with the stars, Milky Way and moon loaded; the digits stay hidden until the clock has drawn them once. All scripts and data are fetched in parallel (`modulepreload` / `preload`), and `sw.js` keeps them on the device so a returning visit does not wait for the network. It serves the cached copy and refreshes it in the background, so a change you deploy shows on the visit after next. It is not registered on localhost.
+A cached start is not instant: the page still has to parse about 25 scripts, build the WebGL programs and draw the first frame. Measured with everything served from the service worker's cache and the CPU slowed 4 to 6 times (a rough phone), the scripts are running after about 0.6 to 0.8 s and the first frame is submitted after about 0.8 to 1.1 s; the GPU's own share (shader build, the atmosphere tables) could not be measured without a real device. What is done about it:
+
+- **The last sky is shown at once.** Once a minute (and when you leave the page) a tiny picture of the sky, without the clock, is saved (about 1.3 KB). On the next launch it is painted behind the loading screen by the first inline script, so the sky is there as soon as the page paints and the real one fades in over it. Only if it is under 4 hours old, else the colours of the last sky are used.
+- **Only the sky is on the critical path.** The settings panel, presets and dimming are wired after the first frame is on screen (`app.js`), the digits are hidden until drawn once, and all scripts and data are preloaded in parallel.
+- **Shaders build in parallel.** All programs are created up front and only checked when first used, with `KHR_parallel_shader_compile` on, so the driver builds them side by side while the page carries on.
+- **The service worker** keeps one open cache handle instead of opening it for every request.
+- Marks for the timeline are in the page (`performance.getEntriesByType('mark')`; add `?perf` to wait for the GPU): `app:init`, `sky:engine-created`, `sky:first-render-start/end`, `sky:assets-done`, `app:setup-done`, `app:ready`.
+
+Not done: bundling the scripts into one file would save the per-file service-worker round trips and some parse time, but it needs a build step, which this project avoids.
 
 ## Offline
 

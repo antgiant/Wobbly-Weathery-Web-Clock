@@ -10,6 +10,7 @@ import { canvas, engine, glass, num, DEFAULT_LAT, defaultLon, lsSet, setStatus }
 export function markReady() {
   if (document.body.classList.contains('ready')) return;
   document.body.classList.add('ready');
+  performance.mark('app:ready');
   const l = document.getElementById('loading');
   if (l) { l.classList.add('done'); setTimeout(() => l.remove(), 700); }
 }
@@ -88,5 +89,17 @@ export async function updateFavicon() {
   if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
   link.href = c.toDataURL('image/png');
   lsSet('lastsky', [css(px[0]), css(px[1])]);          // painted behind the loading screen next time
+  saveSnapshot();
 }
 
+
+// What the next launch shows behind the loading screen: the sky as it last looked (a ~3 KB picture; not the clock, which
+// would show an old time). Kept up to date once a minute and when the page is left.
+export function saveSnapshot() {
+  if (!engine || !canvas.width) return;
+  try {
+    const c = engine.snapshot(40, Math.max(16, Math.round(40 * canvas.height / canvas.width)));
+    if (c) lsSet('lastsky2', { t: Date.now(), url: c.toDataURL('image/jpeg', 0.6) });
+  } catch (_) { /* a browser that will not read the frame back: the colour gradient is used instead */ }
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveSnapshot(); });

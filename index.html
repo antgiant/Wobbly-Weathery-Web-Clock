@@ -16,8 +16,12 @@
   <meta name="description" content="A wobbly clock in front of a physically based, real-time sky simulation.">
   <meta charset="utf-8">
   <script>
-    // paint the colours of the last sky we drew while the real one loads
-    try { var ls = JSON.parse(localStorage.getItem('lastsky')); if (ls) { var r = document.documentElement.style; r.setProperty('--ls-top', ls[0]); r.setProperty('--ls-bot', ls[1]); } } catch (e) {}
+    // Behind the loading screen: the sky as it last looked (a tiny picture, if it is under 4 hours old), else its colours.
+    try {
+      var r = document.documentElement.style, ls = JSON.parse(localStorage.getItem('lastsky')), sn = JSON.parse(localStorage.getItem('lastsky2'));
+      if (ls) { r.setProperty('--ls-top', ls[0]); r.setProperty('--ls-bot', ls[1]); }
+      if (sn && sn.url && Date.now() - sn.t < 4 * 3600e3) { r.setProperty('--ls-img', 'url(' + sn.url + ')'); document.documentElement.dataset.snap = '1'; }
+    } catch (e) {}
   </script>
   <!-- fetch the whole script graph and the data in parallel instead of one import at a time -->
   <link rel="modulepreload" href="js/clock.js">
