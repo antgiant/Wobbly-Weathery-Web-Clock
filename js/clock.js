@@ -137,11 +137,15 @@ window.addEventListener('windchange', kickClock);                 // the sway wa
 function updateSvgWidths() {
   const svgs = document.querySelectorAll("#clock svg");
   const visibleSvgs = [...svgs].filter(svg => getComputedStyle(svg).display !== "none");
-  const count = visibleSvgs.length - 2;
-  
+  // How many digits share the row: the colons do not count. (This used to be "visible svgs - 2", which is right only
+  // while the seconds are shown: with them hidden there is one colon, not two, so it came out one digit short and the
+  // digits were drawn far too big, most visibly on a phone held upright.)
+  const count = visibleSvgs.filter(svg => svg.querySelector('path[id]')).length;
+  const leadingHidden = document.getElementById("firstDigit")?.classList.contains("hidden");
+
   if (count > 0) {
     let temp = "1%";
-    if (count == 2 || count == 5) {
+    if (leadingHidden) {                                // 12-hour time before 10 o'clock: no leading zero
       temp = "3%";
       document.querySelector("#clock").style.marginLeft = "6%";
     } else {

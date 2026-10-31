@@ -3,7 +3,7 @@
 // (stale-while-revalidate): a returning visit does not wait for the network. Other origins (weather, terrain,
 // satellite tiles) are never touched. A change you deploy shows up on the visit after next; bump VERSION to
 // make old caches go.
-const VERSION = 'v7';
+const VERSION = 'v8';
 const CACHE = 'wwwc-' + VERSION;
 const opened = () => (opened.p || (opened.p = caches.open(CACHE)));     // one handle for all requests: opening it each time is the slow part of a cached start
 
@@ -52,13 +52,15 @@ self.addEventListener('fetch', (e) => {
 });
 
 // The page asks how much is saved ('status') and can ask for the missing files to be fetched ('ensure', e.g. when the
-// connection comes back after a flaky first visit); the answer is {cached, total}.
+// connection comes back after a flaky first visit) or for everything to be fetched again ('refresh'); the answer is {cached, total}.
 self.addEventListener('message', (e) => {
   const type = e.data && e.data.type;
   const port = e.ports && e.ports[0];
-  if (type !== 'status' && type !== 'ensure') return;
+  if (type !== 'status' && type !== 'ensure' && type !== 'refresh') return;
   e.waitUntil((async () => {
     const cache = await caches.open(CACHE);
+    // 'refresh': fetch every file again from the network, whatever is saved (the button in Settings, for an installed app that cannot be pulled down to reload)
+    if (type === 'refresh') await Promise.allSettled(PRECACHE.map((u) => cache.add(new Request(u, { cache: 'reload' }))));
     if (type === 'ensure') await Promise.allSettled(PRECACHE.map(async (u) => { if (!(await cache.match(u))) await cache.add(new Request(u, { cache: 'reload' })); }));
     const have = (await Promise.all(PRECACHE.map((u) => cache.match(u)))).filter(Boolean).length;
     if (port) port.postMessage({ cached: have, total: PRECACHE.length });
