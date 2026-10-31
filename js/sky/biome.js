@@ -98,6 +98,23 @@ export function seasonOf(date, lat, biome) {
   return s;
 }
 
+/**
+ * The season the plants are actually in. The calendar says what is usual; the last month's temperature says
+ * what this year is doing (a warm spell in March, an early frost, a cold spring), so it decides when known.
+ * Rising temperatures mean spring, falling ones autumn.
+ * @param {{t15:number, tPrev:number|null}|null} climate  see weather.fetchClimate
+ */
+export function seasonFromClimate(date, lat, biome, climate) {
+  const base = seasonOf(date, lat, biome);
+  if (!climate || !Number.isFinite(climate.t15) || Math.abs(lat) < 23.5 || (biome && biome.tropical)) return base;
+  const t = climate.t15, rising = climate.tPrev == null ? base === 'spring' : t >= climate.tPrev;
+  if (t < 1) return 'winter';
+  if (t >= 16) return base === 'winter' ? 'spring' : 'summer';
+  if (base === 'summer' && t >= 9) return 'summer';           // a cool spell in July is still summer
+  if (base === 'winter' && t < 9) return 'winter';
+  return rising ? 'spring' : (t < 4 ? 'winter' : 'autumn');
+}
+
 // --------------------------------------------------------------- palette ----
 const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
 const SNOW = [0.80, 0.82, 0.86];

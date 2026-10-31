@@ -79,6 +79,28 @@
     <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h18a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-5l-2-2.5h-4L8 16H3a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="7.5" cy="12" r="0.6"/><circle cx="16.5" cy="12" r="0.6"/></svg>
   </button>
 
+  <button id="homeButton" class="fab" type="button" aria-label="Return to the default view" title="Return to the default view" data-home="true">
+    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="1.6"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+  </button>
+
+  <!-- first visit: the one question -->
+  <div id="welcome" class="modal welcome" role="dialog" aria-modal="true" aria-labelledby="welcomeTitle" hidden>
+    <div class="modal__backdrop"></div>
+    <div class="welcome__card">
+      <h2 id="welcomeTitle">Where is your sky?</h2>
+      <p>The clock draws the real sky above you: the sun, moon and stars as they are right now. How should it find where you are?</p>
+      <button id="welcomeReal" type="button" class="choice choice--primary">
+        <strong>Use my real location</strong>
+        <small>Your device finds it and it stays on your device. Weather and terrain lookups only ever get a rounded position (about 10 km), never the exact one.</small>
+      </button>
+      <button id="welcomeEstimate" type="button" class="choice">
+        <strong>Estimate it</strong>
+        <small>From your time zone. Your device is not asked for anything. Less exact: sunrise and sunset can be off by several minutes.</small>
+      </button>
+      <p class="hint">You can change this any time in Settings → Place &amp; time.</p>
+    </div>
+  </div>
+
   <!-- SETTINGS: a side drawer on wide screens, a bottom sheet on phones -->
   <div id="settingsModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" data-level="simple" hidden>
     <div class="modal__backdrop" data-close="true"></div>
@@ -86,31 +108,33 @@
     <div class="modal__content" role="document">
       <div class="sheet-handle" aria-hidden="true"></div>
       <header class="modal__header">
-        <h2 id="settingsTitle">Settings</h2>
+        <h2 id="settingsTitle" class="sr-only">Settings</h2>
+        <nav class="tabs" role="tablist" aria-label="Settings sections">
+          <button type="button" class="tab" role="tab" id="tab-clock" aria-controls="panel-clock" aria-selected="true" data-tab="clock">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>Clock</span>
+          </button>
+          <button type="button" class="tab" role="tab" id="tab-scene" aria-controls="panel-scene" aria-selected="false" data-tab="scene" tabindex="-1">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18a4 4 0 0 1-.5-7.97A5.5 5.5 0 0 1 17 8.5a4.75 4.75 0 0 1 0 9.5z"/></svg><span>Scene</span>
+          </button>
+          <button type="button" class="tab" role="tab" id="tab-view" aria-controls="panel-view" aria-selected="false" data-tab="view" tabindex="-1">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><span>View</span>
+          </button>
+          <button type="button" class="tab" role="tab" id="tab-display" aria-controls="panel-display" aria-selected="false" data-tab="display" tabindex="-1">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg><span>Display</span>
+          </button>
+          <button type="button" class="tab" role="tab" id="tab-place" aria-controls="panel-place" aria-selected="false" data-tab="place" tabindex="-1">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s7-6.2 7-11.5a7 7 0 0 0-14 0C5 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg><span>Place</span>
+          </button>
+        </nav>
+        <button type="button" class="modal__close" aria-label="Close settings" data-close="true">×</button>
+      </header>
+
+      <div class="levelbar">
         <div class="seg" role="group" aria-label="How many settings to show">
           <button type="button" class="seg__btn" data-level="simple" aria-pressed="true">Simple</button>
           <button type="button" class="seg__btn" data-level="advanced" aria-pressed="false">Advanced</button>
         </div>
-        <button type="button" class="modal__close" aria-label="Close settings" data-close="true">×</button>
-      </header>
-
-      <nav class="tabs" role="tablist" aria-label="Settings sections">
-        <button type="button" class="tab" role="tab" id="tab-clock" aria-controls="panel-clock" aria-selected="true" data-tab="clock">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>Clock</span>
-        </button>
-        <button type="button" class="tab" role="tab" id="tab-scene" aria-controls="panel-scene" aria-selected="false" data-tab="scene" tabindex="-1">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18a4 4 0 0 1-.5-7.97A5.5 5.5 0 0 1 17 8.5a4.75 4.75 0 0 1 0 9.5z"/></svg><span>Scene</span>
-        </button>
-        <button type="button" class="tab" role="tab" id="tab-view" aria-controls="panel-view" aria-selected="false" data-tab="view" tabindex="-1">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><span>View</span>
-        </button>
-        <button type="button" class="tab" role="tab" id="tab-display" aria-controls="panel-display" aria-selected="false" data-tab="display" tabindex="-1">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg><span>Display</span>
-        </button>
-        <button type="button" class="tab" role="tab" id="tab-place" aria-controls="panel-place" aria-selected="false" data-tab="place" tabindex="-1">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s7-6.2 7-11.5a7 7 0 0 0-14 0C5 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg><span>Place &amp; time</span>
-        </button>
-      </nav>
+      </div>
 
       <div class="modal__body">
 
@@ -197,6 +221,15 @@
                 <option value="haze">Smoky haze</option>
               </select>
               <p class="hint" id="weatherStatus"></p>
+              <p class="hint">With time travel on, this is the weather of that date: recorded for the past, forecast for the next two weeks.</p>
+            </div>
+            <div class="field">
+              <label class="field__label" for="tempUnit">Temperature</label>
+              <select id="tempUnit">
+                <option value="auto">Automatic (by region)</option>
+                <option value="c">Celsius</option>
+                <option value="f">Fahrenheit</option>
+              </select>
             </div>
           </div>
 
@@ -256,6 +289,7 @@
                 <option value="8">Bortle 8 (city)</option>
                 <option value="9">Bortle 9 (inner city)</option>
               </select>
+              <p class="hint" id="lpStatus"></p>
             </div>
             <div class="field">
               <label class="field__label" for="cloudMotion">Cloud &amp; water motion</label>
@@ -282,7 +316,7 @@
               </select>
               <p class="hint">VR needs a phone or tablet with motion sensors. Drag to fine-tune the direction, pinch to zoom.</p>
             </div>
-            <label class="field toggle"><span class="field__text">Follow the sun<small>Rises on the right, sets on the left, never tilts up or down (clock view)</small></span><input type="checkbox" id="followSun"><span class="switch" aria-hidden="true"></span></label>
+            <label class="field toggle"><span class="field__text">Follow the sun<small>Rises on the right, sets on the left, never tilts up or down</small></span><input type="checkbox" id="followSun"><span class="switch" aria-hidden="true"></span></label>
             <label class="field toggle"><span class="field__text">Label the sun, moon and planets</span><input type="checkbox" id="showLabels"><span class="switch" aria-hidden="true"></span></label>
           </div>
 
@@ -389,6 +423,7 @@
                 <option value="-2">Manually entered</option>
               </select>
             </div>
+            <label class="field toggle adv"><span class="field__text">Share only an approximate position<small>Weather and terrain lookups get a rounded position (about 10 km), never the exact one</small></span><input type="checkbox" id="coarseLookups"><span class="switch" aria-hidden="true"></span></label>
             <button id="refreshLocation" type="button" class="btn">Refresh location</button>
           </div>
 

@@ -37,6 +37,7 @@ export class Controls {
     this.yawOffset = 0;                 // look mode: user calibration, radians
     this.compass = new CompassCalibrator();   // iOS relative-alpha -> absolute
     this.debug = null;                  // last sensor reading, for ?vrdebug
+    this.userMoved = false;             // look-around mode: the user has dragged / zoomed away from the default view
     this.ignoreScreenAngle = false;     // Settings override for browsers that already rotate the sensor frame
     this.sensor = null;                 // smoothed basis
     this.pointers = new Map();
@@ -103,6 +104,7 @@ export class Controls {
       const dx = e.clientX - p.x, dy = e.clientY - p.y;
       p.x = e.clientX; p.y = e.clientY;
       this.lastInput = performance.now();
+      this._moved();
       if (this.pointers.size === 2) {
         const d = this._pinchDist();
         if (this.pinch0 > 0) this.fov = this.fov0 * (this.pinch0 / d);
@@ -126,13 +128,19 @@ export class Controls {
       if (this.mode === 'fixed' || ignore(e)) return;
       this.fov *= Math.exp(e.deltaY * 0.001);
       this.lastInput = performance.now();
+      this._moved();
       this._push();
       setTimeout(() => this._push(), 1300);
     }, { passive: true });
     el.addEventListener('dblclick', (e) => {
       if (this.mode !== 'drag' || ignore(e)) return;
-      this.setView({ heading: this.engine.s.view.heading, pitch: 12, fov: 80 });
+      this.opt.onReset?.();
     });
+  }
+  _moved() {
+    if (this.mode !== 'drag' || this.userMoved) return;
+    this.userMoved = true;
+    this.opt.onUserMove?.();
   }
   _pinchDist() {
     const [a, b] = [...this.pointers.values()];

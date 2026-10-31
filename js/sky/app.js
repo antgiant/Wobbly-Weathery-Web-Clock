@@ -1,15 +1,16 @@
 // Glue between the settings (conf), the sky engine and the page.
 
-import { conf } from '../config.js';
+import { conf, formatTemp } from '../config.js';
 import { setSim, getSim, now } from '../simtime.js';
 import { SkyEngine } from './engine.js';
 import { Controls } from './controls.js';
-import { PRESETS, fetchLiveWeather, fetchMarine, mapMarine, CLEAR } from './weather.js';
+import { PRESETS, fetchLiveWeather, fetchMarine, mapMarine, CLEAR, fetchWeatherDay, weatherFromDay, fetchClimate } from './weather.js';
 import { fetchDem, demSkyline, LANDSCAPES } from './landscape.js';
 import Virgo from '../virgo/virgo.js';
 import { initGlass } from './glass.js';
-import { fetchBiome, fallbackBiome, classify, seasonOf, paletteFor } from './biome.js';
+import { fetchBiome, fallbackBiome, classify, seasonOf, seasonFromClimate, paletteFor } from './biome.js';
 import { generatePlants } from './plants.js';
+import { estimateBortle, fetchPlaces } from './lightpollution.js';
 import { sunEvents, countdownState, followHeading } from './sunpath.js';
 
 const canvas = document.getElementById('sky');
@@ -17,13 +18,14 @@ const statusEls = {
   terrain: document.getElementById('terrainStatus'),
   weather: document.getElementById('weatherStatus'),
   sky: document.getElementById('skyStatus'),
+  lp: document.getElementById('lpStatus'),
 };
 const setStatus = (k, t) => { if (statusEls[k]) { if (k === 'terrain' && !t.includes('Land cover') && !t.includes('Sea:')) statusEls[k].dataset.base = t; statusEls[k].textContent = t; } };
 
 let engine = null;
 let controls = null;
 let glass = null;
-const state = { seaText: '', liveWeather: null, elevation: null, dem: null, lpBortle: 3, biome: null };
+const state = { seaText: '', liveWeather: null, elevation: null, dem: null, lpBortle: 3, lpLocal: null, biome: null };
 const ov = {};                      // deep-link overrides (never written to localStorage)
 const DEG = Math.PI / 180;
 const num = (v, d) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : d);
@@ -32,6 +34,13 @@ const DEFAULT_LAT = 40;
 const defaultLon = () => Math.max(-180, Math.min(180, -new Date().getTimezoneOffset() / 4));
 const lsGet = (k) => { try { return JSON.parse(localStorage.getItem(k)); } catch (_) { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) { /* private mode */ } };
+
+// Weather and terrain services get a rounded position (about 11 km for weather, 5 km for terrain), never the exact
+// one, unless the user turned that off. Everything that is drawn still uses the exact position, locally.
+const coarse = (v, step) => (conf.coarseLookups === false ? v : Math.round(v / step) * step);
+const ymd = (d) => d.toISOString().slice(0, 10);
+// time travel far from now: the weather should be what it was (or will be) then
+const histActive = () => !!getSim() && Math.abs(+now() - Date.now()) > 2 * 3600e3;
 
 // -------------------------------------------------------------- fallback --
 // Without WebGL2 float targets we still show a plausible gradient.
@@ -67,7 +76,7 @@ function currentSun() { return engine?.sky?.sun; }
 function bortleFromSettings() {
   const v = ov.lp ?? conf.lightPollution;
   if (v === 'off') return 0;
-  if (v === 'auto') return state.lpBortle;
+  if (v === 'auto') return state.lpLocal?.bortle ?? state.lpBortle;
   return Math.min(9, Math.max(1, parseInt(v, 10) || 3));
 }
 
@@ -128,13 +137,16 @@ function getSunEvents(date) {
   return { ev: evCache.ev, lat, lon, elev };
 }
 
-const followActive = () => !!conf.followSun && controls?.mode === 'fixed' && ov.az == null;
+// "the default view": the clock view, or look-around that has not been dragged away from where it started
+const atDefault = () => controls?.mode === 'fixed' || (controls?.mode === 'drag' && !controls.userMoved);
+const followActive = () => !!conf.followSun && atDefault() && ov.az == null;
 
 function applyView() {
   if (!controls) return;
   const fov = num(conf.viewFov, 80);
   let pitch = num(ov.pitch ?? conf.viewPitch, 12);
-  const auto = ov.pitch == null && conf.viewPitchAuto && controls.mode === 'fixed';
+  if (controls.mode === 'drag' && controls.userMoved) { controls.setView({ fov }); return; }   // the user's view is theirs
+  const auto = ov.pitch == null && conf.viewPitchAuto && atDefault();
   if (auto) pitch = pitchForHorizonAtClockBottom(fov) ?? pitch;
   const slider = document.getElementById('viewPitch');
   if (slider) { slider.disabled = !!(ov.pitch == null && conf.viewPitchAuto); if (auto) { slider.value = Math.round(pitch); const o = document.getElementById('viewPitchOut'); if (o) o.textContent = Math.round(pitch); } }
@@ -151,13 +163,18 @@ function applyView() {
   controls.setView({ heading, pitch, fov });
 }
 
+const tempText = (w) => (Number.isFinite(w.tempC) ? ` · ${formatTemp(w.tempC)}` : '');
 function applyWeather() {
   if (!engine) return;
   const mode = ov.weather ?? conf.weatherMode;
   let w = null;
-  if (mode === 'live') {
+  if (mode === 'live' && histActive()) {
+    const hw = state.hist ? weatherFromDay(state.hist.data, now()) : null;
+    w = hw || CLEAR;
+    setStatus('weather', hw ? `Weather on ${hw.label}${tempText(hw)}` : (state.histError ? 'No weather record for that date, showing clear sky' : 'Loading the weather for that date…'));
+  } else if (mode === 'live') {
     w = state.liveWeather || CLEAR;
-    setStatus('weather', state.liveWeather ? `Live: ${state.liveWeather.label}` : 'Live weather not loaded yet, showing clear sky');
+    setStatus('weather', state.liveWeather ? `Live: ${state.liveWeather.label}${tempText(state.liveWeather)}` : 'Live weather not loaded yet, showing clear sky');
   } else {
     w = PRESETS[mode] || CLEAR;
     setStatus('weather', `Manual: ${w.label}`);
@@ -166,6 +183,49 @@ function applyWeather() {
   const mie = Math.min(12, 1 + 12 * (w.aod ?? 0.12));
   engine.set({ weather: w, mie });
   applyPlants();
+}
+
+// ----------------------------------------------- time-dependent data (history, seasons) --
+// One day of hourly weather for the time-travel date, and the last month's warmth for the seasons. Both are
+// cached on the device; they only change when the (simulated) date does.
+const dayLoad = { key: '', hour: -1, busy: false };
+async function cachedFetch(key, ttlMs, fetcher) {
+  const c = lsGet(key);
+  if (c && Date.now() - c.t < ttlMs) return c.v;
+  const v = await fetcher();
+  lsSet(key, { t: Date.now(), v });
+  return v;
+}
+async function syncTimeData() {
+  if (!engine || dayLoad.busy) return;
+  const d = now(), hist = histActive() && (ov.weather ?? conf.weatherMode) === 'live';
+  const lat0 = num(ov.lat ?? conf.location_latitude, NaN), lon0 = num(ov.lon ?? conf.location_longitude, NaN);
+  if (!Number.isFinite(lat0) || !Number.isFinite(lon0) || (lat0 === -1 && lon0 === -1)) return;
+  const lat = coarse(lat0, 0.1), lon = coarse(lon0, 0.1);
+  const key = `${lat.toFixed(2)},${lon.toFixed(2)},${ymd(d)},${hist ? 'h' : 'l'}`;
+  if (key === dayLoad.key) {                                   // same day: only the hour moves
+    if (hist && d.getUTCHours() !== dayLoad.hour) { dayLoad.hour = d.getUTCHours(); applyWeather(); }
+    return;
+  }
+  dayLoad.busy = true;
+  try {
+    // weather of that day
+    if (hist) {
+      state.histError = false;
+      try {
+        const data = await cachedFetch(`wxh:${lat.toFixed(1)},${lon.toFixed(1)},${ymd(d)}`, 30 * 86400e3, () => fetchWeatherDay(lat, lon, d));
+        state.hist = data ? { data } : null; state.histError = !data;
+        if (data && data.elevation != null && state.elevation == null) state.elevation = data.elevation;
+      } catch (e) { state.hist = null; state.histError = true; console.info('[sky] weather history failed:', e.message); }
+    } else state.hist = null;
+    // the season the plants are in
+    try {
+      const c = await cachedFetch(`clim:${lat.toFixed(1)},${lon.toFixed(1)},${ymd(d)}`, 30 * 86400e3, () => fetchClimate(lat, lon, d));
+      state.climate = c;
+    } catch (e) { state.climate = null; console.info('[sky] climate fetch failed:', e.message); }
+    dayLoad.key = key; dayLoad.hour = d.getUTCHours();
+  } finally { dayLoad.busy = false; }
+  applyWeather();
 }
 
 function applyLandscapeCore() {
@@ -211,7 +271,7 @@ async function loadSea() {
   if (cached && Date.now() - cached.t < 30 * 60000) m = cached.sea;
   else if (!seaBusy) {
     seaBusy = true;
-    try { m = await fetchMarine(lat, lon); lsSet(key, { t: Date.now(), sea: m }); }
+    try { m = await fetchMarine(coarse(lat, 0.1), coarse(lon, 0.1)); lsSet(key, { t: Date.now(), sea: m }); }
     catch (e) { console.info('[sky] marine fetch failed:', e.message); }
     seaBusy = false;
   }
@@ -240,7 +300,7 @@ function applyPlants() {
   const type = engine.s.landscape.type, water = engine.s.landscape.ocean || type === 'ocean';
   const b = currentBiome();
   const on = !!conf.plants && !water && type !== 'city' && b.kind !== 'water';
-  const season = seasonOf(now(), b.lat ?? num(conf.location_latitude, DEFAULT_LAT), b);
+  const season = seasonFromClimate(now(), b.lat ?? num(conf.location_latitude, DEFAULT_LAT), b, state.climate);
   const w = engine.s.weather;
   const pal = paletteFor(b, season, w.snowCover || 0, b.rgb);
   // ground colours follow the biome too (the ocean keeps its own water shading)
@@ -280,6 +340,30 @@ function applyQuality() {
   applyPlants();
 }
 
+// Light pollution from the settlements around the spot (see lightpollution.js); the time-zone guess is the fallback.
+let lpBusy = '';
+async function loadLightPollution(lat, lon) {
+  const clat = coarse(lat, 0.05), clon = coarse(lon, 0.05), key = `lp2:${clat.toFixed(2)},${clon.toFixed(2)}`;
+  const urban = state.biome?.kind === 'urban';
+  let est = lsGet(key);
+  if (!est && lpBusy !== key) {
+    lpBusy = key;
+    try {
+      const places = await fetchPlaces(clat, clon);
+      const r = estimateBortle(clat, clon, places);
+      est = { bortle: r.bortle, nearest: r.nearest, n: places.length };
+      lsSet(key, est);
+    } catch (e) { console.info('[sky] light pollution lookup failed:', e.message); setStatus('lp', 'Estimated from the time zone (nearby towns could not be looked up)'); }
+    lpBusy = '';
+  }
+  if (!est) return;
+  const b = urban ? Math.max(est.bortle, 7) : est.bortle;
+  state.lpLocal = { bortle: b };
+  const near = est.nearest ? ` · nearest ${est.nearest.name}, ${Math.round(est.nearest.km)} km` : ' · no towns nearby';
+  setStatus('lp', `Estimated Bortle ${b} from the towns around you${near}`);
+  applyLocation(); applyQuality();
+}
+
 // -------------------------------------------------------- live data fetch --
 let fetchTimer = 0, fetchAbort = null;
 async function loadLiveData() {
@@ -290,6 +374,8 @@ async function loadLiveData() {
   const signal = fetchAbort.signal;
   const key = `${lat.toFixed(1)},${lon.toFixed(1)}`;
 
+  loadLightPollution(lat, lon);
+
   // land cover: one small satellite tile, cached for good
   if (!ov.biome) {
     const bioKey = `biome:${lat.toFixed(2)},${lon.toFixed(2)}`;
@@ -298,7 +384,7 @@ async function loadLiveData() {
       try { bio = await fetchBiome(lat, lon, state.elevation ?? 0); lsSet(bioKey, bio); }
       catch (e) { console.info('[sky] land cover fetch failed:', e.message); }
     }
-    if (bio) { state.biome = bio; applyLandscape(); }
+    if (bio) { state.biome = bio; applyLandscape(); loadLightPollution(lat, lon); }
   }
 
   // terrain: cached for good, it does not change
@@ -307,7 +393,7 @@ async function loadLiveData() {
     state.dem = lsGet(demKey);
     if (!state.dem) {
       try {
-        state.dem = await fetchDem(lat, lon, signal);
+        state.dem = await fetchDem(coarse(lat, 0.05), coarse(lon, 0.05), signal);
         lsSet(demKey, state.dem);
       } catch (e) { if (e.name !== 'AbortError') console.info('[sky] terrain fetch failed:', e.message); }
     }
@@ -321,7 +407,7 @@ async function loadLiveData() {
       state.liveWeather = cached.weather; state.elevation = cached.elevation;
     } else {
       try {
-        const r = await fetchLiveWeather(lat, lon, signal);
+        const r = await fetchLiveWeather(coarse(lat, 0.1), coarse(lon, 0.1), signal);
         state.liveWeather = r.weather; state.elevation = r.elevation;
         lsSet('wx', { key, t: Date.now(), weather: r.weather, elevation: r.elevation });
       } catch (e) { if (e.name !== 'AbortError') console.info('[sky] weather fetch failed:', e.message); }
@@ -451,10 +537,11 @@ function applySim() {
   const on = document.getElementById('simEnabled')?.checked;
   const input = document.getElementById('simTime');
   if (!engine) return;
-  if (!on) { engine.set({ sim: null }); applyPlants(); return; }
+  if (!on) { engine.set({ sim: null }); syncTimeData(); applyPlants(); return; }
   let base = input?.value ? new Date(input.value) : new Date();
   if (isNaN(base)) base = new Date();
   engine.set({ sim: { base, startPerf: performance.now(), scale: num(conf.simSpeed, 1) } });
+  syncTimeData();
   applyPlants();
 }
 
@@ -590,14 +677,31 @@ export function refreshSky() {                 // kept for older callers: locati
   applyLocation(); scheduleLiveData();
 }
 
+let baseMode = 'drag';                         // the mode "default view" returns to (never VR)
 export async function setViewMode(mode) {
   const ok = await controls.setMode(mode);
-  conf.viewMode = ok ? mode : conf.viewMode === 'look' ? 'fixed' : conf.viewMode;
+  if (ok && mode !== 'look') baseMode = mode;
+  conf.viewMode = ok ? mode : conf.viewMode === 'look' ? 'drag' : conf.viewMode;
   document.body.dataset.view = controls.mode;
   document.getElementById('viewMode').value = controls.mode;
   applyView();
   document.getElementById('vrButton')?.setAttribute('aria-pressed', String(controls.mode === 'look'));
+  updateHomeButton();
   return ok;
+}
+
+function updateHomeButton() {
+  const b = document.getElementById('homeButton');
+  if (b && controls) b.dataset.atDefault = String(controls.mode !== 'look' && atDefault());
+}
+
+/** Back to the default framing: out of VR, undo any dragging / zooming, and the sun-following view again. */
+export async function returnToDefaultView() {
+  if (controls.mode === 'look') await setViewMode(baseMode);
+  controls.userMoved = false;
+  controls.yawOffset = 0;
+  applyView();
+  updateHomeButton();
 }
 
 function init() {
@@ -608,7 +712,7 @@ function init() {
     return;
   }
   window.__sky = engine;                         // handy for debugging / tests
-  controls = new Controls(engine, { onToast: toast, onChange: () => { glass?.updateLight(); } });
+  controls = new Controls(engine, { onToast: toast, onChange: () => { glass?.updateLight(); }, onUserMove: () => updateHomeButton(), onReset: () => returnToDefaultView() });
   window.__controls = controls;
   glass = initGlass(engine, () => engine._basis());
 
@@ -621,6 +725,7 @@ function init() {
   setInterval(updateFavicon, 60000);
   setInterval(() => { updateHud(); updateVrReadout(); }, 250);
   setInterval(updateCountdown, 500);
+  setInterval(syncTimeData, 4000);
   setInterval(() => { if (followActive()) applyView(); }, 1000);     // the sun moves 15 degrees an hour
   setTimeout(() => { updateClockColor(); updateFavicon(); }, 1200);
 
@@ -651,6 +756,9 @@ function init() {
   bindRange('glassFrost', 'glassFrost', () => glass.apply(), 'glassFrostOut');
   bindRange('glassGlow', 'glassGlow', () => glass.apply(), 'glassGlowOut');
   bindSelect('glassGlowColor', 'glassGlowColor', () => glass.apply());
+  bindSelect('tempUnit', 'tempUnit', applyWeather);
+  $('coarseLookups').checked = conf.coarseLookups !== false;
+  $('coarseLookups').addEventListener('change', (e) => { conf.coarseLookups = e.target.checked; dayLoad.key = ''; scheduleLiveData(); syncTimeData(); });
   bindSelect('legibility', 'legibility', () => { glass.apply(); updateClockColor(); });
   bindSelect('screenMode', 'screenMode', () => { glass.apply(); updateClockColor(); updateCountdown(); engine.dirty = true; });
   bindSelect('countdown', 'countdown', updateCountdown);
@@ -674,17 +782,21 @@ function init() {
   // the clock's size follows the window, so keep the horizon pinned to it
   // Only the fixed clock view is re-aligned automatically. In drag / VR modes the view belongs to the user:
   // a phone's toolbar collapsing fires resize events mid-drag and must not snap the view back.
-  const realign = () => { if (controls.mode === 'fixed') applyView(); };
+  const realign = () => { if (atDefault()) applyView(); };
   window.addEventListener('resize', realign);
   window.addEventListener('clocklayout', realign);
   $('showLabels').checked = !!conf.showLabels;
   $('showLabels').addEventListener('change', (e) => { conf.showLabels = e.target.checked; updateHud(); });
 
-  $('viewMode').value = conf.viewMode === 'look' ? 'fixed' : conf.viewMode;   // never auto-start sensors on load
+  // never auto-start the sensors on load: VR falls back to look-around (the default)
+  if (conf.viewMode === 'look') conf.viewMode = 'drag';
+  $('viewMode').value = conf.viewMode;
   $('viewMode').addEventListener('change', (e) => setViewMode(e.target.value));
+  baseMode = conf.viewMode;
   if (conf.viewMode === 'drag') setViewMode('drag');
-  else conf.viewMode = 'fixed';
 
+  $('homeButton').addEventListener('click', () => returnToDefaultView());
+  updateHomeButton();
   const vr = $('vrButton');
   if (vr) {
     const hasSensors = typeof DeviceOrientationEvent !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
@@ -720,7 +832,7 @@ function init() {
   if (q.has('lat') && q.has('lon')) { ov.lat = num(q.get('lat'), 40); ov.lon = num(q.get('lon'), -74); }
   if (q.has('t')) {
     const base = new Date(q.get('t'));
-    if (!isNaN(base)) { simEn.checked = true; simTime.value = toLocalInput(base); engine.set({ sim: { base, startPerf: performance.now(), scale: num(q.get('speed'), 0) } }); }
+    if (!isNaN(base)) { simEn.checked = true; simTime.value = toLocalInput(base); engine.set({ sim: { base, startPerf: performance.now(), scale: num(q.get('speed'), 0) } }); syncTimeData(); }
   }
   if (Object.keys(ov).length) { applyQuality(); applyLocation(); applyView(); applyWeather(); applyLandscape(); }
   scheduleLiveData();
