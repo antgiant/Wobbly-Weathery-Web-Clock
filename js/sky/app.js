@@ -20,6 +20,7 @@ import { bindSettings } from './bindings.js';
 import { initDim, updateDim } from './dim.js';
 import { initPresets } from './presets.js';
 import { updateBurnIn, burnInPeriod, toNextMinute } from './burnin.js';
+import { updateWind, windPeriod } from './windsway.js';
 import { every } from './scheduler.js';
 
 const simActive = () => !!getSim();
@@ -99,6 +100,7 @@ function init() {
   every('hud', () => { updateHud(); updateVrReadout(); }, () => (conf.showLabels || controls?.mode === 'look' || conf.vrDebug ? 250 : Infinity));
   every('countdown', updateCountdown, countdownPeriod, 600);                  // first look soon after start: a countdown may already be running
   every('rain', updateRain, () => (conf.rainAlert ? 60000 : Infinity), 2500);
+  every('wind', updateWind, windPeriod, 700);                                 // the digits lean in the wind (when switched on)
   every('burnin', updateBurnIn, burnInPeriod, toNextMinute());                // anti burn-in: a tiny step once a minute while the screen is kept on
   every('dim', updateDim, () => (conf.nightDim && conf.nightDim !== 'off' ? (simFast() ? 1000 : 20000) : Infinity), 500);
   window.addEventListener('resize', () => { if (atDefault()) applyView(); });
