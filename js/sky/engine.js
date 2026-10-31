@@ -610,7 +610,8 @@ export class SkyEngine {
     this._2f('uRes', cw, ch);
     this._3f('uLight', g.light);
     this._3f('uLightCol', g.lightCol);
-    this._4f('uGlow', g.glow, 0, 0, 0);
+    const portraitLed = ch > cw;
+    this._4f('uGlow', g.glow, led ? Math.max(2, Math.floor(Math.min(cw / (portraitLed ? g.led.rows : g.led.cols), ch / (portraitLed ? g.led.cols : g.led.rows)))) : 0, 0, 0);
     this._3f('uGlowCol', g.glowCol);
     this._3f('uInk', g.ink);
     this._1f('uContrast', g.contrast);

@@ -251,7 +251,7 @@ uniform vec2 uMaskPx;      // mask texture size in texels
 uniform vec2 uRes;         // canvas size in px
 uniform vec3 uLight;       // xy: screen direction towards the light (y up), z: strength 0..1
 uniform vec3 uLightCol;
-uniform vec4 uGlow;        // x: light from inside the glass, 0..1
+uniform vec4 uGlow;        // x: light from inside the glass, 0..1; y: LED cell size in px when the LED panel is on (else 0)
 uniform vec3 uGlowCol;     // colour of that light (liquid glass)
 uniform vec3 uInk;         // flat ink colour (solid clock style while the LED panel is on)
 uniform float uContrast;   // least luminance contrast ratio between the digits and the sky around them (0 = off)
@@ -308,13 +308,24 @@ vec3 ensureContrast(vec3 c, vec2 uv, float stroke, bool allowLighter) {
   return pow(lin, vec3(1.0 / 2.2));
 }
 
+// On the LED panel a pixel averages digit and sky, which can wash a digit out against a bright sky. A dark one-LED
+// outline around the digits (only where the sky is bright; against a dark sky the digits already stand out) keeps their shape.
+vec3 ledRing(vec3 col, vec3 bg) {
+  float cell = uGlow.y;
+  if (cell < 1.0) return col;
+  float maskScale = uMaskPx.x / (uMaskRect.z * uRes.x);
+  float w = maskAt(vUv, max(log2(cell * 0.9 * maskScale), 0.0));
+  float ring = smoothstep(0.08, 0.45, w) * (1.0 - smoothstep(0.3, 0.9, maskAt(vUv, 0.0)));
+  return mix(col, vec3(0.02), ring * 0.9 * smoothstep(0.25, 0.5, lumaOf(bg)));
+}
+
 void body() {
   vec3 base = texture(uTex, vUv).rgb;
   float mode = uGlass.y;
   if (mode < 0.5) { oColor = vec4(base, 1.0); return; }
   if (mode > 2.5) {                                          // flat ink: the LED panel has no glass here, but the digits still need drawing
     float cv = smoothstep(0.1, 0.9, maskAt(vUv, 0.0));
-    oColor = vec4(mix(base, ensureContrast(uInk, vUv, uGlass.z, true), cv), 1.0);
+    oColor = vec4(ledRing(mix(base, ensureContrast(uInk, vUv, uGlass.z, true), cv), base), 1.0);
     return;
   }
 
@@ -389,6 +400,7 @@ void body() {
   vec3 lamp = emit * inner;
   if (stained) lamp *= 1.0 + 0.9 * pow(smoothstep(0.45, 0.98, h), 2.0);   // brightest down the middle of the tube
   c += lamp * (stained ? 1.15 : 0.80);
+  if (stained && uGlow.y > 0.5) c = ensureContrast(c, vUv, stroke, false);   // LED panel: the lit tube must still beat the sky after averaging
   if (!stained) c += emit * glow * 0.10 * (1.0 - frost * 0.4);        // faint all-over fill so thin strokes light up too
 
   // the body of the glass is made readable first; the glints and the rim go on top, so it still looks like glass
@@ -409,7 +421,7 @@ void body() {
   }
   shaded += haloCol * halo * glow * (1.0 - cover) * haloK;
 
-  oColor = vec4(mix(shaded, glass, cover), 1.0);
+  oColor = vec4(ledRing(mix(shaded, glass, cover), base), 1.0);
 }
 
 void main() {
