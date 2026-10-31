@@ -876,12 +876,21 @@ body[data-screen="led"] #clock svg:nth-child(6) {
 }
 
 /* sunrise / sunset countdown */
-#sunCountdown {
+/* the pills at the top: countdown and rain alert stack instead of covering each other */
+#alerts {
   position: fixed;
   z-index: 3;
   left: 50%;
   top: max(7%, calc(env(safe-area-inset-top) + 14px));
   transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+#sunCountdown {
   display: flex;
   align-items: baseline;
   gap: 0.6em;
@@ -922,8 +931,47 @@ body[data-screen="led"] #clock svg:nth-child(6) {
 }
 
 /* the LED panel draws the countdown itself (see drawLedCard in app.js); a page overlay would break the illusion */
-body[data-screen="led"] #sunCountdown {
+body[data-screen="led"] #alerts {
   display: none;
+}
+
+#rainAlertPill {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.4em 1em 0.4em 0.7em;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  background: rgba(10, 16, 32, 0.5);
+  color: #fff;
+  font: 600 clamp(0.85rem, 3vw, 1.15rem)/1.2 system-ui, sans-serif;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+}
+
+#rainAlertPill[hidden] {
+  display: none;
+}
+
+#rainAlertPill svg {
+  width: 1.6em;
+  height: 1.6em;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#rainAlertPill[data-level="umbrella"] svg {
+  color: #7fd4ff;
+}
+
+#rainAlertPill[data-level="slicker"] svg {
+  color: #ffd24a;
 }
 
 /* shown while "keep the screen on" is wanted but the browser still needs a touch to allow it */

@@ -155,7 +155,7 @@ export async function fetchWeatherDay(lat, lon, date, signal) {
 
 export function hoursOf(h) {
   if (!h || !h.time) return [];
-  return h.time.map((_, i) => { const o = {}; for (const k of Object.keys(h)) if (k !== 'time') o[k] = h[k][i]; return o; });
+  return h.time.map((t, i) => { const o = { time: t }; for (const k of Object.keys(h)) if (k !== 'time') o[k] = h[k][i]; return o; });
 }
 
 /** Renderer weather for an hour of a fetched day (nearest hour). */

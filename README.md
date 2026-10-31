@@ -24,6 +24,8 @@ With thanks to
 | **Weather history** | With time travel on and weather set to Live, the weather is that of the chosen moment: recorded for the past (Open-Meteo forecast service for the last ~3 months, its ERA5 archive before that, which has no visibility), forecast for the next two weeks. |
 | **Seasons from the weather** | Plants follow the last month's temperature (mean of the last 15 days against the 15 before), not just the calendar: a warm spell in March leafs out early, an early frost brings winter, rising temperatures mean spring and falling ones autumn. Tropics ignore it. Uses the same date as time travel. |
 | **Light pollution** | Estimated from the settlements around you (OpenStreetMap towns and cities with their population, summed with Walker's law and mapped to the Bortle scale; standing in a built-up area on the satellite tile counts as at least Bortle 7), instead of one number for the whole time zone. Falls back to the time-zone estimate when the lookup fails. |
+| **Christmas** | From US Thanksgiving (fourth Thursday of November) to Christmas Day, by the date the clock shows: a lit Christmas tree stands in the scene (twinkling bulbs, a star; towards where the sun is at noon, a little to one side), and when it is on the sea it floats on a small raft, bobs, and is reflected in the water. While the clock style is left on Automatic it switches from liquid glass to the coloured-lights tube for the season. Turn the tree off in Settings → Scene; choosing a clock style yourself always wins. |
+| **Umbrella alert** | Off by default (Settings → Display → Rain). Reads the hourly forecast for the rest of the day (until 11 pm local): an umbrella when at least 1 mm (0.04 in) is likely, in hours of 0.2 mm or more and at least 30% chance; a yellow umbrella with drops (slicker) at 8 mm (0.3 in) or more, or any single hour of 2.5 mm or more. Says when ("Umbrella: rain, 3 PM to 6 PM · 0.13 in"). Follows time travel; with a manual weather it follows the preset. On the LED panel it is a pixel umbrella in the bottom left corner. |
 | **Settings** | A side drawer on wide screens (the sky stays visible beside it) and a bottom sheet on phones with the tabs along the thumb edge. Five tabs (Clock, Scene, View, Display, Place) in the header, and a **Simple / Advanced** switch under them (along the bottom edge on a phone): Simple shows the common settings; Advanced adds the rest, drawn in amber with an "Advanced" tag so it is obvious which is which. While you drag a slider on a phone the sheet fades so you can see the effect. Dark glass by default, light when the device asks for it. |
 | **VR look-around** | Tap the goggles button on a phone/tablet: the sky follows the device's orientation sensors. Drag to fine-tune the compass direction, pinch to zoom. "Look around" mode (drag and pinch, no sensors) works on desktop. Optional labels for the sun, moon and planets with arrows to find them. |
 | **Framing** | By default the camera tilts so the horizon sits exactly on the bottom of the clock digits, on any screen size, so the ground always shows beneath them. Untick it in Settings → View to set the tilt yourself. |
@@ -94,6 +96,7 @@ These are not saved to your settings:
     &landscape=ocean                 auto|flat|hills|mountains|desert|ocean|city
     &lp=1                            light pollution: off, or Bortle 1-9
     &waves=2.5x9                     force the sea state: wave height m x period s (ocean landscape)
+    &xmas=1                          force the Christmas tree on (0 forces it off)
     &biome=conifer                   force land cover: grass|forest|conifer|tropical|steppe|desert|tundra|urban|snow
 
 `window.__sky` exposes the engine in the console.
@@ -115,10 +118,12 @@ These are not saved to your settings:
     js/sky/orientation.js             device orientation maths and the iOS compass calibration (testable in node)
     js/sky/lightpollution.js          light pollution from nearby settlements (Walker's law)
     js/units.js                       regional defaults: 12/24 h, °C / °F
+    js/season.js                      the Christmas season (Thanksgiving to Dec 25)
+    js/sky/rain.js                    umbrella / slicker from the hourly forecast
     js/sky/sunpath.js                 sunrise / sunset times, the countdown, the follow-the-sun camera
     js/sky/app.js                     settings, live data, HUD, clock colour
     data/                             star catalogue, Milky Way, moon map (built by tools/build-data.py)
-    tools/                            data builder; tests: node tools/test-orientation.mjs, node tools/test-sunpath.mjs, tools/test-weather.mjs, tools/test-lightpollution.mjs
+    tools/                            data builder; tests: node tools/test-orientation.mjs, node tools/test-sunpath.mjs, tools/test-weather.mjs, tools/test-lightpollution.mjs, tools/test-season.mjs, tools/test-rain.mjs
 
 ## What is and is not verified
 

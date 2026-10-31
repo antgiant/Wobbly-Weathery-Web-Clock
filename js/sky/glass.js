@@ -12,7 +12,7 @@
 // bends the lights stay at their spot along it. The lights are painted into the mask's colour channels
 // (coverage stays in alpha), and the shader turns them into a glow inside the glass.
 
-import { conf } from '../config.js';
+import { conf, clockStyleNow } from '../config.js';
 
 const VB_W = 100, VB_H = 116, VB_Y0 = -8;      // viewBox of each digit svg: "0 -8 100 116"
 const STROKE = 80 * 0.2;                        // stroke-width 80 under transform scale(0.2), in viewBox units
@@ -50,7 +50,7 @@ export function initGlass(engine, getBasis) {
 
   // The LED panel is the normal picture, glass and all, averaged into pixels. With the solid style the
   // shader has to draw the digits itself (flat ink), because the SVG cannot be pixelated.
-  const style = () => conf.clockStyle || 'solid';
+  const style = () => clockStyleNow();
   const led = () => conf.screenMode === 'led';
   const active = () => style() !== 'solid' || led();
 
@@ -229,6 +229,8 @@ export function initGlass(engine, getBasis) {
     visualViewport.addEventListener('scroll', schedule);
   }
   document.addEventListener('visibilitychange', () => { if (!document.hidden) schedule(); });
+  let lastStyle = style();
+  setInterval(() => { if (style() !== lastStyle) { lastStyle = style(); apply(); } }, 5000);      // the season (or time travel) changed the automatic style
   setInterval(() => { updateLight(); if (active()) schedule(); }, 1000);    // belt and braces: re-measure once a second
   engine.onFrame(() => { if (active() && !engine._lightInit) { engine._lightInit = true; updateLight(); } });
   apply();
