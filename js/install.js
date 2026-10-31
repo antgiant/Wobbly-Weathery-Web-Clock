@@ -27,12 +27,30 @@ window.addEventListener('appinstalled', () => { deferred = null; if (group()) gr
 
 document.addEventListener('DOMContentLoaded', () => {
   button()?.addEventListener('click', async () => {
-    if (!deferred) return;
+    if (!deferred) { if (isApple() && !standalone()) openSteps(); return; }
     deferred.prompt();
     try { await deferred.userChoice; } catch (_) { /* dismissed */ }
     deferred = null;
     button().hidden = true;
   });
   if (deferred) show('Runs full screen like an app, from your home screen or dock, and keeps working without a connection.', true);
-  else if (isApple() && !standalone()) show('To install on an iPhone or iPad: open the Share menu in Safari, then choose Add to Home Screen. It then runs full screen like an app.', false);
+  else if (isApple() && !standalone()) {
+    show('Runs full screen like an app, from your home screen, and keeps working without a connection. Safari has no install button, so this shows you the steps.', true);
+    button().textContent = 'Show me how';
+  }
+  document.getElementById('installDone')?.addEventListener('click', closeSteps);
+  document.querySelector('[data-close-install]')?.addEventListener('click', closeSteps);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal()?.hidden) closeSteps(); });
 });
+
+// ---- iPhone / iPad: a dialog with the three steps (there is no install prompt to call) ----
+const modal = () => document.getElementById('installModal');
+function openSteps() {
+  const m = modal();
+  if (!m) return;
+  const safari = /safari/i.test(navigator.userAgent) && !/crios|fxios|edgios|opios|gsa\//i.test(navigator.userAgent);
+  document.getElementById('installNote').textContent = safari ? '' : 'You are not in Safari. On iOS 16.4 and later the Share menu of other browsers also has “Add to Home Screen”; on older versions open this page in Safari.';
+  m.hidden = false;
+  document.getElementById('installDone')?.focus();
+}
+function closeSteps() { const m = modal(); if (m) m.hidden = true; button()?.focus(); }

@@ -5,23 +5,34 @@
 import { conf, DEFAULTS, use24h } from '../config.js';
 import { toast } from './core.js';
 
-/** The settings that "Standard" sets and that a reset restores. Location, first-run choice and panel state are never touched. */
+/**
+ * The settings that "Standard" sets and that a reset restores. Location, first-run choice and panel state are never touched.
+ * Left out on purpose, because they are personal or debugging choices and no preset should change them: the labels on the
+ * sun, moon and planets (showLabels), what the countdown counts down to (countdownKind), units and 24-hour time.
+ */
 export const APPEARANCE_KEYS = ['clockStyle', 'glassFrost', 'glassGlow', 'glassGlowColor', 'legibility', 'clockColor', 'hideSeconds',
-  'quality', 'cloudMotion', 'plants', 'holidayTree', 'showLabels', 'countdown', 'countdownLead', 'screenMode', 'ledCols', 'ledRows', 'ledTurn', 'rainAlert',
+  'quality', 'cloudMotion', 'plants', 'holidayTree', 'countdown', 'countdownLead', 'screenMode', 'ledCols', 'ledRows', 'ledTurn', 'rainAlert',
   'nightDim', 'nightDimLevel', 'followSun', 'viewMode', 'keepAwake', 'weatherMode', 'landscape'];
 
 const standard = Object.fromEntries(APPEARANCE_KEYS.map((k) => [k, DEFAULTS[k]]));
+
+// Bedside calm + weather watch: what the clock is normally set to.
+const everyday = { ...standard, hideSeconds: true, clockStyle: 'auto', glassFrost: 0.55, glassGlow: 0.35, cloudMotion: 0.25, quality: 'medium', nightDim: 'auto', nightDimLevel: 0.75, keepAwake: true, rainAlert: true, countdown: 'both', countdownLead: 20 };
 
 export const PRESETS = [
   { id: 'standard', name: 'Standard', note: 'The default look: liquid glass, a live sky, following the sun.', patch: standard },
   { id: 'bedside', name: 'Bedside', note: 'Calm and dim at night: no seconds, soft glow, slow clouds, screen stays on.',
     patch: { ...standard, hideSeconds: true, clockStyle: 'glass', glassFrost: 0.55, glassGlow: 0.35, cloudMotion: 0.25, quality: 'medium', nightDim: 'auto', nightDimLevel: 0.75, keepAwake: true } },
-  { id: 'sunwatch', name: 'Sunset watcher', note: 'Countdowns to sunrise and sunset, and labels on the sun, moon and planets.',
-    patch: { ...standard, countdown: 'both', countdownLead: 20, showLabels: true, glassGlow: 0.2 } },
+  { id: 'sunwatch', name: 'Sunset watcher', note: 'Countdowns to sunrise and sunset, with a touch more glow.',
+    patch: { ...standard, countdown: 'both', countdownLead: 20, glassGlow: 0.2 } },
   { id: 'led', name: 'LED panel', note: '64 × 32 LED matrix with the countdown in pixels. Light on the battery.',
     patch: { ...standard, screenMode: 'led', countdown: 'both', quality: 'low', cloudMotion: 0.25, nightDim: 'auto', nightDimLevel: 0.5 } },
   { id: 'weather', name: 'Weather watch', note: 'Umbrella alert and sunrise / sunset countdowns.',
     patch: { ...standard, rainAlert: true, countdown: 'both', countdownLead: 20 } },
+  { id: 'everyday', name: 'Everyday', note: 'Bedside calm plus the weather watch: no seconds, soft glow, dims at night, screen on, umbrella alert, sunrise and sunset countdowns.',
+    patch: everyday },
+  { id: 'everyday-saver', name: 'Everyday, power saver', note: 'Everyday as an LED panel with every battery-saver setting: still sky, flat colour, no plants, low quality, dimmer at night. The screen stays on, because it is a clock.',
+    patch: { ...everyday, screenMode: 'led', quality: 'low', cloudMotion: 0, plants: false, clockStyle: 'auto', glassGlow: 0, nightDimLevel: 0.7 } },
   { id: 'showcase', name: 'Showcase', note: 'Everything turned up: high quality, glowing glass, moving clouds.',
     patch: { ...standard, quality: 'high', clockStyle: 'glass', glassFrost: 0.25, glassGlow: 0.45, cloudMotion: 1 } },
   { id: 'saver', name: 'Battery saver', note: 'Still sky, flat ink, no plants, dimmed at night, screen not forced on.',
@@ -55,7 +66,7 @@ export function applyConfPatch(patch) {
 
 function resetAll() {
   if (!confirm('Put every setting back to how it was the first time? Your location is kept.')) return;
-  applyConfPatch(standard);
+  applyConfPatch({ ...standard, showLabels: false, countdownKind: 'sun' });
   // the other settings that have defaults: units follow the region again, 24-hour time follows the browser
   conf.tempUnit = DEFAULTS.tempUnit;
   const t = document.getElementById('tempUnit'); if (t) { t.value = 'auto'; t.dispatchEvent(new Event('change', { bubbles: true })); }

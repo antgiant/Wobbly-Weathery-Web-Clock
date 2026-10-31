@@ -57,4 +57,19 @@ m.conf.clockStyle = 'solid';
 check('December 10 with solid ink chosen: the choice wins', m.clockStyleNow() === 'solid');
 m.conf.clockStyle = 'glass';
 check('December 10 with liquid glass chosen: the choice wins', m.clockStyleNow() === 'glass');
+
+// ---- Automatic and power: flat colour while saving power, glass and coloured tube otherwise ----
+m.conf.clockStyle = 'auto'; m.conf.quality = 'medium';
+setSim({ base: new Date(2026, 6, 4, 12), startPerf: performance.now(), scale: 0 });
+check('power: July, normal quality: Automatic is liquid glass', m.clockStyleNow() === 'glass');
+m.conf.quality = 'low';
+check('power: July with Battery saver quality: Automatic is flat colour', m.clockStyleNow() === 'solid');
+setSim({ base: new Date(2026, 11, 10, 12), startPerf: performance.now(), scale: 0 });
+check('power: December with Battery saver quality: the coloured tube is flat colour too', m.clockStyleNow() === 'solid');
+m.conf.quality = 'medium'; m.power.battery = true;
+check('power: a low, unplugged battery does the same', m.clockStyleNow() === 'solid');
+m.conf.clockStyle = 'glass';
+check('power: an explicit choice of liquid glass is always kept', m.clockStyleNow() === 'glass');
+m.power.battery = false; m.conf.clockStyle = 'auto';
+check('power: plugged in again, December: the coloured tube returns', m.clockStyleNow() === 'stained');
 done();

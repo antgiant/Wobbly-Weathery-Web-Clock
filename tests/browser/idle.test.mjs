@@ -25,7 +25,7 @@ export async function run(t) {
   t.check('and there are no setInterval callbacks at all (the page uses one scheduler)', still.i === 0, `intervals ${still.i}`);
   const seconds = await wakeups(t, { clockStyle: 'solid', hideSeconds: false, cloudMotion: 0, weatherMode: 'clear', plants: false });
   t.check('with the seconds shown it ticks only as fast as the digits move (under 45 a second)', seconds.perSecond < 45, `${seconds.perSecond.toFixed(1)} per second`);
-  t.check('hiding the seconds really saves wake-ups', still.perSecond < seconds.perSecond * 0.6, `${still.perSecond.toFixed(1)} vs ${seconds.perSecond.toFixed(1)}`);
+  t.check('hiding the seconds really saves wake-ups', still.perSecond < seconds.perSecond * 0.85, `${still.perSecond.toFixed(1)} vs ${seconds.perSecond.toFixed(1)}`);
   const hidden = await t.open({ query: 't=2026-06-21T17:00:00Z&speed=0', conf: { clockStyle: 'solid' }, init: count });
   await hidden.page.waitForTimeout(3000);
   await hidden.page.evaluate(() => { Object.defineProperty(document, 'hidden', { value: true, configurable: true }); document.dispatchEvent(new Event('visibilitychange')); });

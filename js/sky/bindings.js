@@ -71,6 +71,7 @@ export function bindSettings() {
   $('ledTurn').checked = conf.ledTurn !== false;
   $('ledTurn').addEventListener('change', (e) => { conf.ledTurn = e.target.checked; applyLedPanel(); updateCountdown(); });
   bindSelect('countdown', 'countdown', updateCountdown);
+  bindSelect('countdownKind', 'countdownKind', updateCountdown);
   bindSelect('countdownLead', 'countdownLead', updateCountdown, parseFloat);
   bindSelect('sensorRotation', 'sensorRotation', applySensorFixes);
   bindSelect('compassRef', 'compassRef', applySensorFixes);

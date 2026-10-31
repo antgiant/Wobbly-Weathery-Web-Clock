@@ -34,4 +34,13 @@ check('matches(): changing one setting un-ticks the card', !matches(standard.pat
 // applying with no controls on the page only saves the settings (the stub has no elements)
 applyConfPatch({ hideSeconds: true, nightDim: 'auto' });
 check('applyConfPatch saves settings that have no control on the page', conf.hideSeconds === true && conf.nightDim === 'auto');
+
+// labels on the sun, moon and planets are a debugging aid: in no preset, and not in a reset to "Standard"
+check('no preset sets the sun / moon / planet labels, and the reset list leaves them to the reset itself', PRESETS.every((p) => !('showLabels' in p.patch)) && !APPEARANCE_KEYS.includes('showLabels'));
+check('no preset changes what the countdown counts down to (an advanced choice)', PRESETS.every((p) => !('countdownKind' in p.patch)));
+const everyday = PRESETS.find((p) => p.id === 'everyday'), saver2 = PRESETS.find((p) => p.id === 'everyday-saver'), bat = PRESETS.find((p) => p.id === 'saver');
+check('Everyday = bedside calm + weather watch', everyday && everyday.patch.hideSeconds === true && everyday.patch.nightDim === 'auto' && everyday.patch.keepAwake === true && everyday.patch.rainAlert === true && everyday.patch.countdown === 'both' && everyday.patch.clockStyle === 'auto');
+check('Everyday, power saver: Everyday as an LED panel with the battery-saver settings', saver2 && saver2.patch.screenMode === 'led' && saver2.patch.rainAlert === true && saver2.patch.countdown === 'both' && saver2.patch.hideSeconds === true
+  && saver2.patch.quality === bat.patch.quality && saver2.patch.cloudMotion === bat.patch.cloudMotion && saver2.patch.plants === bat.patch.plants && saver2.patch.glassGlow === bat.patch.glassGlow && saver2.patch.nightDimLevel === bat.patch.nightDimLevel && saver2.patch.nightDim === bat.patch.nightDim);
+check('Everyday, power saver keeps the screen on (it is a clock)', saver2.patch.keepAwake === true);
 done();

@@ -84,19 +84,21 @@ export function updateCountdown() {
   if (!mode || mode === 'off') { showing = false; el.hidden = true; if (led) drawLedCard(null, 0, false, rainState.a); return; }
   const d = now();
   const lead = num(conf.countdownLead, 20);
-  const st = countdownState(getSunEvents(d).ev, +d, mode, lead);
+  const kind = conf.countdownKind || 'sun';
+  const st = countdownState(getSunEvents(d, kind).ev, +d, mode, lead, kind);
   showing = !!st;
   if (led) { el.hidden = true; drawLedCard(st, lead * 60000, false, rainState.a); return; }
   drawLedCard(null, 0, true);
   if (!st) { el.hidden = true; return; }
-  const rise = st.kind === 'sunrise', name = rise ? 'Sunrise' : 'Sunset';
+  const rise = st.kind === 'sunrise', name = st.name, glyph = st.body === 'moon' ? '☾' : '☀';
   const total = Math.ceil(Math.max(0, st.msLeft) / 1000);
   const mm = String(Math.floor(total / 60)).padStart(2, '0'), ss = String(total % 60).padStart(2, '0');
   const html = st.msLeft <= 0
-    ? `<span class="icon" aria-hidden="true">☀</span><span class="what">${name}</span>`
-    : `<span class="icon" aria-hidden="true">${rise ? '☀↑' : '☀↓'}</span><span class="what">${name} in</span><span class="time">${mm}:${ss}</span>`;
+    ? `<span class="icon" aria-hidden="true">${glyph}</span><span class="what">${name}</span>`
+    : `<span class="icon" aria-hidden="true">${glyph}${rise ? '↑' : '↓'}</span><span class="what">${name} in</span><span class="time">${mm}:${ss}</span>`;
   if (el.dataset.html !== html) { el.dataset.html = html; el.innerHTML = html; }
   el.dataset.kind = st.kind;
+  el.dataset.body = st.body;
   el.hidden = false;
 }
 

@@ -35,14 +35,15 @@ export function pitchForHorizonAtClockBottom(fovDeg) {
 }
 
 // Sunrise and sunset times are searched for once per bracket (between two events) rather than on every tick.
-const evCache = { key: '', at: 0, ev: null };
-export function getSunEvents(date) {
+const evCaches = {};                                    // one per kind of event (the camera needs sunrise and sunset while the countdown may count down to something else)
+export function getSunEvents(date, type = 'sun') {
+  const evCache = evCaches[type] || (evCaches[type] = { key: '', at: 0, ev: null });
   const lat = num(ov.lat ?? conf.location_latitude, DEFAULT_LAT), lon = num(ov.lon ?? conf.location_longitude, defaultLon());
   const elev = engine?.s.elevM || 0, key = `${lat.toFixed(3)},${lon.toFixed(3)},${Math.round(elev)}`;
   const t = +date, c = evCache.ev;
   const fresh = c && evCache.key === key && Math.abs(t - evCache.at) < 12 * 3600e3
     && t >= Math.max(+(c.prevRise || 0), +(c.prevSet || 0)) && t < Math.min(+(c.nextRise || Infinity), +(c.nextSet || Infinity));
-  if (!fresh) { evCache.ev = sunEvents(date, lat, lon, elev); evCache.key = key; evCache.at = t; }
+  if (!fresh) { evCache.ev = sunEvents(date, lat, lon, elev, type); evCache.key = key; evCache.at = t; }
   return { ev: evCache.ev, lat, lon, elev };
 }
 
