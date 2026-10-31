@@ -176,6 +176,8 @@ These are not saved to your settings:
 
 **Automatic digit style:** liquid glass, coloured lights from Thanksgiving to Christmas, and flat colour whenever the device is saving power (Low quality, or, where the browser reports a battery — Chrome and Android, not Safari — under 20% and unplugged). Safari does not expose iOS Low Power Mode, so there the Low quality setting is the switch.
 
+**Updating an installed app:** an installed app has no reload button, and it opens from the saved copy while fetching the new one in the background, so a new version normally arrives one launch after it is published. Settings → Presets → Offline → **Update and reload** fetches every file again now and restarts the page (it asks the service worker to re-fetch the whole precache, `sw.js` message `refresh`). Remember to bump `VERSION` in `sw.js` when the list of files changes.
+
 **Anti burn-in:** while "Keep the screen on" is on (Settings → Display → Advanced → Anti burn-in: Automatic / Always / Never) the digits and pills step a few pixels (3 to 10, never more than half the room to the edge, whole LEDs in the LED look) round a small square, one step a minute, timed with the minute digit changing (`js/sky/burnin.js`).
 
 **Saving power on the sea:** when the device is saving power the sea (the only thing that animates in a still scene) redraws once a second, just after the second turns, instead of 8–15 times a second, so it costs about what a still scene does.

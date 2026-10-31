@@ -41,3 +41,17 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('online', () => { check('ensure'); render(); });     // fill in anything a flaky first visit missed
   window.addEventListener('offline', render);
 });
+
+// "Update and reload": an installed app has no reload button or pull-down, and it opens from the saved copy while it
+// fetches the new one in the background (so a fix arrives on the launch after next). This fetches everything again now and reloads.
+async function refreshApp() {
+  const b = document.getElementById('refreshApp'), note = document.getElementById('refreshNote');
+  if (b) b.disabled = true;
+  if (note) note.textContent = navigator.onLine === false ? 'You are offline: nothing new can be fetched. Reloading what is saved…' : 'Fetching the newest files…';
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    if (navigator.onLine !== false) { await reg?.update(); await ask('refresh'); }
+  } catch (_) { /* reload anyway */ }
+  location.reload();
+}
+document.addEventListener('DOMContentLoaded', () => document.getElementById('refreshApp')?.addEventListener('click', refreshApp));

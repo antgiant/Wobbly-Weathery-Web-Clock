@@ -43,5 +43,18 @@ export async function run(t) {
   t.check('back online: the weather refreshes by itself (the "saved ... ago" note goes)', /^Live: Live · \d+°F$/.test(back.weather), back.weather);
   t.check('back online: it asked the weather service again', g.net.calls.some((u) => /forecast/.test(u)), g.net.calls.length + ' calls');
   t.check('back online: the offline note no longer says "offline now"', !/offline now/.test(back.offline), back.offline);
+
+  // "Update and reload": a changed file on the server arrives at once, not a launch later
+  const stale = await g.page.evaluate(async () => { const k = (await caches.keys()).find((x) => x.startsWith('wwwc-')); const c = await caches.open(k); await c.put('/data/refresh-probe.txt', new Response('old')); await c.put('/js/wind.js', new Response('// an old copy', { headers: { 'content-type': 'text/javascript' } })); return (await (await c.match('/js/wind.js')).text()).length; });
+  t.check('(set up) the saved copy of a file is now stale', stale < 30, String(stale));
+  await g.page.evaluate(() => document.getElementById('settings').dispatchEvent(new MouseEvent('click', { bubbles: true })));
+  await g.page.waitForTimeout(300);
+  t.check('the Update and reload button is in the Offline block, last in the panel', await g.page.evaluate(() => { const b = document.getElementById('refreshApp'); const groups = [...document.querySelectorAll('#panel-presets .group')]; return !!b && groups[groups.length - 1].contains(b); }));
+  const nav = g.page.waitForNavigation({ timeout: 30000 }).catch(() => null);
+  await g.page.evaluate(() => document.getElementById('refreshApp').click());
+  await nav;
+  await g.page.waitForFunction(() => document.body.classList.contains('ready'), null, { timeout: 60000 }).catch(() => {});
+  const fresh = await g.page.evaluate(async () => { const k = (await caches.keys()).find((x) => x.startsWith('wwwc-')); const c = await caches.open(k); return (await (await c.match('/js/wind.js')).text()).length; });
+  t.check('pressing it re-fetched the stale file from the server and reloaded the page', fresh > 1000, `${fresh} bytes`);
   await g.close();
 }
