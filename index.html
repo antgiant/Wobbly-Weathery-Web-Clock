@@ -48,7 +48,10 @@
   <div id="loading" role="status" aria-live="polite"><div><div class="spin" aria-hidden="true"></div><p>Loading the sky…</p></div></div>
   <canvas id="sky" aria-hidden="true"></canvas>
   <div id="hud" hidden aria-hidden="true"></div>
-  <div id="sunCountdown" role="timer" aria-live="off" hidden></div>
+  <div id="alerts">
+    <div id="sunCountdown" role="timer" aria-live="off" hidden></div>
+    <div id="rainAlertPill" role="status" hidden></div>
+  </div>
   <div id="toast" role="status" aria-live="polite" hidden></div>
   <button id="wakeBanner" type="button" hidden>Tap to keep the screen on</button>
   <div id="clock">
@@ -182,6 +185,7 @@
             <div class="field">
               <label class="field__label" for="clockStyle">Style</label>
               <select id="clockStyle">
+                <option value="auto">Automatic (liquid glass; coloured lights at Christmas)</option>
                 <option value="glass">Liquid glass</option>
                 <option value="stained">Coloured tube</option>
                 <option value="solid">Solid ink</option>
@@ -283,6 +287,7 @@
               </select>
               <p class="hint" id="terrainStatus"></p>
             </div>
+            <label class="field toggle"><span class="field__text">Christmas tree<small>A lit tree from Thanksgiving to Christmas, floating on the sea if you are at sea</small></span><input type="checkbox" id="holidayTree"><span class="switch" aria-hidden="true"></span></label>
             <label class="field toggle"><span class="field__text">Plants that suit this place<small>Grass, trees, cacti&hellip; swaying in the wind</small></span><input type="checkbox" id="plants"><span class="switch" aria-hidden="true"></span></label>
           </div>
 
@@ -421,6 +426,12 @@
                 <option value="30">30 minutes before</option>
               </select>
             </div>
+          </div>
+
+          <div class="group">
+            <h3>Rain</h3>
+            <label class="field toggle"><span class="field__text">Umbrella alert<small>Shows an umbrella when enough rain is coming before 11 pm to be worth one, and a yellow one with drops when it is heavy enough for a slicker</small></span><input type="checkbox" id="rainAlert"><span class="switch" aria-hidden="true"></span></label>
+            <p class="hint" id="rainStatus"></p>
           </div>
 
           <div class="group">

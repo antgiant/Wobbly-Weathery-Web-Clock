@@ -62,6 +62,7 @@ export class SkyEngine {
       sea: null,                    // marine forecast {windHs, windTp, windDir, swellHs, swellTp, swellDir} or null: derive from the wind
       ground: null,                 // { g1, g2 } ground colours from the biome / season; null = landscape default
       plants: { on: false, count: 0, palette: null },
+      tree: { on: false, az: 180, dist: 42, h: 13 },      // the Christmas tree (see setTree)
     };
     this.dirty = true;
     this.lutDirty = true;
@@ -197,6 +198,14 @@ export class SkyEngine {
     this.vaoPlants = gl.createVertexArray();
     gl.bindVertexArray(this.vaoPlants);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.plantBuf);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 24, 0); gl.vertexAttribDivisor(0, 1);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 24, 16); gl.vertexAttribDivisor(1, 1);
+    gl.bindVertexArray(null);
+    // the Christmas tree: two instances of the plant sprite (the tree, and its reflection when it floats on the sea)
+    this.treeBuf = gl.createBuffer();
+    this.vaoTree = gl.createVertexArray();
+    gl.bindVertexArray(this.vaoTree);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.treeBuf);
     gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 24, 0); gl.vertexAttribDivisor(0, 1);
     gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 24, 16); gl.vertexAttribDivisor(1, 1);
     gl.bindVertexArray(null);
@@ -415,7 +424,8 @@ export class SkyEngine {
     const rain = w.precip > 0.01;
     const night = this.sky && this.sky.sun.alt < -6 && s.twinkle;
     const wind = s.plants.on && s.plants.count > 0 && s.cloudMotion > 0;      // plants sway
-    return clouds || water || rain || night || wind;
+    const lights = this.s.tree.on;                    // the tree's bulbs twinkle
+    return clouds || water || rain || night || wind || lights;
   }
 
   interval() {
@@ -712,9 +722,24 @@ export class SkyEngine {
     this.dirty = true;
   }
 
+  /** Christmas tree standing `dist` m away towards compass bearing `az` degrees, `h` m tall; floats on the sea when the landscape is ocean. */
+  setTree({ on, az, dist, h }) {
+    const gl = this.gl, t = this.s.tree;
+    if (on !== undefined) t.on = on;
+    if (az != null) t.az = az;
+    if (dist != null) t.dist = dist;
+    if (h != null) t.h = h;
+    const x = Math.sin(t.az * DEG) * t.dist, z = Math.cos(t.az * DEG) * t.dist;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.treeBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([x, z, t.h, 10, 0.37, 0.5, x, z, t.h, 11, 0.37, 0.5]), gl.STATIC_DRAW);
+    this.dirty = true;
+  }
+
   _drawPlants(sky, sunAz, sunAlt, sunLux, moonAz, moonAlt, moonLux, natural, lp, camH, cam, perfNow, w, eyeKm) {
     const gl = this.gl, s = this.s, p = s.plants;
-    if (!p.on || !p.count || !p.palette || s.landscape.ocean) return;
+    const plantsOn = p.on && p.count && p.palette && !s.landscape.ocean, treeOn = s.tree.on;
+    if (!plantsOn && !treeOn) return;
+    const pal = p.palette || { leaf: [0.06, 0.14, 0.04], conifer: [0.03, 0.09, 0.05], grass: [0.1, 0.2, 0.06], dry: [0.3, 0.26, 0.12], rock: [0.28, 0.26, 0.24], snow: 0 };
     gl.enable(gl.BLEND);
     // colour: normal alpha blend; alpha channel: dst *= (1 - src) so stars are hidden behind plants
     gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
@@ -732,11 +757,18 @@ export class SkyEngine {
     this._1f('uBoost', Math.max(0.2, s.nightBoost));
     this._1f('uWet', Math.min(1, w.precip * (1 - w.snowfall)));
     this._1f('uFogDens', w.fog * 0.025 + 1 / (Math.max(w.visKm, 0.3) * 1000));
-    this._3f('uLeaf', p.palette.leaf); this._3f('uConifer', p.palette.conifer); this._3f('uGrass', p.palette.grass);
-    this._3f('uDry', p.palette.dry); this._3f('uRock', p.palette.rock);
-    this._1f('uSnowCover', Math.max(p.palette.snow || 0, w.snowCover));
-    gl.bindVertexArray(this.vaoPlants);
-    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, p.count);
+    this._3f('uLeaf', pal.leaf); this._3f('uConifer', pal.conifer); this._3f('uGrass', pal.grass);
+    this._3f('uDry', pal.dry); this._3f('uRock', pal.rock);
+    this._1f('uSnowCover', Math.max(pal.snow || 0, w.snowCover));
+    this._1f('uOcean', s.landscape.ocean ? 1 : 0);
+    if (plantsOn) {
+      gl.bindVertexArray(this.vaoPlants);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, p.count);
+    }
+    if (treeOn) {                                   // the tree last, it is nearer than most plants; on the sea its reflection goes with it
+      gl.bindVertexArray(this.vaoTree);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, s.landscape.ocean ? 2 : 1);
+    }
     gl.bindVertexArray(null);
     gl.disable(gl.BLEND);
   }

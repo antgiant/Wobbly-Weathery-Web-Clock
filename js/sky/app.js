@@ -1,6 +1,6 @@
 // Glue between the settings (conf), the sky engine and the page.
 
-import { conf, formatTemp } from '../config.js';
+import { conf, formatTemp, clockStyleNow, use24h, tempUnit } from '../config.js';
 import { setSim, getSim, now } from '../simtime.js';
 import { SkyEngine } from './engine.js';
 import { Controls } from './controls.js';
@@ -11,6 +11,8 @@ import { initGlass } from './glass.js';
 import { fetchBiome, fallbackBiome, classify, seasonOf, seasonFromClimate, paletteFor } from './biome.js';
 import { generatePlants } from './plants.js';
 import { estimateBortle, fetchPlaces } from './lightpollution.js';
+import { isChristmasSeason } from '../season.js';
+import { assessRain, fetchRainHours } from './rain.js';
 import { sunEvents, countdownState, followHeading } from './sunpath.js';
 
 const canvas = document.getElementById('sky');
@@ -305,8 +307,20 @@ function currentBiome() {
   if ((ov.landscape ?? conf.landscape) === 'desert') b = { ...b, kind: 'desert', conifer: false, tropical: false };
   return b;
 }
+// A lit Christmas tree from Thanksgiving to Christmas (the date the clock shows, so time travel works). It stands towards
+// where the sun is at noon (a little to one side so it is not straight behind the digits), where the follow-the-sun
+// view spends its day, and floats on the sea when the
+// landscape is the ocean.
+function applyTree() {
+  if (!engine) return;
+  const on = ov.xmas != null ? ov.xmas === '1' : (conf.holidayTree !== false && isChristmasSeason(now()));
+  const lat = num(ov.lat ?? conf.location_latitude, DEFAULT_LAT);
+  engine.setTree({ on, az: (lat >= 0 ? 180 : 0) + (lat >= 0 ? 24 : -24), dist: 30, h: 10 });
+}
+
 function applyPlants() {
   if (!engine) return;
+  applyTree();
   const type = engine.s.landscape.type, water = engine.s.landscape.ocean || type === 'ocean';
   const b = currentBiome();
   const on = !!conf.plants && !water && type !== 'city' && b.kind !== 'water';
@@ -622,32 +636,43 @@ function clockDigitRows(portrait, cols, rows, cardH) {
 }
 const cardHeight = (sz, portrait) => 1 + (portrait ? sz.h + 1 + sz.h : sz.h) + 1 + 1 + 1;
 
-function drawLedCard(st, leadMs) {
+const RAIN_ICON = {   // 9 x 7: an umbrella; the heavy-rain one has drops under the canopy
+  umbrella: ['...###...', '.#######.', '#########', '....#....', '....#....', '....#....', '...##....'],
+  slicker: ['...###...', '.#######.', '#########', '.#..#..#.', '....#....', '#..#..#..', '...##....'],
+};
+
+function drawLedCard(st, leadMs, off = false) {
   const clear = () => {
     if (!ledCardKey) return;
     ledCardKey = '';
     engine.setOverlay(null);
-    document.body.style.removeProperty('--led-top');
-    window.dispatchEvent(new Event('clocklayout'));
+    if (document.body.style.getPropertyValue('--led-top')) {
+      document.body.style.removeProperty('--led-top');
+      window.dispatchEvent(new Event('clocklayout'));
+    }
   };
+  const rain = rainState.a && rainState.a.level !== 'none' ? rainState.a : null;
   const cw = engine.canvas.width, ch = engine.canvas.height;
-  if (!st || !(cw > 0 && ch > 0)) { clear(); return; }
+  if (off || (!st && !rain) || !(cw > 0 && ch > 0)) { clear(); return; }
   const portrait = ch > cw;
   const cols = portrait ? 32 : 64, rows = portrait ? 64 : 32;
-  // the big size only if the clock's digits would still be big enough with the big card in place (decided from that
-  // layout, not the current one, so the choice cannot flip back and forth as the clock resizes)
-  const sz = clockDigitRows(portrait, cols, rows, cardHeight(SIZES.big, portrait)) >= SIZES.big.h / (0.7 * 0.65) ? SIZES.big : SIZES.small;
-  const { font, h: fh, iw } = sz;
-  const total = Math.ceil(Math.max(0, st.msLeft) / 1000);
-  const text = st.msLeft <= 0 ? 'NOW' : `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
-  const tw = textWidth(font, text);
-  const rise = st.kind === 'sunrise';
-  const cardH = cardHeight(sz, portrait);
-  const cardW = Math.min(cols, 2 + (portrait ? Math.max(tw, iw) : iw + 2 + tw) + 2);
-  const x0 = Math.floor((cols - cardW) / 2), y0 = 1;
-  const innerW = cardW - 2;
-  const filled = Math.round(Math.max(0, Math.min(1, st.msLeft / leadMs)) * innerW);
-  const key = `${st.kind}|${text}|${cols}x${rows}|${filled}|${fh}`;
+
+  // countdown card (see above): the size choice, the text, how much of the bar is left
+  let sz = null, font = null, fh = 0, iw = 0, text = '', tw = 0, rise = false, cardH = 0, cardW = 0, x0 = 0, y0 = 1, innerW = 0, filled = 0;
+  if (st) {
+    sz = clockDigitRows(portrait, cols, rows, cardHeight(SIZES.big, portrait)) >= SIZES.big.h / (0.7 * 0.65) ? SIZES.big : SIZES.small;
+    ({ font, h: fh, iw } = sz);
+    const total = Math.ceil(Math.max(0, st.msLeft) / 1000);
+    text = st.msLeft <= 0 ? 'NOW' : `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+    tw = textWidth(font, text);
+    rise = st.kind === 'sunrise';
+    cardH = cardHeight(sz, portrait);
+    cardW = Math.min(cols, 2 + (portrait ? Math.max(tw, iw) : iw + 2 + tw) + 2);
+    x0 = Math.floor((cols - cardW) / 2);
+    innerW = cardW - 2;
+    filled = Math.round(Math.max(0, Math.min(1, st.msLeft / leadMs)) * innerW);
+  }
+  const key = `${st ? `${st.kind}|${text}|${filled}|${fh}` : '-'}|${rain ? rain.level : '-'}|${cols}x${rows}`;
   if (key === ledCardKey) return;
   ledCardKey = key;
 
@@ -656,27 +681,94 @@ function drawLedCard(st, leadMs) {
   c.clearRect(0, 0, cols, rows);
   const px = (x, y, col) => { c.fillStyle = col; c.fillRect(x, y, 1, 1); };
   const blit = (lines, x, y, col) => lines.forEach((line, j) => [...line].forEach((v, i) => { if (v !== '.') px(x + i, y + j, col); }));
-  c.fillStyle = '#000'; c.fillRect(x0, y0, cardW, cardH);
 
-  const sun = rise ? '#ffd24a' : '#ff7a2e';
-  const iconX = portrait ? x0 + 1 + Math.floor((innerW - iw) / 2) : x0 + 2, iconY = y0 + 1;
-  const arrow = rise ? sz.arrow.up : sz.arrow.down;
-  blit(arrow, iconX, iconY, '#fff');                                           // which way the sun is going
-  blit(sz.sun, iconX, iconY + arrow.length, sun);                              // the sun ...
-  blit([sz.horizon], iconX, iconY + arrow.length + sz.sun.length, '#cfd6ff');  // ... on the horizon
-  const tx = portrait ? x0 + 1 + Math.floor((innerW - tw) / 2) : x0 + 2 + iw + 2, ty = portrait ? iconY + fh + 1 : iconY;
-  let pen = tx;
-  for (const chr of text) { blit(font[chr], pen, ty, '#fff'); pen += font[chr][0].length + 1; }
-  // time left as a row of LEDs that burns down
-  for (let i = 0; i < filled; i++) px(x0 + 1 + i, y0 + cardH - 2, sun);
-
+  if (st) {
+    c.fillStyle = '#000'; c.fillRect(x0, y0, cardW, cardH);
+    const sun = rise ? '#ffd24a' : '#ff7a2e';
+    const iconX = portrait ? x0 + 1 + Math.floor((innerW - iw) / 2) : x0 + 2, iconY = y0 + 1;
+    const arrow = rise ? sz.arrow.up : sz.arrow.down;
+    blit(arrow, iconX, iconY, '#fff');                                           // which way the sun is going
+    blit(sz.sun, iconX, iconY + arrow.length, sun);                              // the sun ...
+    blit([sz.horizon], iconX, iconY + arrow.length + sz.sun.length, '#cfd6ff');  // ... on the horizon
+    const tx = portrait ? x0 + 1 + Math.floor((innerW - tw) / 2) : x0 + 2 + iw + 2, ty = portrait ? iconY + fh + 1 : iconY;
+    let pen = tx;
+    for (const chr of text) { blit(font[chr], pen, ty, '#fff'); pen += font[chr][0].length + 1; }
+    // time left as a row of LEDs that burns down
+    for (let i = 0; i < filled; i++) px(x0 + 1 + i, y0 + cardH - 2, sun);
+  }
+  if (rain) {                                                                    // the umbrella, bottom left
+    c.fillStyle = '#000'; c.fillRect(0, rows - 9, 11, 9);
+    blit(RAIN_ICON[rain.level], 1, rows - 8, rain.level === 'slicker' ? '#ffd24a' : '#7fd4ff');
+  }
   engine.setOverlay(ledCard);
-  // the clock gets whatever is below the card
-  const top = String((cardH + 2) / rows);
+  // the clock gets whatever is below the countdown card
+  const top = st ? String((cardH + 2) / rows) : '';
   if (document.body.style.getPropertyValue('--led-top') !== top) {
-    document.body.style.setProperty('--led-top', top);
+    if (top) document.body.style.setProperty('--led-top', top); else document.body.style.removeProperty('--led-top');
     window.dispatchEvent(new Event('clocklayout'));
   }
+}
+
+// ------------------------------------------------------------- umbrella alert --
+// Off by default. With live weather it reads the hourly forecast for the rest of the day (see rain.js); with a
+// manual weather it follows the preset; with time travel it uses the recorded / forecast day.
+const rainState = { a: null, key: '', busy: false, data: null };
+const SVG_UMBRELLA = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 18 0z"/><path d="M12 12v6.5a2 2 0 0 0 4 0"/></svg>';
+const SVG_SLICKER = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11a9 9 0 0 1 18 0z"/><path d="M12 11v4.5a2 2 0 0 0 4 0"/><path d="M5 15l-1 2.5M9 17l-1 2.5M18 17l-1 2.5M7 21l-.6 1.5"/></svg>';
+
+function rainText(a) {
+  const at = (ms) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', ...(use24h() ? { hour12: false, minute: '2-digit' } : { hour12: true }) });
+  const what = a.kind === 'snow' ? 'snow' : 'rain';
+  const amount = a.totalMm == null ? '' : tempUnit() === 'f' ? ` · ${(a.totalMm / 25.4).toFixed(a.totalMm / 25.4 < 1 ? 2 : 1)} in` : ` · ${a.totalMm < 10 ? a.totalMm.toFixed(1) : Math.round(a.totalMm)} mm`;
+  const span = a.from == null ? '' : a.raining ? `, until ${at(a.to)}` : `, ${at(a.from)} to ${at(a.to)}`;
+  const lead = a.level === 'slicker' ? (a.kind === 'snow' ? 'Heavy snow: dress for it' : 'Slicker weather') : (a.kind === 'snow' ? 'Snow' : 'Umbrella');
+  return `${lead}${a.raining ? `: ${what} now` : a.from != null ? `: ${what}` : ''}${span}${amount}`;
+}
+
+async function updateRain() {
+  if (!engine) return;
+  const pill = document.getElementById('rainAlertPill'), status = document.getElementById('rainStatus');
+  let a = null;
+  if (conf.rainAlert) {
+    const mode = ov.weather ?? conf.weatherMode;
+    if (mode !== 'live') {
+      const kind = mode === 'snow' ? 'snow' : 'rain';
+      a = mode === 'storm' ? { level: 'slicker', kind, totalMm: null, from: null, to: null, raining: true }
+        : (mode === 'rain' || mode === 'snow') ? { level: 'umbrella', kind, totalMm: null, from: null, to: null, raining: true } : { level: 'none' };
+    } else {
+      const d = now();
+      if (histActive()) {
+        const day = state.hist?.data;
+        a = assessRain(day ? day.hours.map((h, i) => ({ t: Date.parse(day.day + 'T00:00:00Z') + i * 3600e3, mm: h.precipitation, prob: h.precipitation_probability ?? null, snow: h.snowfall })) : [], +d, 0);
+      } else {
+        const lat0 = num(ov.lat ?? conf.location_latitude, NaN), lon0 = num(ov.lon ?? conf.location_longitude, NaN);
+        if (Number.isFinite(lat0) && Number.isFinite(lon0) && !(lat0 === -1 && lon0 === -1)) {
+          const lat = coarse(lat0, 0.1), lon = coarse(lon0, 0.1), key = `${lat.toFixed(1)},${lon.toFixed(1)}`;
+          if (rainState.key !== key || !rainState.data) {
+            if (!rainState.busy) {
+              rainState.busy = true;
+              try { rainState.data = await cachedFetch(`rain:${key}`, 30 * 60000, () => fetchRainHours(lat, lon)); rainState.key = key; }
+              catch (e) { console.info('[sky] rain forecast failed:', e.message); }
+              rainState.busy = false;
+            }
+          }
+          if (rainState.data) a = assessRain(rainState.data.hours, +d, rainState.data.offset);
+        }
+      }
+    }
+  }
+  rainState.a = a;
+  const show = !!a && a.level !== 'none';
+  if (pill) {
+    pill.hidden = !show;
+    if (show) {
+      pill.dataset.level = a.level;
+      const html = (a.level === 'slicker' ? SVG_SLICKER : SVG_UMBRELLA) + `<span>${rainText(a)}</span>`;
+      if (pill.dataset.html !== html) { pill.dataset.html = html; pill.innerHTML = html; }
+    }
+  }
+  if (status) status.textContent = !conf.rainAlert ? '' : !a ? 'Waiting for the forecast…' : show ? rainText(a) : 'No rain worth an umbrella before 11 pm.';
+  if (conf.screenMode === 'led') updateCountdown();                          // the LED panel draws the umbrella itself
 }
 
 function updateCountdown() {
@@ -688,7 +780,7 @@ function updateCountdown() {
   const lead = num(conf.countdownLead, 20);
   const st = countdownState(getSunEvents(d).ev, +d, mode, lead);
   if (led) { el.hidden = true; drawLedCard(st, lead * 60000); return; }
-  if (ledCardKey) drawLedCard(null);
+  if (ledCardKey) drawLedCard(null, 0, true);
   if (!st) { el.hidden = true; return; }
   const rise = st.kind === 'sunrise', name = rise ? 'Sunrise' : 'Sunset';
   const total = Math.ceil(Math.max(0, st.msLeft) / 1000);
@@ -768,7 +860,7 @@ function init() {
   engine.start();
   const t0 = performance.now();
   const readyCheck = setInterval(() => {
-    const solid = (conf.clockStyle || 'solid') === 'solid' && conf.screenMode !== 'led';
+    const solid = clockStyleNow() === 'solid' && conf.screenMode !== 'led';
     if ((window.__frames >= 1 && engine.assetsDone && (solid || engine.glass.hasMask)) || performance.now() - t0 > 8000) { clearInterval(readyCheck); markReady(); }
   }, 60);
   engine.onFrame(() => { window.__frames = (window.__frames || 0) + 1; });
@@ -779,6 +871,9 @@ function init() {
   setInterval(() => { updateHud(); updateVrReadout(); }, 250);
   setInterval(updateCountdown, 500);
   setInterval(syncTimeData, 4000);
+  setInterval(updateRain, 60000);
+  setTimeout(updateRain, 2500);
+  setInterval(applyTree, 5000);                                       // Thanksgiving arrives, or time travel moves the date
   setInterval(() => { if (followActive()) applyView(); }, 1000);     // the sun moves 15 degrees an hour
   setTimeout(() => { updateClockColor(); updateFavicon(); }, 1200);
 
@@ -809,7 +904,11 @@ function init() {
   bindRange('glassFrost', 'glassFrost', () => glass.apply(), 'glassFrostOut');
   bindRange('glassGlow', 'glassGlow', () => glass.apply(), 'glassGlowOut');
   bindSelect('glassGlowColor', 'glassGlowColor', () => glass.apply());
-  bindSelect('tempUnit', 'tempUnit', applyWeather);
+  bindSelect('tempUnit', 'tempUnit', () => { applyWeather(); updateRain(); });
+  $('rainAlert').checked = !!conf.rainAlert;
+  $('rainAlert').addEventListener('change', (e) => { conf.rainAlert = e.target.checked; updateRain(); });
+  $('holidayTree').checked = conf.holidayTree !== false;
+  $('holidayTree').addEventListener('change', (e) => { conf.holidayTree = e.target.checked; applyTree(); });
   $('coarseLookups').checked = conf.coarseLookups !== false;
   $('coarseLookups').addEventListener('change', (e) => { conf.coarseLookups = e.target.checked; dayLoad.key = ''; scheduleLiveData(); syncTimeData(); });
   bindSelect('legibility', 'legibility', () => { glass.apply(); updateClockColor(); });
@@ -881,6 +980,7 @@ function init() {
   if (q.has('pitch')) ov.pitch = num(q.get('pitch'), 12);
   if (q.has('lp')) ov.lp = q.get('lp');
   if (q.has('biome')) ov.biome = q.get('biome');
+  if (q.has('xmas')) ov.xmas = q.get('xmas');            // 1 / 0: force the Christmas tree on / off
   if (q.has('waves')) ov.waves = q.get('waves');
   if (q.has('lat') && q.has('lon')) { ov.lat = num(q.get('lat'), 40); ov.lon = num(q.get('lon'), -74); }
   if (q.has('t')) {

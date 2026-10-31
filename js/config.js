@@ -1,5 +1,7 @@
 import { easing } from './easing.js'
 import { hour24, unitFor, formatTempIn } from './units.js'
+import { isChristmasSeason } from './season.js'
+import { now as simNow } from './simtime.js'
 
 export function adjustTimeSize() {
   if (conf.hideSeconds) {
@@ -92,7 +94,7 @@ const DEFAULTS = {
   // time travel (never persisted as "on" across reloads)
   simSpeed: 1,
   // clock
-  clockStyle: 'glass',        // glass (liquid glass) | stained | solid
+  clockStyle: 'auto',         // auto (liquid glass; coloured tube from Thanksgiving to Christmas) | glass | stained (coloured tube) | solid
   glassFrost: 0.35,           // 0 clear .. 1 heavily frosted
   clockColor: 'auto',         // solid style only: auto | classic | white
   legibility: 'auto',         // off | auto (3:1) | high (4.5:1): least brightness contrast between the time and the sky
@@ -109,6 +111,8 @@ const DEFAULTS = {
   vrDebug: false,
   // settings panel
   settingsTab: 'clock',
+  holidayTree: true,          // a lit Christmas tree in the scene from Thanksgiving to Christmas
+  rainAlert: false,           // show an umbrella / slicker indicator when enough rain is coming today
   settingsLevel: 'simple',    // simple | advanced
   // first-run choice
   locationChoice: null,       // null (not asked yet) | real | estimated
@@ -117,13 +121,20 @@ const DEFAULTS = {
   tempUnit: 'auto',           // auto (by region) | c | f
   confVersion: 0
 };
-const CONF_VERSION = 2;
+const CONF_VERSION = 3;
 export var conf = createPersistentConfig("conf", DEFAULTS);
 
 // Defaults that changed: settings saved by an older version only ever held the old default, so move them once.
 if ((conf.confVersion || 0) < CONF_VERSION) {
   for (const k of ['twentyFourHourClock', 'keepAwake', 'followSun', 'viewMode', 'glassGlowColor']) conf[k] = DEFAULTS[k];
+  if ((conf.confVersion || 0) < 3 && conf.clockStyle === 'glass') conf.clockStyle = 'auto';   // 'glass' was only ever the default
   conf.confVersion = CONF_VERSION;
+}
+
+/** The clock style in force: the user's choice, or while it is left on automatic, coloured lights at Christmas time. */
+export function clockStyleNow() {
+  if (conf.clockStyle === 'glass' || conf.clockStyle === 'stained' || conf.clockStyle === 'solid') return conf.clockStyle;
+  return isChristmasSeason(simNow()) ? 'stained' : 'glass';
 }
 
 /** 24-hour time unless the user chose; until then whatever the browser's locale uses. */
