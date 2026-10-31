@@ -104,7 +104,10 @@ export const DEFAULTS = {
   followSun: true,            // clock view only: sun rises on the right quarter, sets on the left, tilt never changes
   countdown: 'off',           // off | both | sunrise | sunset
   countdownLead: 20,          // minutes before the event the countdown appears
-  screenMode: 'normal',       // normal | led (64x32 LED panel simulator)
+  screenMode: 'normal',       // normal | led (LED panel simulator)
+  ledCols: 64,                // LEDs across the panel (64 x 32 is the classic panel)
+  ledRows: 32,                // LEDs down it
+  ledTurn: true,              // turn the panel on its side when the screen is the other way round
   // VR sensor overrides, for devices whose sensor frame is not what the spec says
   sensorRotation: 'auto',     // auto | ignore
   compassRef: 'auto',         // auto | cam | top (iOS compass heading reference)

@@ -15,6 +15,7 @@
 import { conf, clockStyleNow } from '../config.js';
 import { getSim } from '../simtime.js';
 import { every } from './scheduler.js';
+import { applyLedPanel } from './ledpanel.js';
 
 const VB_W = 100, VB_H = 116, VB_Y0 = -8;      // viewBox of each digit svg: "0 -8 100 116"
 const STROKE = 80 * 0.2;                        // stroke-width 80 under transform scale(0.2), in viewBox units
@@ -207,6 +208,7 @@ export function initGlass(engine, getBasis) {
     document.body.dataset.clockstyle = on && st === 'solid' ? 'led' : st;
     document.body.dataset.screen = led() ? 'led' : 'normal';
     engine.glass.led.on = led();
+    applyLedPanel();                                   // size and layout of the LED panel (or clear them when it is off)
     engine.setGlass({
       mode: st === 'glass' ? 1 : st === 'stained' ? 2 : led() ? 3 : 0,
       frost: Math.min(1, Math.max(0, +conf.glassFrost)),

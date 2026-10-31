@@ -1,0 +1,37 @@
+// Run: node tools/test-ledgrid.mjs
+import { gridFor, isTuned, layoutFor, panelFor, presetIdFor, LED_PRESETS } from '../js/sky/ledgrid.js';
+let fails = 0;
+const check = (n, ok, x = '') => { console.log((ok ? 'PASS ' : 'FAIL ') + n + ' ' + x); if (!ok) fails++; };
+const J = (o) => JSON.stringify(o);
+let g = gridFor(64, 32, true, 1000, 600);
+check('classic 64x32 stays on a landscape screen', g.cols === 64 && g.rows === 32 && !g.turned);
+g = gridFor(64, 32, true, 390, 800);
+check('64x32 turns to 32x64 on an upright screen (as before)', g.cols === 32 && g.rows === 64 && g.turned, J(g));
+g = gridFor(32, 64, true, 1000, 600);
+check('32x64 turns to 64x32 on a wide screen', g.cols === 64 && g.rows === 32 && g.turned, J(g));
+g = gridFor(32, 64, false, 1000, 600);
+check('with turning off, 32x64 stays upright on a wide screen', g.cols === 32 && g.rows === 64 && !g.turned);
+g = gridFor(64, 64, true, 390, 800);
+check('a square panel is never turned', g.cols === 64 && g.rows === 64 && !g.turned);
+g = gridFor(999, 2, true, 1000, 600);
+check('counts are clamped to 8..256', g.cols <= 256 && g.rows >= 8, J(g));
+g = gridFor(256, 128, true, 300, 200);
+check('LEDs never come out smaller than 3 px (grid shrinks, shape kept)', g.shrunk && Math.min(300 / g.cols, 200 / g.rows) >= 3 && Math.abs(g.cols / g.rows - 2) < 0.2, J(g));
+g = gridFor('abc', null, true, 1000, 600);
+check('junk falls back to the classic panel', g.cols === 64 && g.rows === 32, J(g));
+
+check('64x32 is tuned', isTuned(64, 32) && isTuned(32, 64) && isTuned(128, 64) && isTuned(96, 48) && isTuned(64, 64));
+check('32x16, 16x16 are not (normal layout, pixelated)', !isTuned(32, 16) && !isTuned(16, 16) && !isTuned(16, 64));
+check('a long strip 256x32 (8:1) is not tuned, 128x32 (4:1) is', !isTuned(256, 32) && isTuned(128, 32));
+check('classic landscape panel: digits in a row', layoutFor(64, 32, true) === 'row');
+check('classic upright panel: digits stacked', layoutFor(32, 64, true) === 'stack');
+check('square panel: stacked', layoutFor(64, 64, true) === 'stack');
+check('wide panels: row', layoutFor(128, 64, true) === 'row' && layoutFor(96, 48, true) === 'row');
+const p = panelFor({ ledCols: 64, ledRows: 32, ledTurn: true, hideSeconds: false }, 390, 800);
+check('panelFor: classic panel on a phone is the stacked 32x64', p.mode === 'stack' && p.cols === 32 && p.rows === 64 && p.tuned, J(p));
+const q = panelFor({ ledCols: 16, ledRows: 16, ledTurn: true }, 390, 800);
+check('panelFor: 16x16 uses the normal layout', q.mode === 'fit' && !q.tuned);
+check('presets: every preset is within limits and finds itself', LED_PRESETS.every((x) => x.cols >= 8 && x.rows >= 8 && presetIdFor(x.cols, x.rows) === x.id));
+check('presetIdFor knows the upright twin and customs', presetIdFor(64, 32) === '64x32' && presetIdFor(33, 17) === 'custom');
+console.log(fails ? `${fails} FAILED` : 'all passed');
+process.exit(fails ? 1 : 0);

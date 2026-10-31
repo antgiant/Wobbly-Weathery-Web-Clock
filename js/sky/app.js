@@ -95,7 +95,7 @@ function init() {
   every('ink', updateClockColor, () => ((clockStyleNow() === 'solid' || conf.screenMode === 'led') && conf.clockColor === 'auto' ? 3000 : 30000), 1200);
   every('favicon', updateFavicon, 60000, 1200);
   every('hud', () => { updateHud(); updateVrReadout(); }, () => (conf.showLabels || controls?.mode === 'look' || conf.vrDebug ? 250 : Infinity));
-  every('countdown', updateCountdown, countdownPeriod);
+  every('countdown', updateCountdown, countdownPeriod, 600);                  // first look soon after start: a countdown may already be running
   every('rain', updateRain, () => (conf.rainAlert ? 60000 : Infinity), 2500);
   every('dim', updateDim, () => (conf.nightDim && conf.nightDim !== 'off' ? (simFast() ? 1000 : 20000) : Infinity), 500);
   window.addEventListener('resize', () => { if (atDefault()) applyView(); });
