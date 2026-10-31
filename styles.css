@@ -1346,3 +1346,32 @@ body[data-screen="led"] .ledsize {
 #clock svg {
   overflow: visible;
 }
+
+/* countdown mode: the hundreds digit of the days comes first on screen (it is last in the markup so the other digits keep their place) */
+#clock svg#hundredsDigit {
+  order: -1;
+  margin-left: 0;
+  margin-right: -7%;
+}
+
+/* the name of the countdown, and which units the digits are (days:hours:minutes ...) */
+#timerPill {
+  display: inline-block;
+  margin: 4px 6px 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(15, 18, 32, 0.62);
+  color: #fff;
+  font: 600 0.95rem/1.2 system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  max-width: 92vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+#timerPill[hidden] {
+  display: none;
+}

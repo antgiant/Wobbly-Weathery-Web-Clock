@@ -2,6 +2,7 @@ import { conf, vars, dd, adjustTimeSize, use24h } from './config.js';
 import { easing } from './easing.js'
 import { now as simNow, getSim } from './simtime.js'
 import { sway, topOffset, bend } from './wind.js'
+import { secondsLeft, slotsFor, groupsFor, textOf, parseTarget, unitsFor, defaultTarget } from './countdown.js'
 
 function ci(c, i) {
   var k = i * 6;
@@ -82,18 +83,89 @@ function getTime(date) {
   return temp;
 }
 
+
+// ---- countdown mode (countdown.js): the same digits show days:hours:minutes:seconds to a date ----
+var cdShown = false;                         // the digit slots are currently arranged for a countdown
+function countdownTarget() {
+  return conf.clockMode === 'countdown' ? parseTarget(conf.timerTarget) : NaN;
+}
+function svgOf(id) { var p = document.getElementById(id); return p ? p.closest('svg') : null; }
+function setHidden(el, hide) {
+  if (el && el.classList.contains('hidden') !== hide) { el.classList.toggle('hidden', hide); layoutStale = true; }
+}
+// which digits are on the screen: the third group is the seconds svgs, the second group the minutes, the first may have a hundreds digit
+function arrangeCountdown(show) {
+  setHidden(document.getElementById('firstDigit'), !show.h0);
+  setHidden(document.getElementById('hundredsDigit'), !show.x);
+  setHidden(svgOf('m0p0'), !show.m); setHidden(svgOf('m1p0'), !show.m); setHidden(document.getElementById('firstSeperator'), !show.m);
+  document.querySelectorAll('.seconds').forEach(function(e) { setHidden(e, !show.s); });
+  cdShown = true;
+}
+function restoreTime() {
+  if (!cdShown) return;
+  cdShown = false;
+  setHidden(document.getElementById('hundredsDigit'), true);
+  setHidden(svgOf('m0p0'), false); setHidden(svgOf('m1p0'), false); setHidden(document.getElementById('firstSeperator'), false);
+  document.querySelectorAll('.seconds').forEach(function(e) { setHidden(e, false); });
+  document.getElementById('firstDigit').classList.remove('hidden');     // getTime() decides about the leading zero again
+  layoutStale = true;
+}
+window.addEventListener('timerchange', function() { layoutStale = true; kickClock(); });
+
+
+// the caption: the name of the countdown and which units the digits are
+var pillText = null;
+function updateTimerPill(counting, left) {
+  var el = document.getElementById('timerPill');
+  if (!el) return;
+  var text = counting ? (conf.timerLabel ? conf.timerLabel + ' · ' : '') + (left <= 0 ? 'now' : unitsFor(left, !conf.hideSeconds)) : '';
+  if (text === pillText) return;
+  pillText = text;
+  el.textContent = text;
+  el.hidden = !counting;
+}
+
+// the settings controls
+document.addEventListener('DOMContentLoaded', function() {
+  var mode = document.getElementById('clockMode'), box = document.getElementById('timerTarget'), label = document.getElementById('timerLabel'), fields = document.getElementById('timerFields');
+  if (!mode) return;
+  var sync = function() { mode.value = conf.clockMode === 'countdown' ? 'countdown' : 'time'; box.value = conf.timerTarget || ''; label.value = conf.timerLabel || ''; fields.hidden = mode.value !== 'countdown'; };
+  sync();
+  mode.addEventListener('change', function() {
+    conf.clockMode = mode.value;
+    if (mode.value === 'countdown' && !Number.isFinite(parseTarget(conf.timerTarget))) { conf.timerTarget = defaultTarget(+simNow()); }   // a new countdown starts with the next midnight
+    sync();
+    window.dispatchEvent(new Event('timerchange'));
+  });
+  box.addEventListener('input', function() { conf.timerTarget = box.value; window.dispatchEvent(new Event('timerchange')); });
+  label.addEventListener('input', function() { conf.timerLabel = label.value.slice(0, 40); window.dispatchEvent(new Event('timerchange')); });
+  window.addEventListener('confreset', sync);
+});
+
 // Draws the digits for this instant. Returns true while any visible digit is morphing into the next one (the digits
 // that change at the next second morph all through this one), which is when it needs ~15 frames a second.
 function clock() {
   if (document.hidden) return false;           // nothing to animate in a background tab
   var now = simNow();
-  var time = getTime(now);
-  var nTime = getTime(new Date(now.getTime() + 1000));
+  var target = countdownTarget(), counting = Number.isFinite(target);
+  var time, nTime, slots = vars.t, left = 0;
+  if (counting) {
+    left = secondsLeft(target, +now);
+    time = slotsFor(left, !conf.hideSeconds);
+    nTime = slotsFor(Math.max(0, left - 1), !conf.hideSeconds);
+    arrangeCountdown(time.show);
+    slots = ['x', 'h', 'm', 's'];
+  } else {
+    restoreTime();
+    time = getTime(now);
+    nTime = getTime(new Date(now.getTime() + 1000));
+  }
   var cStep = now.getMilliseconds() / vars.step;
   var morphing = false;
 
-  vars.t.map(function(t) {
+  slots.map(function(t) {
     if (t === 's' && conf.hideSeconds) return;  // not shown: do not draw it
+    if (counting && ((t === 's' && !time.show.s) || (t === 'm' && !time.show.m) || (t === 'x' && !time.show.x))) return;
     for (var i = 0; i < 2; i++) {
       var d = time[t][i],
         nd = nTime[t][i];
@@ -101,6 +173,7 @@ function clock() {
       setDigit(t + i, morph(dd[d], dd[nd], cStep), performance.now());   // gusts run on the real clock, even while time travel holds the time still
     }
   });
+  updateTimerPill(counting, left);
   if (layoutStale) {
     layoutStale = false;
     updateSvgWidths();
@@ -109,7 +182,9 @@ function clock() {
     clockChanged = false;
     window.dispatchEvent(new Event('clockchange'));
   }
-  var tempTime = Number(String(time.h[0]) + String(time.h[1])) + ":" + time.m[0] + time.m[1] + (conf.hideSeconds ? "" : ":" + time.s[0] + time.s[1]);
+  var tempTime = counting
+    ? (conf.timerLabel ? conf.timerLabel + ' ' : '') + textOf(groupsFor(left, !conf.hideSeconds))
+    : Number(String(time.h[0]) + String(time.h[1])) + ":" + time.m[0] + time.m[1] + (conf.hideSeconds ? "" : ":" + time.s[0] + time.s[1]);
   if (document.title !== tempTime) {
     document.title = tempTime;
   }
