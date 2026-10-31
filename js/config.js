@@ -1,4 +1,5 @@
 import { easing } from './easing.js'
+import { hour24, unitFor, formatTempIn } from './units.js'
 
 export function adjustTimeSize() {
   if (conf.hideSeconds) {
@@ -58,10 +59,10 @@ function createPersistentConfig(key, initialValue = {}) {
   });
 }
 
-export var conf = createPersistentConfig("conf", {
+const DEFAULTS = {
   steps: 15,
   easing: 'easeInOutBack',
-  twentyFourHourClock: true,
+  twentyFourHourClock: null,  // null = follow the browser's locale until the user chooses
   hideSeconds: false,
   preciseLocation: false,
   gpsFrequency: -1,
@@ -79,7 +80,7 @@ export var conf = createPersistentConfig("conf", {
   nightBrightness: 1.4,
   cloudMotion: 1,             // 1 real time, 0.25 slow, 0 still
   // view
-  viewMode: 'fixed',          // fixed | drag | look (gyro "VR" mode)
+  viewMode: 'drag',           // fixed | drag (look around) | look (gyro "VR" mode)
   viewHeading: 180,
   viewPitch: 12,
   viewPitchAuto: true,        // keep the horizon on the clock digits
@@ -87,7 +88,7 @@ export var conf = createPersistentConfig("conf", {
   viewFov: 80,
   showLabels: false,
   plants: true,               // grass, trees, cacti ... swaying in the wind
-  keepAwake: false,           // Screen Wake Lock
+  keepAwake: true,            // Screen Wake Lock
   // time travel (never persisted as "on" across reloads)
   simSpeed: 1,
   // clock
@@ -96,9 +97,9 @@ export var conf = createPersistentConfig("conf", {
   clockColor: 'auto',         // solid style only: auto | classic | white
   legibility: 'auto',         // off | auto (3:1) | high (4.5:1): least brightness contrast between the time and the sky
   glassGlow: 0,               // light from inside the glass, 0..1 (stained glass always glows a little)
-  glassGlowColor: 'warm',     // liquid glass: warm | white | cool | follow (the sun / moon light)
+  glassGlowColor: 'follow',     // liquid glass: warm | white | cool | follow (the sun / moon light)
   // sun & screen
-  followSun: false,           // clock view only: sun rises on the right quarter, sets on the left, tilt never changes
+  followSun: true,            // clock view only: sun rises on the right quarter, sets on the left, tilt never changes
   countdown: 'off',           // off | both | sunrise | sunset
   countdownLead: 20,          // minutes before the event the countdown appears
   screenMode: 'normal',       // normal | led (64x32 LED panel simulator)
@@ -108,8 +109,27 @@ export var conf = createPersistentConfig("conf", {
   vrDebug: false,
   // settings panel
   settingsTab: 'clock',
-  settingsLevel: 'simple'     // simple | advanced
-});
+  settingsLevel: 'simple',    // simple | advanced
+  // first-run choice
+  locationChoice: null,       // null (not asked yet) | real | estimated
+  coarseLookups: true,        // weather / terrain lookups use a rounded position, never the exact one
+  // weather & units
+  tempUnit: 'auto',           // auto (by region) | c | f
+  confVersion: 0
+};
+const CONF_VERSION = 2;
+export var conf = createPersistentConfig("conf", DEFAULTS);
+
+// Defaults that changed: settings saved by an older version only ever held the old default, so move them once.
+if ((conf.confVersion || 0) < CONF_VERSION) {
+  for (const k of ['twentyFourHourClock', 'keepAwake', 'followSun', 'viewMode', 'glassGlowColor']) conf[k] = DEFAULTS[k];
+  conf.confVersion = CONF_VERSION;
+}
+
+/** 24-hour time unless the user chose; until then whatever the browser's locale uses. */
+export const use24h = () => hour24(conf.twentyFourHourClock);
+export const tempUnit = () => unitFor(conf.tempUnit);
+export const formatTemp = (c) => formatTempIn(c, tempUnit());
 
 //Set clock size
 adjustTimeSize();

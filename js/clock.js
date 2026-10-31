@@ -1,4 +1,4 @@
-import { conf, vars, dd, adjustTimeSize } from './config.js';
+import { conf, vars, dd, adjustTimeSize, use24h } from './config.js';
 import { easing } from './easing.js'
 import { now as simNow } from './simtime.js'
 
@@ -49,13 +49,13 @@ function toDigitArray(str) {
 
 function getTime(date) {
   let h = "";
-  if (conf.twentyFourHourClock) {
+  if (use24h()) {
     h = date.getHours().toString().padStart(2, "0");
   } else {
     h = (date.getHours() % 12 || 12).toString().padStart(2, "0");
   }
   const el = document.getElementById("firstDigit");
-  if (!conf.twentyFourHourClock && parseInt(h) < 10) {
+  if (!use24h() && parseInt(h) < 10) {
     if (el && !el.classList.contains("hidden")) {
       el.classList.add("hidden");
       layoutStale = true;
@@ -172,7 +172,7 @@ function initalize() {
   });
   
   //Set up initial config settings state
-  document.getElementById("twentyFourHourClock").checked = conf.twentyFourHourClock;
+  document.getElementById("twentyFourHourClock").checked = use24h();
   
   document.getElementById("hideSeconds").checked = conf.hideSeconds;
   

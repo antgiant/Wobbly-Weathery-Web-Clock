@@ -32,6 +32,7 @@ function refreshLocation() {
             
             //turn off precise
             conf.preciseLocation = false;
+            conf.locationChoice = 'estimated';
             document.getElementById("preciseLocation").checked = conf.preciseLocation;
             notifyLocation();
           }
@@ -61,6 +62,8 @@ function refreshLocation() {
 }
 
 function initalize() {
+  // has this browser been here before? (must be read before the first refreshLocation() saves a location)
+  const returning = Number(conf.location_latitude) !== -1 || Number(conf.location_longitude) !== -1;
   //Set up config option actions
   document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('gpsFrequency').addEventListener('change', (event) => {
@@ -107,6 +110,31 @@ function initalize() {
   }
   
   refreshLocation();
+  askLocationOnce(returning);
+}
+
+// First visit: one question. Anyone who has been here before (they have a saved location) is not asked.
+function askLocationOnce(known) {
+  const q = new URLSearchParams(location.search);
+  if (conf.locationChoice == null && (known || q.has('lat'))) { conf.locationChoice = conf.preciseLocation ? 'real' : 'estimated'; return; }
+  if (conf.locationChoice != null) return;
+  if (!('geolocation' in navigator)) { conf.locationChoice = 'estimated'; return; }
+  // the sky is already drawn from the time-zone estimate behind the card, so there is something to look at while deciding
+  const box = document.getElementById('welcome');
+  if (!box) return;
+  const done = (real) => {
+    box.hidden = true;
+    conf.locationChoice = real ? 'real' : 'estimated';
+    if (real) {
+      conf.preciseLocation = true;
+      document.getElementById('preciseLocation').checked = true;
+      refreshLocation();                       // this is the click that lets the browser show its permission prompt
+    }
+  };
+  document.getElementById('welcomeReal').addEventListener('click', () => done(true));
+  document.getElementById('welcomeEstimate').addEventListener('click', () => done(false));
+  box.hidden = false;
+  document.getElementById('welcomeReal').focus();
 }
 
 initalize();

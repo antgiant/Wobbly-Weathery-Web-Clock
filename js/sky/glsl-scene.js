@@ -237,9 +237,9 @@ void main() {
 //                   specular glints and a bright rim facing the real sun/moon, and
 //                   a soft shadow on the sky behind. Optionally lit from inside: the
 //                   thick middle of each stroke glows and a halo spills onto the sky
-//   stained glass - the same liquid glass, tinted: every pane carries a jewel tone that
-//                   colours what is seen through it and what it emits, split by thin
-//                   lead lines
+//   stained glass - coloured glass tubes, like LED tube lights: the same liquid glass, tinted, each
+//                   tube a saturated colour that lights up with a hot line down its middle,
+//                   with a thin dark gap where one tube ends and the next begins
 //   LED panel     - the whole picture sampled onto a 64x32 (or 32x64) grid of square
 //                   pixels with black lines between them
 export const FRAG_BLIT = `#version 300 es
@@ -378,15 +378,15 @@ void body() {
     }
     lead = smoothstep(0.0, 2.5, diffN);
     vec3 pal;
-    if (pid < 0.5)      pal = vec3(0.90, 0.10, 0.14);                 // ruby
-    else if (pid < 1.5) pal = vec3(0.14, 0.36, 1.00);                 // cobalt
-    else if (pid < 2.5) pal = vec3(1.00, 0.68, 0.10);                 // amber
-    else if (pid < 3.5) pal = vec3(0.08, 0.78, 0.38);                 // emerald
-    else if (pid < 4.5) pal = vec3(0.66, 0.22, 0.92);                 // amethyst
-    else                pal = vec3(1.00, 0.42, 0.60);                 // rose
-    float pane = 0.80 + 0.40 * shade;                                 // each pane is a slightly different piece of glass
-    tint = mix(vec3(1.0), pal, 0.88) * pane;
-    emit = pal * (0.85 + 0.30 * shade);
+    if (pid < 0.5)      pal = vec3(1.00, 0.12, 0.16);                 // red
+    else if (pid < 1.5) pal = vec3(1.00, 0.55, 0.05);                 // orange
+    else if (pid < 2.5) pal = vec3(0.12, 0.95, 0.32);                 // green
+    else if (pid < 3.5) pal = vec3(0.05, 0.85, 1.00);                 // cyan
+    else if (pid < 4.5) pal = vec3(0.22, 0.32, 1.00);                 // blue
+    else                pal = vec3(0.95, 0.20, 0.85);                 // magenta
+    float pane = 0.92 + 0.16 * shade;                                 // every tube is slightly different
+    tint = mix(vec3(1.0), pal, 0.92) * pane;
+    emit = pal * pane;
   }
 
   // ---- liquid glass (stained glass is the same glass with a colour in it) ----
@@ -403,16 +403,18 @@ void body() {
   float lum = lumaOf(c);
   c = mix(c, vec3(lum), 0.12 * frost);
   if (stained) c *= tint * 1.25;                                      // colour the light passing through the pane
-  c += uLightCol * (0.012 + 0.26 * frost * frost + 0.06 * frost) * (0.45 + 0.55 * uLight.z) * (stained ? tint : vec3(1.0));
+  c += uLightCol * (0.012 + 0.26 * frost * frost + 0.06 * frost) * (0.45 + 0.55 * uLight.z) * (stained ? tint * 0.35 : vec3(1.0));
   c += (hash21(gl_FragCoord.xy) - 0.5) * 0.05 * frost;               // fine grain of etched glass
   c *= 1.0 - 0.10 * rim * away;                                       // bevel facing away from the light darkens
 
   // light from inside: brightest in the thick middle of the stroke, the bevelled edge stays glassy
   float core = smoothstep(0.10, 0.80, h);
   float inner = glow * (0.28 + 0.72 * core) * (1.0 - 0.45 * rim);
+  if (stained) c *= mix(0.55, 1.0, smoothstep(0.30, 0.85, h));         // round tube: darker towards the sides
   vec3 lamp = emit * inner;
   c += lamp * (stained ? 0.95 : 0.80);
   c += emit * glow * 0.10 * (1.0 - frost * 0.4);                      // faint all-over fill so thin strokes light up too
+  if (stained) c += mix(emit, vec3(1.0), 0.55) * pow(smoothstep(0.45, 0.98, h), 2.0) * glow * 0.65;   // the hot line down the middle of a lit tube
 
   // the body of the glass is made readable first; the glints and the rim go on top, so it still looks like glass
   c = ensureContrast(c, vUv, stroke);
@@ -421,7 +423,7 @@ void body() {
   c += uLightCol * rim * 0.05;
   c += uLightCol * exp(-pow((h - 0.62) * 5.0, 2.0)) * spec * 0.35 * (1.0 - frost);
   if (stained) {
-    // lead came between the panes: nearly opaque, blocks the glow, and the bevel still catches light on it
+    // the dark gap between tubes: nearly opaque, blocks the glow, and the bevel still catches light on it
     vec3 leadCol = vec3(0.035, 0.03, 0.028) + uLightCol * spec * 0.12;
     c = mix(c, leadCol, clamp(lead, 0.0, 1.0) * 0.88);
   }

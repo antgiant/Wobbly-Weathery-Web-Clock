@@ -128,6 +128,15 @@ body {
   background: rgba(60, 120, 255, 0.75);
 }
 
+/* the return-to-default-view button sits beside the VR one (or in its place when there is none) */
+#vrButton:not([hidden]) ~ #homeButton {
+  left: calc(5% + 64px);
+}
+
+#homeButton[data-at-default="true"] {
+  opacity: 0.55;
+}
+
 /* fades with the settings gear (see settings_gear.js) */
 .fab.is-hidden {
   opacity: 0;
@@ -316,22 +325,41 @@ body {
 
 .modal__header {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 14px 10px 18px;
+  align-items: stretch;
+  gap: 6px;
+  padding: 6px 8px 0 6px;
+  border-bottom: 1px solid var(--line);
 }
 
-.modal__header h2 {
-  margin: 0;
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Simple / Advanced: full width under the tabs (along the bottom edge on a phone) */
+.levelbar {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.levelbar .seg {
+  display: flex;
+}
+
+.levelbar .seg__btn {
   flex: 1;
-  font-size: 1.25rem;
-  font-weight: 650;
+  min-height: 40px;
 }
 
 .modal__close {
+  flex: none;
+  align-self: center;
   width: 44px;
   height: 44px;
-  margin: -4px -4px -4px 0;
   border: none;
   border-radius: 50%;
   background: var(--field);
@@ -373,11 +401,11 @@ body {
   color: #2a1700;
 }
 
-/* section tabs */
+/* section tabs: they live in the header, next to the close button */
 .tabs {
+  flex: 1;
+  min-width: 0;
   display: flex;
-  padding: 0 10px;
-  border-bottom: 1px solid var(--line);
   gap: 2px;
 }
 
@@ -708,27 +736,19 @@ body {
   }
 
   .modal__header {
-    padding: 8px 12px 8px 16px;
+    padding: 2px 6px 0 2px;
   }
 
   .modal__body {
     padding: 12px 12px 16px;
   }
 
-  .tabs {
+  /* Simple / Advanced sits where the thumb is, along the bottom edge */
+  .levelbar {
     order: 3;
     border-bottom: 0;
     border-top: 1px solid var(--line);
-    padding: 0 4px;
-  }
-
-  .tab {
-    border-bottom: 0;
-    border-top: 3px solid transparent;
-  }
-
-  .tab[aria-selected="true"] {
-    border-top-color: var(--accent);
+    padding: 8px 12px;
   }
 
   /* while a slider is being dragged the sheet gets out of the way so the change can be seen */
@@ -749,11 +769,6 @@ body {
 
 /* a phone on its side: little height, so keep the chrome thin */
 @media (max-height: 520px) and (orientation: landscape) {
-  .modal__header {
-    padding-top: 6px;
-    padding-bottom: 4px;
-  }
-
   .tab {
     min-height: 46px;
     flex-direction: row;
@@ -912,4 +927,87 @@ body.no-webgl video {
 
 #vrReadout[hidden] {
   display: none;
+}
+
+/* the first-visit question */
+.welcome {
+  display: grid;
+  place-items: center;
+  z-index: 1100;
+}
+
+.welcome[hidden] {
+  display: none;
+}
+
+.welcome .modal__backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.welcome__card {
+  position: relative;
+  width: min(440px, calc(100vw - 28px));
+  box-sizing: border-box;
+  padding: 22px 20px 16px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 20px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(26px) saturate(1.5);
+  -webkit-backdrop-filter: blur(26px) saturate(1.5);
+}
+
+.welcome__card h2 {
+  margin: 0 0 8px;
+  font-size: 1.4rem;
+}
+
+.welcome__card p {
+  margin: 0 0 14px;
+  line-height: 1.45;
+}
+
+.welcome__card .hint {
+  margin: 10px 2px 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.choice {
+  display: block;
+  width: 100%;
+  margin: 0 0 10px;
+  padding: 14px 16px;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--field);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 1rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.choice strong {
+  display: block;
+  font-size: 1.05rem;
+  margin-bottom: 3px;
+}
+
+.choice small {
+  display: block;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.choice--primary {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.choice:active {
+  transform: scale(0.99);
 }

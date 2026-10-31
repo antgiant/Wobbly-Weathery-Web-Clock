@@ -6,17 +6,16 @@
 // refracts the real sky behind it. The SVG itself is hidden (visibility, so it
 // still lays out) while a glass style is active.
 //
-// Stained glass: each stroke is cut into pieces along its length and each piece
-// into an inner and an outer lane. Every lane is filled with an id colour that
-// the shader turns into a jewel tone, and lead lines appear where ids change.
-// The pieces are slices of the live curves, so the leading stretches and bends
-// with the digit as it morphs instead of sitting still on the screen.
+// Stained glass: coloured glass tubes, like LED tube lights. Each stroke is cut into tubes along its length;
+// every tube is filled with an id colour that the shader turns into a saturated glowing colour, and a thin dark
+// line appears where one tube ends and the next begins. The tubes are slices of the live curves, so they
+// stretch and bend with the digit as it morphs instead of sitting still on the screen.
 
 import { conf } from '../config.js';
 
 const VB_W = 100, VB_H = 116, VB_Y0 = -8;      // viewBox of each digit svg: "0 -8 100 116"
 const STROKE = 80 * 0.2;                        // stroke-width 80 under transform scale(0.2), in viewBox units
-const PIECES = 3;                               // panes along each stroke
+const PIECES = 4;                               // tubes along each stroke
 const OVERLAP = 5;                              // path units of overlap so pieces leave no anti-aliasing seams
 
 // ---- path -> polyline (handles the M / L / C commands the clock produces) ----
@@ -138,14 +137,12 @@ export function initGlass(engine, getBasis) {
         for (let j = 1; j < pts.length; j++) cum.push(cum[j - 1] + Math.hypot(pts[j][0] - pts[j - 1][0], pts[j][1] - pts[j - 1][1]));
         const len = cum[cum.length - 1];
         const n = p.round ? 1 : PIECES;                              // the colon dots stay a single pane
-        // outer lanes first, then the inner lanes on top, so every pane is bordered by lead
-        for (let lane = 0; lane < 2; lane++) {
-          for (let j = 0; j < n; j++) {
-            const a = Math.max(0, (j / n) * len - (j ? OVERLAP : 0)), b = Math.min(len, ((j + 1) / n) * len + (j < n - 1 ? OVERLAP : 0));
-            const pc = slice(pts, cum, a, b);
-            ctx.strokeStyle = idColor(hash(s.idx, pi, j, lane), hash(j, pi, s.idx, lane + 7));
-            strokePath(pc, lane === 0 ? 80 : 44, p.round ? 'round' : 'butt');
-          }
+        // one tube per piece, full width; where neighbours differ the shader draws the dark line between them
+        for (let j = 0; j < n; j++) {
+          const a = Math.max(0, (j / n) * len - (j ? OVERLAP : 0)), b = Math.min(len, ((j + 1) / n) * len + (j < n - 1 ? OVERLAP : 0));
+          const pc = slice(pts, cum, a, b);
+          ctx.strokeStyle = idColor(hash(s.idx, pi, j, 0), hash(j, pi, s.idx, 7));
+          strokePath(pc, 80, p.round ? 'round' : 'butt');
         }
       });
     }
@@ -200,7 +197,7 @@ export function initGlass(engine, getBasis) {
   // stained glass always glows a little, the slider only makes it brighter; liquid glass is unlit at 0
   const glowAmount = () => {
     const g = Math.min(1, Math.max(0, +conf.glassGlow || 0));
-    return style() === 'stained' ? 0.35 + 0.65 * g : style() === 'glass' ? g : 0;
+    return style() === 'stained' ? 0.55 + 0.45 * g : style() === 'glass' ? g : 0;
   };
 
   function apply() {
