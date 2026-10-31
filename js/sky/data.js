@@ -10,7 +10,7 @@ import { fetchBiome, fallbackBiome, seasonFromClimate, paletteFor } from './biom
 import { generatePlants } from './plants.js';
 import { estimateBortle, fetchPlaces } from './lightpollution.js';
 import { isChristmasSeason } from '../season.js';
-import { engine, state, ov, num, DEFAULT_LAT, defaultLon, lsGet, lsSet, coarse, ymd, histActive, setStatus, cachedFetch, agoText } from './core.js';
+import { engine, glass, state, ov, num, DEFAULT_LAT, defaultLon, lsGet, lsSet, coarse, ymd, histActive, setStatus, cachedFetch, agoText } from './core.js';
 
 export function bortleFromSettings() {
   const v = ov.lp ?? conf.lightPollution;
@@ -317,11 +317,12 @@ export function applySim() {
   const on = document.getElementById('simEnabled')?.checked;
   const input = document.getElementById('simTime');
   if (!engine) return;
-  if (!on) { engine.set({ sim: null }); syncTimeData(); applyPlants(); return; }
+  if (!on) { engine.set({ sim: null }); syncTimeData(); applyPlants(); glass?.apply(); return; }
   let base = input?.value ? new Date(input.value) : new Date();
   if (isNaN(base)) base = new Date();
   engine.set({ sim: { base, startPerf: performance.now(), scale: num(conf.simSpeed, 1) } });
   syncTimeData();
   applyPlants();
+  glass?.apply();                                         // the automatic clock style follows the date
 }
 

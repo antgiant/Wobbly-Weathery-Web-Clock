@@ -23,7 +23,7 @@ function refreshLocation() {
           notifyLocation();
         },
         (err) => {
-          console.log(`GPS error: ${err.message}`);
+          console.info(`GPS error: ${err.message}`);
           if (err.code == err.PERMISSION_DENIED) {
             //fallback to general location
             let temp = Virgo.getLocation();
@@ -104,7 +104,7 @@ function initalize() {
   
   //Remove precise location option if it isn't supported
   if (!('geolocation' in navigator)) {
-    console.log('Geolocation not supported.');
+    console.info("Geolocation not supported.");
     conf.preciseLocation = false;
     (document.getElementById("preciseLocation").closest('.field') || document.getElementById("preciseLocation")).style.display = 'none';
   }

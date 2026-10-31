@@ -1,5 +1,5 @@
-// Run: node tools/test-ledgrid.mjs
-import { gridFor, isTuned, layoutFor, panelFor, presetIdFor, LED_PRESETS } from '../js/sky/ledgrid.js';
+// Run: node tests/unit/ledgrid.mjs
+import { gridFor, isTuned, layoutFor, panelFor, presetIdFor, LED_PRESETS } from '../../js/sky/ledgrid.js';
 let fails = 0;
 const check = (n, ok, x = '') => { console.log((ok ? 'PASS ' : 'FAIL ') + n + ' ' + x); if (!ok) fails++; };
 const J = (o) => JSON.stringify(o);

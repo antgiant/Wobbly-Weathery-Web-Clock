@@ -12,7 +12,6 @@ import { basisFromOrientation, CompassCalibrator, screenAngleNow } from './orien
 const DEG = Math.PI / 180;
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 
-const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const scale = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -54,7 +53,6 @@ export class Controls {
   }
 
   _push() {
-    const s = this.engine.s;
     this.heading = ((this.heading % 360) + 360) % 360;
     this.pitch = clamp(this.pitch, -89, 89);
     this.fov = clamp(this.fov, 25, 120);

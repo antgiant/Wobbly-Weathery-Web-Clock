@@ -1,13 +1,11 @@
-// Checks the sunrise / sunset countdown and the follow-the-sun camera. Run: node tools/test-sunpath.mjs
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-globalThis.Astronomy = require('../js/vendor/astronomy.browser.min.js');
-const { sunEvents, countdownState, followHeading, headingForSunAt, sunHorizon } = await import('../js/sky/sunpath.js');
+// Checks the sunrise / sunset countdown and the follow-the-sun camera. Run: node tests/unit/sunpath.test.mjs
+import '../lib/astronomy.mjs';
+const { sunEvents, countdownState, followHeading, sunHorizon } = await import('../../js/sky/sunpath.js');
 let fails = 0;
 const check = (n, ok, x = '') => { console.log((ok ? 'PASS ' : 'FAIL ') + n + ' ' + x); if (!ok) fails++; };
 
 // screen x of the sun for a camera: inverse of headingForSunAt, so the test does not just repeat the solver
-const P = 12, fov = 80, aspect = 16 / 9, tanX = Math.tan(fov * Math.PI / 360);
+const P = 12, fov = 80, tanX = Math.tan(fov * Math.PI / 360);
 const screenXOf = (az, alt, H) => {
   const d = [Math.sin(az * Math.PI / 180) * Math.cos(alt * Math.PI / 180), Math.sin(alt * Math.PI / 180), Math.cos(az * Math.PI / 180) * Math.cos(alt * Math.PI / 180)];
   const h = H * Math.PI / 180, p = P * Math.PI / 180;
@@ -48,7 +46,7 @@ for (const [name, lat, lon, day] of [['New York equinox', 40.7, -74, '2026-03-20
 // the view never tilts: pitch is not an output, and the heading is continuous across sunset and sunrise
 {
   const lat = 40.7, lon = -74; const noon = new Date('2026-09-10T16:00:00Z'); const ev = sunEvents(noon, lat, lon, 0);
-  const set = ev.nextSet, rise = ev.nextRise;
+  const set = ev.nextSet;
   const before = followHeading(new Date(+set - 5000), lat, lon, 0, view), after = followHeading(new Date(+set + 5000), lat, lon, 0, view);
   check('continuous through sunset', Math.abs(((before - after + 540) % 360) - 180) < 0.5, `${before.toFixed(2)} -> ${after.toFixed(2)}`);
   const evN = sunEvents(new Date(+set + 3600e3), lat, lon, 0);

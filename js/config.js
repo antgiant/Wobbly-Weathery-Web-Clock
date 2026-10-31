@@ -1,4 +1,3 @@
-import { easing } from './easing.js'
 import { hour24, unitFor, formatTempIn } from './units.js'
 import { isChristmasSeason } from './season.js'
 import { now as simNow } from './simtime.js'
@@ -47,14 +46,14 @@ function createPersistentConfig(key, initialValue = {}) {
     set(target, property, value) {
       target[property] = value;
       save(); // Automatically save on any change
-      console.log(key + "." + property + ": " + value);
+      if (globalThis.__confDebug) console.log(key + "." + property + ": " + value);    // set window.__confDebug = true to watch settings change
       return true;
     },
     
     deleteProperty(target, property) {
       delete target[property];
       save(); // Save on deletion
-      console.log("deleted " + key + "." + property);
+      if (globalThis.__confDebug) console.log("deleted " + key + "." + property);
       return true;
     }
     

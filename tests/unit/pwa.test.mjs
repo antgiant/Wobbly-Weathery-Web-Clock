@@ -1,10 +1,10 @@
 // Checks the installable-app pieces: the manifest, the icons, and that the service worker stores every file the page uses.
-// Run: node tools/test-pwa.mjs
+// Run: node tests/unit/pwa.mjs
 import fs from 'fs';
 import path from 'path';
 let fails = 0;
 const check = (n, ok, x = '') => { console.log((ok ? 'PASS ' : 'FAIL ') + n + ' ' + x); if (!ok) fails++; };
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
 const read = (f) => fs.readFileSync(path.join(root, f), 'utf8');
 
 const m = JSON.parse(read('manifest.webmanifest'));

@@ -1,0 +1,85 @@
+name: CI
+
+# Lint + unit tests (seconds), then the browser tests against the real page in headless Chromium (a few minutes).
+# Run it by hand with "Run workflow"; tick "update_baselines" to redraw the picture baselines on this machine and
+# download them from the run's artifacts (commit them to tests/visual/baseline/).
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      update_baselines:
+        description: 'Redraw the picture baselines instead of comparing against them'
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Lint and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Unit tests
+        run: node tests/run.mjs unit
+
+  browser:
+    name: Browser tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TEST_ARTIFACTS: test-results
+      # The picture baselines were drawn on another machine's software renderer: until they are redrawn here, picture
+      # differences are reported as warnings instead of failing the build.
+      VISUAL: warn
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Cache the browser
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Browser tests
+        if: ${{ !inputs.update_baselines }}
+        run: node tests/run.mjs browser
+      - name: Redraw the picture baselines
+        if: ${{ inputs.update_baselines }}
+        run: UPDATE_BASELINES=1 node tests/run.mjs browser visual
+      - name: Keep the pictures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-pictures
+          path: |
+            test-results
+            tests/visual/__actual__
+          if-no-files-found: ignore
+      - name: Keep the new baselines
+        if: ${{ inputs.update_baselines }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-baselines
+          path: tests/visual/baseline
