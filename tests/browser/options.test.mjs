@@ -2,6 +2,7 @@
 // the other things to count down to, and the Everyday presets.
 import { sunEvents, at } from '../lib/astro.mjs';
 export const name = 'options';
+export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 const open = (page) => page.evaluate(() => document.getElementById('settings').dispatchEvent(new MouseEvent('click', { bubbles: true })));
 const style = (page) => page.evaluate(() => document.body.dataset.clockstyle);
@@ -55,7 +56,7 @@ export async function run(t) {
     ['2026-07-04T17:00:00Z', 'low', 'solid', 'July on battery saver'],
     ['2026-12-10T17:00:00Z', 'medium', 'stained', 'December'],
     ['2026-12-10T17:00:00Z', 'low', 'solid', 'December on battery saver'],
-  ]) {
+  ].filter((_, i) => !t.quick || i < 2)) {                              // the quick check: July only
     h = await t.open({ query: `t=${when}&speed=0`, conf: { clockStyle: 'auto', quality } });
     const s = await style(h.page);
     t.check(`Automatic, ${label}: ${expect === 'glass' ? 'liquid glass' : expect === 'stained' ? 'coloured lights' : 'flat colour'}`, s === expect, s);
@@ -70,6 +71,7 @@ export async function run(t) {
   await h.page.evaluate(() => { window.dispatchEvent(new Event('powerchange')); });
   t.check('a power change event is harmless', h.errors.length === 0);
   await h.close();
+  if (t.quick) return;                                              // the quick check stops here: the rest is in the full run
 
   // ---- the iPhone install walkthrough ----
   h = await t.open({ query: 't=2026-06-21T17:00:00Z&speed=0', width: 390, height: 844, touch: true, context: { userAgent: IPHONE, isMobile: true } });

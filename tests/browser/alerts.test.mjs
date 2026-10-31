@@ -1,6 +1,7 @@
 // The countdown to sunset / sunrise and the optional umbrella alert, as page pills and as pixel art on the LED panel.
 import { nextSunset, nextSunrise, at } from '../lib/astro.mjs';
 export const name = 'alerts';
+export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 const pill = (page) => page.evaluate(() => { const e = document.getElementById('sunCountdown'); return e.hidden ? null : e.textContent.replace(/\s+/g, ' ').trim(); });
 const rainPill = (page) => page.evaluate(() => { const e = document.getElementById('rainAlertPill'); return e.hidden ? null : { text: e.textContent.trim(), level: e.dataset.level }; });
@@ -26,6 +27,7 @@ export async function run(t) {
   await h.settle(1500);
   t.check('10 minutes before: counting down', /Sunset in\s*(10:0\d|09:5\d)/.test(String(await pill(h.page))), String(await pill(h.page)));
   await h.close();
+  if (t.quick) return;                                              // the quick check stops here: the rest is in the full run
 
   h = await t.open({ query: `t=${at(sunset, 20e3)}&speed=0`, conf: { countdown: 'both', clockStyle: 'solid' } });
   await h.settle(1500);

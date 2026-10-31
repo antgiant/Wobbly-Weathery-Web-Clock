@@ -1,5 +1,6 @@
 // The settings panel: opens on the presets, presets and reset work through the real controls, tabs and Simple / Advanced.
 export const name = 'settings';
+export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 const open = (page) => page.evaluate(() => document.getElementById('settings').dispatchEvent(new MouseEvent('click', { bubbles: true })));
 const conf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('conf')));
@@ -61,6 +62,7 @@ export async function run(t) {
   t.check('it reopens on the tab you were on (the page remembers it for the visit)', await page.evaluate(() => document.querySelector('.tab[aria-selected="true"]').dataset.tab) === 'clock');
   t.check('no script errors while using the panel', h.errors.length === 0, h.errors.join(' | '));
   await h.close();
+  if (t.quick) return;                                              // the quick check stops here: the rest is in the full run
 
   // wide screens: a side drawer, with the sky still visible
   const d = await t.open({ query: 't=2026-06-21T17:00:00Z&speed=0', width: 1200, height: 700 });

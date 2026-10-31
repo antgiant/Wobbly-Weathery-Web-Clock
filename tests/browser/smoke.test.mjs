@@ -1,5 +1,6 @@
 // The page starts, draws the sky and the clock, and says nothing is wrong.
 export const name = 'smoke';
+export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 export async function run(t) {
   const h = await t.open({ query: 't=2026-06-21T17:00:00Z&speed=0', conf: { clockStyle: 'glass' } });
