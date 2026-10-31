@@ -137,6 +137,7 @@ function initalize() {
   
   // Set up widths so that clock fills the horizontal space
   updateSvgWidths();
+  clock();                                     // draw the digits now, not after the first 66 ms tick (they start as crossed lines)
   
   //Set up config option actions
   document.addEventListener('DOMContentLoaded', () => {

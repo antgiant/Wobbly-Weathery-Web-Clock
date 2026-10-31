@@ -135,8 +135,9 @@ body {
   left: calc(5% + 64px);
 }
 
+/* nothing to return to: not shown at all (and when it is shown it fades with the gear, like the other buttons) */
 #homeButton[data-at-default="true"] {
-  opacity: 0.55;
+  display: none;
 }
 
 /* fades with the settings gear (see settings_gear.js) */
@@ -1012,4 +1013,53 @@ body.no-webgl video {
 
 .choice:active {
   transform: scale(0.99);
+}
+
+/* ------------------------------------------------------------- loading ---- */
+#loading {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(var(--ls-top, #0b1020), var(--ls-bot, #0b1020));
+  color: #fff;
+  font: 500 0.95rem/1.2 system-ui, sans-serif;
+  transition: opacity 450ms ease;
+}
+
+#loading.done {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#loading .spin {
+  width: 34px;
+  height: 34px;
+  margin: 0 auto 14px;
+  border: 3px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+#loading p {
+  margin: 0;
+  text-align: center;
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.5);
+  opacity: 0.9;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* the digits start as crossed lines until the clock has drawn them once: keep them out of sight until then */
+body:not(.ready) #clock {
+  visibility: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #loading .spin { animation-duration: 3s; }
+  #loading { transition: none; }
 }

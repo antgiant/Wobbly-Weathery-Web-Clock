@@ -35,6 +35,10 @@ With thanks to
 | **Follow the sun** | Settings → View (clock view only). Only the compass direction moves, never the tilt, so the sun stays at one height while it crosses the screen from the right quarter at sunrise to the left quarter at sunset, in either hemisphere, like east to west on a map. The position comes from the sun's real azimuth, so the seasons show: in June the sun rises further round to the north and starts nearer the right edge, in December nearer the middle. Overnight the view turns back, slowly, to the next sunrise. |
 | **LED panel** | Settings → Display. The whole picture becomes a 64 × 32 LED matrix: square pixels with black lines between them, the clock as lit pixels. It turns itself to 32 × 64 when the screen is upright, and the digits stack two to a row. The panel is letter-boxed so the pixels stay square. |
 
+## Loading
+
+A loading screen (in the colours of the last sky you saw) covers the page until the first frame is drawn with the stars, Milky Way and moon loaded; the digits stay hidden until the clock has drawn them once. All scripts and data are fetched in parallel (`modulepreload` / `preload`), and `sw.js` keeps them on the device so a returning visit does not wait for the network. It serves the cached copy and refreshes it in the background, so a change you deploy shows on the visit after next. It is not registered on localhost.
+
 ## Why it is fast
 
 The previous version ran a nested raymarch (about 2000 exponentials) for every pixel on every

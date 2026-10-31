@@ -42,11 +42,21 @@ const ymd = (d) => d.toISOString().slice(0, 10);
 // time travel far from now: the weather should be what it was (or will be) then
 const histActive = () => !!getSim() && Math.abs(+now() - Date.now()) > 2 * 3600e3;
 
+// The loading screen goes once there is a real picture: the first frame is drawn with the stars, Milky Way and
+// moon loaded, and the glass (if any) has its mask. Never waits more than a few seconds.
+function markReady() {
+  if (document.body.classList.contains('ready')) return;
+  document.body.classList.add('ready');
+  const l = document.getElementById('loading');
+  if (l) { l.classList.add('done'); setTimeout(() => l.remove(), 700); }
+}
+
 // -------------------------------------------------------------- fallback --
 // Without WebGL2 float targets we still show a plausible gradient.
 function startFallback(reason) {
   console.warn('[sky] falling back to gradient:', reason);
   document.body.classList.add('no-webgl');
+  markReady();
   setStatus('sky', 'Basic gradient (WebGL2 unavailable)');
   const A = globalThis.Astronomy;
   const stops = [  // sun altitude -> top / horizon colour
@@ -465,6 +475,7 @@ async function updateFavicon() {
   let link = document.querySelector("link[rel~='icon']");
   if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.appendChild(link); }
   link.href = c.toDataURL('image/png');
+  lsSet('lastsky', [css(px[0]), css(px[1])]);          // painted behind the loading screen next time
 }
 
 // ------------------------------------------------------------------- HUD --
@@ -718,6 +729,11 @@ function init() {
 
   applyQuality(); applyLocation(); applyView(); applyWeather(); applyLandscape();
   engine.start();
+  const t0 = performance.now();
+  const readyCheck = setInterval(() => {
+    const solid = (conf.clockStyle || 'solid') === 'solid' && conf.screenMode !== 'led';
+    if ((window.__frames >= 1 && engine.assetsDone && (solid || engine.glass.hasMask)) || performance.now() - t0 > 8000) { clearInterval(readyCheck); markReady(); }
+  }, 60);
   engine.onFrame(() => { window.__frames = (window.__frames || 0) + 1; });
 
   // periodic UI-facing work, decoupled from the render loop
