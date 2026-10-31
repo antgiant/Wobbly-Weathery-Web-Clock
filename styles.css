@@ -804,21 +804,43 @@ body[data-clockstyle="led"] #clock {
 /* LED panel, held upright: the panel is 32 pixels wide, so the digits stack two to a row (hours, minutes,
    seconds) instead of six across. The shader draws them; this only decides where they go. */
 /* The LED panel is a 2:1 (or, upright, 1:2) rectangle in the middle of the window, so the clock is laid out inside
-   that rectangle instead of across the whole window, or the outer digits fall off the panel and get cropped. */
+   that rectangle instead of across the whole window, or the outer digits fall off the panel and get cropped.
+   --units / --rows come from clock.js (how many digit widths the row is, how many rows it stacks into) and
+   --led-top from app.js (the share of the panel's height the countdown card takes at the top, 0 without one):
+   the digits shrink to fit what is left, so the card never covers the time.
+   A digit's ink fills the middle ~64% of its 100-wide box, so boxes overlap (-0.12 each side, a pitch of 0.76);
+   a colon's ink sits at the far left of its box, so it is nudged (translateX) into the middle of its 0.3 slot.
+   That is what keeps the row centred. */
 body[data-screen="led"] #clock {
   --pw: min(100vw, 200vh);
   --ph: min(50vw, 100vh);
+  --top: var(--led-top, 0);
+  --w: min(calc(var(--pw) * 0.93 / var(--units, 7)), calc(var(--ph) * (1 - var(--top)) * 0.9 / 1.16));
   width: calc(var(--pw) * 0.93);
-  height: calc(var(--ph) * 0.98);
-  margin: calc((100vh - var(--ph)) / 2 + var(--ph) * 0.01) auto 0 !important;
+  height: calc(var(--ph) * (1 - var(--top)) * 0.98);
+  margin: calc((100vh - var(--ph)) / 2 + var(--ph) * (var(--top) + 0.01)) auto 0 !important;
+  justify-content: center;
 }
 
 @supports (height: 100dvh) {
   body[data-screen="led"] #clock {
     --pw: min(100vw, 200dvh);
     --ph: min(50vw, 100dvh);
-    margin-top: calc((100dvh - var(--ph)) / 2 + var(--ph) * 0.01) !important;
+    margin-top: calc((100dvh - var(--ph)) / 2 + var(--ph) * (var(--top) + 0.01)) !important;
   }
+}
+
+body[data-screen="led"] #clock svg {
+  flex: none;
+  width: var(--w) !important;
+  margin: 0 calc(var(--w) * -0.12) !important;
+}
+
+/* the colons take 0.3 of a digit's width */
+body[data-screen="led"] #clock svg:nth-child(3),
+body[data-screen="led"] #clock svg:nth-child(6) {
+  margin: 0 calc(var(--w) * -0.7) 0 0 !important;
+  transform: translateX(5.4%);
 }
 
 @media (orientation: portrait) {
@@ -839,7 +861,7 @@ body[data-screen="led"] #clock {
   }
 
   body[data-screen="led"] #clock svg {
-    width: 88% !important;
+    width: min(100%, calc(var(--ph) * (1 - var(--top)) * 0.95 / (var(--rows, 3) * 1.16))) !important;
     margin: 0 !important;
   }
 

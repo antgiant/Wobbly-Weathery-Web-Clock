@@ -126,6 +126,12 @@ function updateSvgWidths() {
       svg.style.width = width;
     });
   }
+  // for the LED panel layout (styles.css): how many digit-boxes wide the row is (a digit takes 0.76 of its box, a colon 0.3), and how many rows when it stacks
+  const colons = visibleSvgs.filter(svg => !svg.querySelector('path[id]')).length;
+  const digits = visibleSvgs.length - colons;
+  const clockEl = document.querySelector("#clock");
+  clockEl.style.setProperty('--units', String(0.76 * digits + 0.3 * colons));
+  clockEl.style.setProperty('--rows', String(Math.max(1, Math.ceil(digits / 2))));
   window.dispatchEvent(new Event('clocklayout'));
 }
 
