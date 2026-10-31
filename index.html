@@ -141,6 +141,15 @@
               <input type="range" id="glassGlow" min="0" max="1" step="0.01">
               <p class="hint">Makes the glass glow. Liquid glass is unlit at 0; stained glass always glows a little and gets brighter.</p>
             </div>
+            <div class="field">
+              <label class="field__label" for="legibility">Keep the time readable</label>
+              <select id="legibility">
+                <option value="auto">Always (brightness contrast 3:1)</option>
+                <option value="high">Extra strong (4.5:1)</option>
+                <option value="off">Off (pure glass)</option>
+              </select>
+              <p class="hint">Judged by brightness, not colour, so it works for colour-blind eyes too. Where the glass would blend into the sky it automatically lightens or darkens.</p>
+            </div>
             <div class="field adv">
               <label class="field__label" for="glassGlowColor">Colour of the light (liquid glass)</label>
               <select id="glassGlowColor">

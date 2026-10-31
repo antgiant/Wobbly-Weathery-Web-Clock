@@ -338,22 +338,32 @@ function scheduleLiveData() {
 }
 
 // -------------------------------------------------------------- appearance --
-let lastLum = 0.3;
+// Solid ink: pick whichever of light or dark ink has the better worst-case brightness contrast (WCAG ratio, so it
+// holds for colour-blind eyes too) against the sky behind the digits, and ring it with a halo of the opposite
+// tone so it still reads where the sky changes from bright to dark behind it.
+const lin = (v) => Math.pow(Math.max(0, v), 2.2);
+const relLum = (p) => 0.2126 * lin(p.r) + 0.7152 * lin(p.g) + 0.0722 * lin(p.b);
+const INK = { light: { css: '#f4f7ff', rgb: [0.96, 0.97, 1], L: 0.93, halo: 'rgba(5,10,30,0.55)' }, dark: { css: '#0a163c', rgb: [0.03, 0.06, 0.18], L: 0.009, halo: 'rgba(255,255,255,0.55)' } };
 async function updateClockColor() {
   const root = document.documentElement;
-  const mode = conf.clockColor;
-  if (mode === 'classic') { root.style.setProperty('--clock-stroke', 'blue'); glass?.setInk([0.05, 0.1, 1]); return; }
-  if (mode === 'white') { root.style.setProperty('--clock-stroke', '#f4f7ff'); glass?.setInk([0.96, 0.97, 1]); return; }
+  const mode = conf.clockColor, haloOn = conf.legibility !== 'off';
+  const setInk = (css, rgb, halo) => {
+    root.style.setProperty('--clock-stroke', css);
+    root.style.setProperty('--clock-halo', haloOn ? halo : 'transparent');
+    glass?.setInk(rgb);
+  };
+  if (mode === 'classic') { setInk('blue', [0.05, 0.1, 1], 'rgba(255,255,255,0.7)'); return; }
+  if (mode === 'white') { setInk('#f4f7ff', [0.96, 0.97, 1], INK.light.halo); return; }
   if (document.hidden) return;
-  const px = await engine?.samplePixels([[0.5, 0.5], [0.25, 0.5], [0.75, 0.5], [0.5, 0.4], [0.5, 0.6]]);
+  const px = await engine?.samplePixels([[0.5, 0.5], [0.25, 0.5], [0.75, 0.5], [0.5, 0.4], [0.5, 0.6], [0.12, 0.5], [0.88, 0.5]]);
   if (!px) return;
-  const lum = px.reduce((a, p) => a + p.lum, 0) / px.length;
-  lastLum = lastLum * 0.5 + lum * 0.5;
-  // dark ink on a bright sky, light ink on a dark one; hysteresis avoids flicker
-  const dark = lastLum > (root.dataset.ink === 'dark' ? 0.42 : 0.5);
-  root.dataset.ink = dark ? 'dark' : 'light';
-  root.style.setProperty('--clock-stroke', dark ? '#0a163c' : '#f4f7ff');
-  glass?.setInk(dark ? [0.03, 0.06, 0.18] : [0.96, 0.97, 1]);
+  const ratio = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  const worst = (ink) => Math.min(...px.map((p) => ratio(relLum(p), ink.L)));
+  const cur = root.dataset.ink === 'dark' ? 'dark' : 'light';
+  const other = cur === 'dark' ? 'light' : 'dark';
+  const pick = worst(INK[other]) > worst(INK[cur]) * 1.2 ? other : cur;      // hysteresis: avoid flicker around the crossover
+  root.dataset.ink = pick;
+  setInk(INK[pick].css, INK[pick].rgb, INK[pick].halo);
 }
 
 async function updateFavicon() {
@@ -461,28 +471,59 @@ function toast(msg) {
 // ------------------------------------------------------ countdown / readout --
 // On the LED panel the countdown cannot be a page overlay, so it is painted into the picture before the
 // pixels are taken: a sun on the horizon with an arrow (up = sunrise, down = sunset), the time left in big
-// digits, and a bar along the bottom that runs down to nothing. Black card behind it so it reads on any sky.
+// digits, and a bar that runs down to nothing. It goes in whichever strip above or below the clock is
+// bigger, and shrinks to fit, so it never covers the time.
 const ledCard = window.__ledCard = document.createElement('canvas');
 let ledCardKey = '';
+
+/** Top and bottom of the digits as fractions of the canvas height (y down), or null. */
+function clockSpan() {
+  const m = clockBottom();
+  if (!m) return null;
+  let top = Infinity;
+  document.querySelectorAll('#clock svg').forEach((el) => {
+    if (getComputedStyle(el).display === 'none') return;
+    const r = el.getBoundingClientRect();
+    if (r.width < 1) return;
+    const k = Math.min(r.width / 100, r.height / 116);
+    top = Math.min(top, r.top + (r.height - 116 * k) / 2 - canvas.getBoundingClientRect().top);
+  });
+  return Number.isFinite(top) ? { top: Math.max(0, top) / m.h, bottom: m.bottom / m.h } : null;
+}
+
 function drawLedCard(st, leadMs) {
   const cw = engine.canvas.width, ch = engine.canvas.height;
   if (!st || !(cw > 0 && ch > 0)) { if (ledCardKey) { ledCardKey = ''; engine.setOverlay(null); } return; }
-  const W = 384, H = Math.max(2, Math.round(W * ch / cw)), portrait = H > W;
+  const W = 384, H = Math.max(2, Math.round(W * ch / cw));
   const total = Math.ceil(Math.max(0, st.msLeft) / 1000);
   const text = st.msLeft <= 0 ? 'NOW' : `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
-  const key = `${st.kind}|${text}|${W}x${H}`;
+
+  // the free strip above or below the digits
+  const span = clockSpan() || { top: 0.34, bottom: 0.66 };
+  const pad = 0.025;
+  const above = span.top - 2 * pad, below = 1 - span.bottom - 2 * pad;
+  const wide = W > H;
+  const want = wide ? 0.42 : 0.25;
+  const useTop = above >= below;
+  const room = Math.max(above, below);
+  const hFrac = Math.min(want, room);
+  if (hFrac < 0.09) { if (ledCardKey) { ledCardKey = ''; engine.setOverlay(null); } return; }   // no room that would be legible
+  const yFrac = useTop ? pad + (room - hFrac) / 2 : span.bottom + pad + (room - hFrac) / 2;
+
+  const x = wide ? W * 0.12 : W * 0.05, y = H * yFrac, w = wide ? W * 0.76 : W * 0.9, h = H * hFrac;
+  const key = `${st.kind}|${text}|${W}x${H}|${y.toFixed(0)}|${h.toFixed(0)}`;
   if (key === ledCardKey) return;
   ledCardKey = key;
   ledCard.width = W; ledCard.height = H;
   const c = ledCard.getContext('2d');
   c.clearRect(0, 0, W, H);
   const rise = st.kind === 'sunrise', col = rise ? '#ffd24a' : '#ff7a2e';
-  const x = portrait ? W * 0.05 : W * 0.12, y = H * 0.035, w = portrait ? W * 0.9 : W * 0.76, h = portrait ? H * 0.25 : H * 0.42;
   c.fillStyle = 'rgba(0,0,0,0.9)';
   c.beginPath(); c.roundRect(x, y, w, h, Math.min(w, h) * 0.12); c.fill();
-  // icon box: left of the time on a wide panel, above it on a tall one
-  const ib = portrait ? { x: x, y: y, w: w, h: h * 0.42 } : { x: x, y: y, w: w * 0.3, h: h };
-  const tb = portrait ? { x: x, y: y + h * 0.4, w: w, h: h * 0.52 } : { x: x + w * 0.3, y: y, w: w * 0.7, h: h * 0.9 };
+  // icon on the left of the time when the card is wide, above it when it is not
+  const sideBySide = w / h > 2.2;
+  const ib = sideBySide ? { x: x, y: y, w: w * 0.3, h: h } : { x: x, y: y, w: w, h: h * 0.42 };
+  const tb = sideBySide ? { x: x + w * 0.3, y: y, w: w * 0.7, h: h * 0.9 } : { x: x, y: y + h * 0.4, w: w, h: h * 0.52 };
   const cx = ib.x + ib.w / 2, r = Math.min(ib.w, ib.h) * 0.3, hy = ib.y + ib.h * 0.72;
   c.fillStyle = col; c.beginPath(); c.arc(cx, hy, r, Math.PI, 0); c.fill();          // half sun on the horizon
   c.strokeStyle = '#fff'; c.lineWidth = Math.max(2, r * 0.18); c.lineCap = 'round';
@@ -610,6 +651,7 @@ function init() {
   bindRange('glassFrost', 'glassFrost', () => glass.apply(), 'glassFrostOut');
   bindRange('glassGlow', 'glassGlow', () => glass.apply(), 'glassGlowOut');
   bindSelect('glassGlowColor', 'glassGlowColor', () => glass.apply());
+  bindSelect('legibility', 'legibility', () => { glass.apply(); updateClockColor(); });
   bindSelect('screenMode', 'screenMode', () => { glass.apply(); updateClockColor(); updateCountdown(); engine.dirty = true; });
   bindSelect('countdown', 'countdown', updateCountdown);
   bindSelect('countdownLead', 'countdownLead', updateCountdown, parseFloat);

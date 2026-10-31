@@ -94,6 +94,7 @@ export var conf = createPersistentConfig("conf", {
   clockStyle: 'glass',        // glass (liquid glass) | stained | solid
   glassFrost: 0.35,           // 0 clear .. 1 heavily frosted
   clockColor: 'auto',         // solid style only: auto | classic | white
+  legibility: 'auto',         // off | auto (3:1) | high (4.5:1): least brightness contrast between the time and the sky
   glassGlow: 0,               // light from inside the glass, 0..1 (stained glass always glows a little)
   glassGlowColor: 'warm',     // liquid glass: warm | white | cool | follow (the sun / moon light)
   // sun & screen

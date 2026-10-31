@@ -213,6 +213,8 @@ export function initGlass(engine, getBasis) {
       mode: st === 'glass' ? 1 : st === 'stained' ? 2 : led() ? 3 : 0,
       frost: Math.min(1, Math.max(0, +conf.glassFrost)),
       glow: glowAmount(),
+      // each LED pixel averages digit and sky, which halves the contrast, so the panel asks for twice as much
+      contrast: ({ off: 0, auto: 3, high: 4.5 }[conf.legibility] ?? 3) * (led() ? 2 : 1),
       glowCol: glowColor(),
     });
     if (on) { schedule(); updateLight(); }
