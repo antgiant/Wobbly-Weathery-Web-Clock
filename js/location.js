@@ -103,7 +103,7 @@ function initalize() {
   if (!('geolocation' in navigator)) {
     console.log('Geolocation not supported.');
     conf.preciseLocation = false;
-    document.getElementById("preciseLocation").style.display = 'none';
+    (document.getElementById("preciseLocation").closest('.field') || document.getElementById("preciseLocation")).style.display = 'none';
   }
   
   refreshLocation();

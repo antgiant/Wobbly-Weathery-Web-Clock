@@ -93,7 +93,21 @@ export var conf = createPersistentConfig("conf", {
   // clock
   clockStyle: 'glass',        // glass (liquid glass) | stained | solid
   glassFrost: 0.35,           // 0 clear .. 1 heavily frosted
-  clockColor: 'auto'          // solid style only: auto | classic | white
+  clockColor: 'auto',         // solid style only: auto | classic | white
+  glassGlow: 0,               // light from inside the glass, 0..1 (stained glass always glows a little)
+  glassGlowColor: 'warm',     // liquid glass: warm | white | cool | follow (the sun / moon light)
+  // sun & screen
+  followSun: false,           // clock view only: sun rises on the right quarter, sets on the left, tilt never changes
+  countdown: 'off',           // off | both | sunrise | sunset
+  countdownLead: 20,          // minutes before the event the countdown appears
+  screenMode: 'normal',       // normal | led (64x32 LED panel simulator)
+  // VR sensor overrides, for devices whose sensor frame is not what the spec says
+  sensorRotation: 'auto',     // auto | ignore
+  compassRef: 'auto',         // auto | cam | top (iOS compass heading reference)
+  vrDebug: false,
+  // settings panel
+  settingsTab: 'clock',
+  settingsLevel: 'simple'     // simple | advanced
 });
 
 //Set clock size

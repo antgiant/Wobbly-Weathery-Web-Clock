@@ -10,6 +10,7 @@ import Virgo from '../virgo/virgo.js';
 import { initGlass } from './glass.js';
 import { fetchBiome, fallbackBiome, classify, seasonOf, paletteFor } from './biome.js';
 import { generatePlants } from './plants.js';
+import { sunEvents, countdownState, followHeading } from './sunpath.js';
 
 const canvas = document.getElementById('sky');
 const statusEls = {
@@ -24,6 +25,7 @@ let controls = null;
 let glass = null;
 const state = { seaText: '', liveWeather: null, elevation: null, dem: null, lpBortle: 3, biome: null };
 const ov = {};                      // deep-link overrides (never written to localStorage)
+const DEG = Math.PI / 180;
 const num = (v, d) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : d);
 // unknown time zone (e.g. plain "UTC"): guess a longitude from the UTC offset, 15 degrees per hour
 const DEFAULT_LAT = 40;
@@ -114,6 +116,20 @@ function pitchForHorizonAtClockBottom(fovDeg) {
   return Math.max(-10, Math.min(80, p));
 }
 
+// Sunrise and sunset times are searched for once per bracket (between two events) rather than on every tick.
+const evCache = { key: '', at: 0, ev: null };
+function getSunEvents(date) {
+  const lat = num(ov.lat ?? conf.location_latitude, DEFAULT_LAT), lon = num(ov.lon ?? conf.location_longitude, defaultLon());
+  const elev = engine?.s.elevM || 0, key = `${lat.toFixed(3)},${lon.toFixed(3)},${Math.round(elev)}`;
+  const t = +date, c = evCache.ev;
+  const fresh = c && evCache.key === key && Math.abs(t - evCache.at) < 12 * 3600e3
+    && t >= Math.max(+(c.prevRise || 0), +(c.prevSet || 0)) && t < Math.min(+(c.nextRise || Infinity), +(c.nextSet || Infinity));
+  if (!fresh) { evCache.ev = sunEvents(date, lat, lon, elev); evCache.key = key; evCache.at = t; }
+  return { ev: evCache.ev, lat, lon, elev };
+}
+
+const followActive = () => !!conf.followSun && controls?.mode === 'fixed' && ov.az == null;
+
 function applyView() {
   if (!controls) return;
   const fov = num(conf.viewFov, 80);
@@ -122,7 +138,17 @@ function applyView() {
   if (auto) pitch = pitchForHorizonAtClockBottom(fov) ?? pitch;
   const slider = document.getElementById('viewPitch');
   if (slider) { slider.disabled = !!(ov.pitch == null && conf.viewPitchAuto); if (auto) { slider.value = Math.round(pitch); const o = document.getElementById('viewPitchOut'); if (o) o.textContent = Math.round(pitch); } }
-  controls.setView({ heading: num(ov.az ?? conf.viewHeading, 180), pitch, fov });
+  let heading = num(ov.az ?? conf.viewHeading, 180);
+  const follow = followActive();
+  if (follow) {
+    // never touches the pitch: only the heading follows the sun, so the sun stays put up and down
+    const d = now(), { ev, lat, lon, elev } = getSunEvents(d);
+    const t = Math.tan(fov * Math.PI / 360), aspect = window.innerWidth / Math.max(1, window.innerHeight);
+    heading = followHeading(d, lat, lon, elev, { pitch, tanX: aspect >= 1 ? t : t * aspect }, ev);
+  }
+  const hs = document.getElementById('viewHeading');
+  if (hs) { hs.disabled = follow; if (follow) { hs.value = Math.round(heading); const o = document.getElementById('viewHeadingOut'); if (o) o.textContent = Math.round(heading); } }
+  controls.setView({ heading, pitch, fov });
 }
 
 function applyWeather() {
@@ -316,8 +342,8 @@ let lastLum = 0.3;
 async function updateClockColor() {
   const root = document.documentElement;
   const mode = conf.clockColor;
-  if (mode === 'classic') { root.style.setProperty('--clock-stroke', 'blue'); return; }
-  if (mode === 'white') { root.style.setProperty('--clock-stroke', '#f4f7ff'); return; }
+  if (mode === 'classic') { root.style.setProperty('--clock-stroke', 'blue'); glass?.setInk([0.05, 0.1, 1]); return; }
+  if (mode === 'white') { root.style.setProperty('--clock-stroke', '#f4f7ff'); glass?.setInk([0.96, 0.97, 1]); return; }
   if (document.hidden) return;
   const px = await engine?.samplePixels([[0.5, 0.5], [0.25, 0.5], [0.75, 0.5], [0.5, 0.4], [0.5, 0.6]]);
   if (!px) return;
@@ -327,6 +353,7 @@ async function updateClockColor() {
   const dark = lastLum > (root.dataset.ink === 'dark' ? 0.42 : 0.5);
   root.dataset.ink = dark ? 'dark' : 'light';
   root.style.setProperty('--clock-stroke', dark ? '#0a163c' : '#f4f7ff');
+  glass?.setInk(dark ? [0.03, 0.06, 0.18] : [0.96, 0.97, 1]);
 }
 
 async function updateFavicon() {
@@ -361,6 +388,14 @@ function updateHud() {
     ...engine.sky.planets.map(p => ({ name: p.name, dir: p.dir, alt: p.alt, minor: true })),
   ];
   const html = [];
+  const look = controls.lookDir;
+  const m = 26;                                     // keep edge labels this far inside the screen
+  const edge = (x, y, text) => {                    // labels hug the edge they are pinned to instead of sticking out of the screen
+    const side = x <= m ? 'l' : x >= w - m ? 'r' : 'c';
+    const px = side === 'l' ? 8 : side === 'r' ? w - 8 : x;
+    return `<span class="lbl edge ${side}" style="left:${px.toFixed(0)}px;top:${y.toFixed(0)}px">${text}</span>`;
+  };
+  const fovV = 2 * Math.atan(tan[1]) / DEG;
   for (const it of items) {
     if (it.minor && it.alt < 0) continue;
     const d = it.dir;
@@ -368,21 +403,34 @@ function updateHud() {
     const cy = d[0] * b.up[0] + d[1] * b.up[1] + d[2] * b.up[2];
     const cz = d[0] * b.forward[0] + d[1] * b.forward[1] + d[2] * b.forward[2];
     const below = it.alt < 0 ? ' (below horizon)' : '';
+    const cls = it.minor ? ' minor' : '';
     if (cz > 0.05) {
       const x = (cx / (cz * tan[0]) * 0.5 + 0.5) * w, y = (0.5 - cy / (cz * tan[1]) * 0.5) * h;
       if (x > -20 && x < w + 20 && y > -20 && y < h + 20) {
-        html.push(`<span class="lbl${it.minor ? ' minor' : ''}" style="left:${x.toFixed(0)}px;top:${(y + 14).toFixed(0)}px">${it.name}${below}</span>`);
+        html.push(`<span class="lbl${cls}" style="left:${x.toFixed(0)}px;top:${(y + 14).toFixed(0)}px">${it.name}${below}</span>`);
         continue;
       }
+      if (!it.minor) {                              // in front but off screen: pin it to the nearest edge, where it really is
+        const ex = Math.min(w - m, Math.max(m, x)), ey = Math.min(h - m, Math.max(m, y));
+        const arrow = x < 0 ? '◀ ' : x > w ? '' : '';
+        const tail = x > w ? ' ▶' : '';
+        const vert = y < 0 ? '▲ ' : y > h ? '▼ ' : '';
+        html.push(edge(ex, ey, `${arrow}${vert}${it.name}${below} ${Math.round(it.alt)}°${tail}`));
+      }
+      continue;
     }
-    if (!it.minor) {                     // off-screen: arrow at the screen edge pointing the way
-      const ang = Math.atan2(-cy, cx) ;
-      const r = Math.min(w, h) * 0.42;
-      const x = w / 2 + Math.cos(ang) * r, y = h / 2 + Math.sin(ang) * r;
-      html.push(`<span class="lbl edge" style="left:${x.toFixed(0)}px;top:${y.toFixed(0)}px">${it.name}${below} ${Math.round(it.alt)}°</span>`);
+    if (!it.minor) {
+      // Behind the camera. Projecting it would put an object that is below the horizon near the top of the
+      // screen whenever the view is tilted up, so place it by what it really is: which way to turn
+      // (left / right) and how far above or below where you are looking (altitude difference).
+      const right = cx >= 0;
+      const dv = it.alt - look.alt;
+      const f = Math.max(-1, Math.min(1, dv / Math.max(fovV, 30)));
+      const ey = h / 2 - f * (h / 2 - m);
+      const ex = right ? w - m : m;
+      html.push(edge(ex, ey, `${right ? '' : '◀ '}${it.name}${below} ${Math.round(it.alt)}°${right ? ' ▶' : ''}`));
     }
   }
-  const look = controls.lookDir;
   const card = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(look.az / 45) % 8];
   html.push(`<div class="readout">${card} ${Math.round(look.az)}° · ${look.alt >= 0 ? '+' : ''}${Math.round(look.alt)}°</div>`);
   hud.innerHTML = html.join('');
@@ -408,6 +456,92 @@ function toast(msg) {
   toastEl.textContent = msg; toastEl.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { toastEl.hidden = true; }, 4000);
+}
+
+// ------------------------------------------------------ countdown / readout --
+// On the LED panel the countdown cannot be a page overlay, so it is painted into the picture before the
+// pixels are taken: a sun on the horizon with an arrow (up = sunrise, down = sunset), the time left in big
+// digits, and a bar along the bottom that runs down to nothing. Black card behind it so it reads on any sky.
+const ledCard = window.__ledCard = document.createElement('canvas');
+let ledCardKey = '';
+function drawLedCard(st, leadMs) {
+  const cw = engine.canvas.width, ch = engine.canvas.height;
+  if (!st || !(cw > 0 && ch > 0)) { if (ledCardKey) { ledCardKey = ''; engine.setOverlay(null); } return; }
+  const W = 384, H = Math.max(2, Math.round(W * ch / cw)), portrait = H > W;
+  const total = Math.ceil(Math.max(0, st.msLeft) / 1000);
+  const text = st.msLeft <= 0 ? 'NOW' : `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  const key = `${st.kind}|${text}|${W}x${H}`;
+  if (key === ledCardKey) return;
+  ledCardKey = key;
+  ledCard.width = W; ledCard.height = H;
+  const c = ledCard.getContext('2d');
+  c.clearRect(0, 0, W, H);
+  const rise = st.kind === 'sunrise', col = rise ? '#ffd24a' : '#ff7a2e';
+  const x = portrait ? W * 0.05 : W * 0.12, y = H * 0.035, w = portrait ? W * 0.9 : W * 0.76, h = portrait ? H * 0.25 : H * 0.42;
+  c.fillStyle = 'rgba(0,0,0,0.9)';
+  c.beginPath(); c.roundRect(x, y, w, h, Math.min(w, h) * 0.12); c.fill();
+  // icon box: left of the time on a wide panel, above it on a tall one
+  const ib = portrait ? { x: x, y: y, w: w, h: h * 0.42 } : { x: x, y: y, w: w * 0.3, h: h };
+  const tb = portrait ? { x: x, y: y + h * 0.4, w: w, h: h * 0.52 } : { x: x + w * 0.3, y: y, w: w * 0.7, h: h * 0.9 };
+  const cx = ib.x + ib.w / 2, r = Math.min(ib.w, ib.h) * 0.3, hy = ib.y + ib.h * 0.72;
+  c.fillStyle = col; c.beginPath(); c.arc(cx, hy, r, Math.PI, 0); c.fill();          // half sun on the horizon
+  c.strokeStyle = '#fff'; c.lineWidth = Math.max(2, r * 0.18); c.lineCap = 'round';
+  c.beginPath(); c.moveTo(cx - r * 1.6, hy); c.lineTo(cx + r * 1.6, hy); c.stroke();  // horizon
+  const ay = hy - r * 1.55, d = rise ? -1 : 1;                                       // arrow above it
+  c.fillStyle = '#fff'; c.beginPath();
+  c.moveTo(cx, ay + d * r * 0.55); c.lineTo(cx - r * 0.5, ay - d * r * 0.35); c.lineTo(cx + r * 0.5, ay - d * r * 0.35); c.closePath(); c.fill();
+  // time, as large as the box allows
+  let fs = tb.h;
+  c.font = `800 ${fs}px ui-monospace, Menlo, Consolas, monospace`;
+  const tw = c.measureText(text).width; if (tw > tb.w * 0.94) fs *= tb.w * 0.94 / tw;
+  c.font = `800 ${fs}px ui-monospace, Menlo, Consolas, monospace`;
+  c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.fillText(text, tb.x + tb.w / 2, tb.y + tb.h / 2 + fs * 0.04);
+  // remaining time as a bar
+  const frac = Math.max(0, Math.min(1, st.msLeft / leadMs));
+  c.fillStyle = col; c.fillRect(x + w * 0.06, y + h - h * 0.08, (w * 0.88) * frac, h * 0.045);
+  engine.setOverlay(ledCard);
+}
+
+function updateCountdown() {
+  const el = document.getElementById('sunCountdown');
+  if (!el || !engine) return;
+  const mode = conf.countdown, led = conf.screenMode === 'led';
+  if (!mode || mode === 'off') { el.hidden = true; if (led) drawLedCard(null); return; }
+  const d = now();
+  const lead = num(conf.countdownLead, 20);
+  const st = countdownState(getSunEvents(d).ev, +d, mode, lead);
+  if (led) { el.hidden = true; drawLedCard(st, lead * 60000); return; }
+  if (ledCardKey) drawLedCard(null);
+  if (!st) { el.hidden = true; return; }
+  const rise = st.kind === 'sunrise', name = rise ? 'Sunrise' : 'Sunset';
+  const total = Math.ceil(Math.max(0, st.msLeft) / 1000);
+  const mm = String(Math.floor(total / 60)).padStart(2, '0'), ss = String(total % 60).padStart(2, '0');
+  const html = st.msLeft <= 0
+    ? `<span class="icon" aria-hidden="true">☀</span><span class="what">${name}</span>`
+    : `<span class="icon" aria-hidden="true">${rise ? '☀↑' : '☀↓'}</span><span class="what">${name} in</span><span class="time">${mm}:${ss}</span>`;
+  if (el.dataset.html !== html) { el.dataset.html = html; el.innerHTML = html; }
+  el.dataset.kind = st.kind;
+  el.hidden = false;
+}
+
+// Raw sensor numbers, for working out what a device does (Settings -> View -> Motion sensor fixes).
+function updateVrReadout() {
+  let el = document.getElementById('vrReadout');
+  if (!conf.vrDebug) { if (el) el.hidden = true; return; }
+  if (!el) { el = document.createElement('pre'); el.id = 'vrReadout'; document.body.appendChild(el); }
+  const d = controls?.debug;
+  const f = (v) => (typeof v === 'number' ? v.toFixed(1) : '-');
+  el.hidden = false;
+  el.textContent = d
+    ? `alpha ${f(d.a)}  beta ${f(d.b)}  gamma ${f(d.g)}\nscreen angle ${d.screenAngle}${controls.ignoreScreenAngle ? ' (ignored)' : ''}  absolute ${d.abs}\ncompass ${f(d.compass)}  offset ${f(d.off)}  ref ${d.mode}${conf.compassRef === 'auto' ? ' (auto)' : ''}\nview ${f(controls.lookDir.az)}  ${f(controls.lookDir.alt)}`
+    : 'no sensor readings yet (VR look-around must be on)';
+}
+
+function applySensorFixes() {
+  if (!controls) return;
+  controls.ignoreScreenAngle = conf.sensorRotation === 'ignore';
+  controls.compass.force = conf.compassRef === 'cam' || conf.compassRef === 'top' ? conf.compassRef : 'auto';
 }
 
 // ------------------------------------------------------------------ init --
@@ -444,7 +578,9 @@ function init() {
   // periodic UI-facing work, decoupled from the render loop
   setInterval(updateClockColor, 3000);
   setInterval(updateFavicon, 60000);
-  setInterval(updateHud, 250);
+  setInterval(() => { updateHud(); updateVrReadout(); }, 250);
+  setInterval(updateCountdown, 500);
+  setInterval(() => { if (followActive()) applyView(); }, 1000);     // the sun moves 15 degrees an hour
   setTimeout(() => { updateClockColor(); updateFavicon(); }, 1200);
 
   // ---- wire settings controls ----
@@ -472,6 +608,18 @@ function init() {
   bindSelect('clockColor', 'clockColor', updateClockColor);
   bindSelect('clockStyle', 'clockStyle', () => { glass.apply(); updateClockColor(); });
   bindRange('glassFrost', 'glassFrost', () => glass.apply(), 'glassFrostOut');
+  bindRange('glassGlow', 'glassGlow', () => glass.apply(), 'glassGlowOut');
+  bindSelect('glassGlowColor', 'glassGlowColor', () => glass.apply());
+  bindSelect('screenMode', 'screenMode', () => { glass.apply(); updateClockColor(); updateCountdown(); engine.dirty = true; });
+  bindSelect('countdown', 'countdown', updateCountdown);
+  bindSelect('countdownLead', 'countdownLead', updateCountdown, parseFloat);
+  bindSelect('sensorRotation', 'sensorRotation', applySensorFixes);
+  bindSelect('compassRef', 'compassRef', applySensorFixes);
+  applySensorFixes();
+  $('vrDebug').checked = !!conf.vrDebug;
+  $('vrDebug').addEventListener('change', (e) => { conf.vrDebug = e.target.checked; updateVrReadout(); });
+  $('followSun').checked = !!conf.followSun;
+  $('followSun').addEventListener('change', (e) => { conf.followSun = e.target.checked; applyView(); });
   bindRange('nightBrightness', 'nightBrightness', applyQuality, 'nightBrightnessOut');
   bindRange('viewHeading', 'viewHeading', applyView, 'viewHeadingOut');
   bindRange('viewPitch', 'viewPitch', applyView, 'viewPitchOut');

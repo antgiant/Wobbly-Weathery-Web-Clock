@@ -15,7 +15,7 @@ import {
   VERT_FULLSCREEN, FRAG_TRANSMITTANCE, FRAG_MULTISCATTER, FRAG_SKYVIEW,
 } from './glsl-atmosphere.js';
 import {
-  FRAG_NOISE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, FRAG_BLIT, FRAG_SCENE,
+  FRAG_NOISE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, FRAG_BLIT, FRAG_LED, FRAG_SCENE,
 } from './glsl-scene.js';
 import { VERT_PLANTS, FRAG_PLANTS } from './glsl-plants.js';
 import { computeSky, DEG } from './astro.js';
@@ -141,6 +141,7 @@ export class SkyEngine {
     this.pAdapt = this._program(VERT_FULLSCREEN, FRAG_ADAPT);
     this.pScene = this._program(VERT_FULLSCREEN, FRAG_SCENE);
     this.pBlit = this._program(VERT_FULLSCREEN, FRAG_BLIT);
+    this.pLed = this._program(VERT_FULLSCREEN, FRAG_LED);
     this.pStars = this._program(VERT_STARS, FRAG_STARS, { aStar: 0, aBV: 1 });
     this.pPlants = this._program(VERT_PLANTS, FRAG_PLANTS, { aInst: 0, aSeed: 1 });
 
@@ -210,7 +211,14 @@ export class SkyEngine {
     gl.bindVertexArray(null);
 
     this.sceneTarget = null;
-    this.glass = { mode: 0, frost: 0.35, stroke: 30, light: [-0.5, 0.8, 0.6], lightCol: [1, 1, 1], rect: [0, 0, 1, 1], maskW: 1, maskH: 1, hasMask: false };
+    this.glass = { mode: 0, frost: 0.35, glow: 0, glowCol: [1, 0.85, 0.6], led: { on: false, cols: 64, rows: 32, gap: 0.16, brightness: 1 }, overlay: false, ink: [0.96, 0.97, 1], stroke: 30, light: [-0.5, 0.8, 0.6], lightCol: [1, 1, 1], rect: [0, 0, 1, 1], maskW: 1, maskH: 1, hasMask: false };
+    this.overlayTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, this.overlayTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     this.maskTex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.maskTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
@@ -588,7 +596,9 @@ export class SkyEngine {
       if (scene) gl.generateMipmap(gl.TEXTURE_2D);          // frosting blurs through the mip chain
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
     } else gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const led = g.led.on;
+    if (led) this._ensureComp(cw, ch);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, led ? this.compTarget.fbo : null);
     gl.viewport(0, 0, cw, ch);
     this._use(this.pBlit);
     this._1i('uTex', 0); this._bind(0, T.tex);
@@ -600,8 +610,50 @@ export class SkyEngine {
     this._2f('uRes', cw, ch);
     this._3f('uLight', g.light);
     this._3f('uLightCol', g.lightCol);
+    this._4f('uGlow', g.glow, 0, 0, 0);
+    this._3f('uGlowCol', g.glowCol);
+    this._3f('uInk', g.ink);
+    this._1i('uOverlay', 2); this._bind(2, this.overlayTex);
+    this._1f('uOverlayOn', led && g.overlay ? 1 : 0);
     gl.bindVertexArray(this.vaoEmpty);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if (led) this._ledPass(cw, ch);
+  }
+
+  _ensureComp(w, h) {
+    const gl = this.gl;
+    if (this.compTarget && this.compTarget.w === w && this.compTarget.h === h) return;
+    if (this.compTarget) { gl.deleteTexture(this.compTarget.tex); gl.deleteFramebuffer(this.compTarget.fbo); }
+    this.compTarget = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);
+  }
+
+  /** The finished picture -> a grid of square pixels with black lines between them (64x32, or 32x64 when upright). */
+  _ledPass(cw, ch) {
+    const gl = this.gl, L = this.glass.led, C = this.compTarget;
+    gl.bindTexture(gl.TEXTURE_2D, C.tex);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, cw, ch);
+    this._use(this.pLed);
+    this._1i('uComp', 0); this._bind(0, C.tex);
+    this._2f('uRes', cw, ch);
+    const portrait = ch > cw;
+    this._4f('uLed', portrait ? L.rows : L.cols, portrait ? L.cols : L.rows, L.gap, L.brightness);
+    gl.bindVertexArray(this.vaoEmpty);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  /** Picture drawn over the scene before the LED pixels are taken (the countdown card); null removes it. */
+  setOverlay(canvas) {
+    const gl = this.gl;
+    if (canvas) {
+      gl.bindTexture(gl.TEXTURE_2D, this.overlayTex);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    }
+    this.glass.overlay = !!canvas;
+    this.redrawGlass();
   }
 
   /** Clock glyph mask (alpha channel) covering rect = [x, y, w, h] in canvas uv, y down. */

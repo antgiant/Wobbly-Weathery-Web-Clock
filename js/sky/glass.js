@@ -71,8 +71,11 @@ export function initGlass(engine, getBasis) {
   const ctx = mask.getContext('2d');
   let raf = 0;
 
+  // The LED panel is the normal picture, glass and all, averaged into pixels. With the solid style the
+  // shader has to draw the digits itself (flat ink), because the SVG cannot be pixelated.
   const style = () => conf.clockStyle || 'solid';
-  const active = () => style() === 'glass' || style() === 'stained';
+  const led = () => conf.screenMode === 'led';
+  const active = () => style() !== 'solid' || led();
 
   // Positions are measured against the canvas's own rectangle on every redraw, so scrolling,
   // zooming or a changing mobile toolbar can never leave the glass at a stale position.
@@ -172,6 +175,7 @@ export function initGlass(engine, getBasis) {
       strength = 0.15 + 0.35 * sky.moon.fraction;
       col = [0.80, 0.88, 1.0];
     }
+    lightColor = col;
     let lx = -0.5, ly = 0.8;
     if (body) {
       const p = proj(body);
@@ -180,16 +184,42 @@ export function initGlass(engine, getBasis) {
       else { lx = -0.4; ly = 0.9; }                                  // light is straight ahead / behind
     }
     const n = Math.hypot(lx, ly) || 1;
-    engine.setGlass({ light: [lx / n, ly / n, strength], lightCol: col });
+    engine.setGlass({ light: [lx / n, ly / n, strength], lightCol: col, glowCol: glowColor() });
   }
+
+  // colour of the light inside liquid glass
+  let lightColor = [1, 1, 1];
+  const GLOWS = { warm: [1.0, 0.82, 0.55], white: [1, 1, 1], cool: [0.55, 0.78, 1.0] };
+  function glowColor() {
+    if (conf.glassGlowColor === 'follow') {                          // the colour of the sun or moon light, kept from going grey
+      const m = Math.max(...lightColor);
+      return lightColor.map(v => Math.min(1, v / m));
+    }
+    return GLOWS[conf.glassGlowColor] || GLOWS.warm;
+  }
+  // stained glass always glows a little, the slider only makes it brighter; liquid glass is unlit at 0
+  const glowAmount = () => {
+    const g = Math.min(1, Math.max(0, +conf.glassGlow || 0));
+    return style() === 'stained' ? 0.35 + 0.65 * g : style() === 'glass' ? g : 0;
+  };
 
   function apply() {
     const st = style();
-    const on = st === 'glass' || st === 'stained';
-    document.body.dataset.clockstyle = on ? st : 'solid';
-    engine.setGlass({ mode: st === 'glass' ? 1 : st === 'stained' ? 2 : 0, frost: Math.min(1, Math.max(0, +conf.glassFrost)) });
+    const on = active();
+    document.body.dataset.clockstyle = on && st === 'solid' ? 'led' : st;
+    document.body.dataset.screen = led() ? 'led' : 'normal';
+    engine.glass.led.on = led();
+    engine.setGlass({
+      mode: st === 'glass' ? 1 : st === 'stained' ? 2 : led() ? 3 : 0,
+      frost: Math.min(1, Math.max(0, +conf.glassFrost)),
+      glow: glowAmount(),
+      glowCol: glowColor(),
+    });
     if (on) { schedule(); updateLight(); }
   }
+
+  /** Digit colour for the LED panel, from the same choice that colours the solid ink. */
+  function setInk(rgb) { engine.setGlass({ ink: rgb }); }
 
   window.addEventListener('clockchange', schedule);
   window.addEventListener('clocklayout', schedule);
@@ -204,5 +234,5 @@ export function initGlass(engine, getBasis) {
   setInterval(() => { updateLight(); if (active()) schedule(); }, 1000);    // belt and braces: re-measure once a second
   engine.onFrame(() => { if (active() && !engine._lightInit) { engine._lightInit = true; updateLight(); } });
   apply();
-  return { apply, updateLight };
+  return { apply, updateLight, setInk };
 }

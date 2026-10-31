@@ -7,6 +7,8 @@
 //
 // World frame matches the renderer: x = East, y = Up, z = North.
 
+import { basisFromOrientation, CompassCalibrator, screenAngleNow } from './orientation.js';
+
 const DEG = Math.PI / 180;
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 
@@ -22,26 +24,6 @@ function yawAboutUp(v, ang) {
   return [v[0] * c + v[2] * s, v[1], -v[0] * s + v[2] * c];
 }
 
-/**
- * W3C DeviceOrientation (alpha, beta, gamma, degrees) + screen angle ->
- * camera basis in the world frame. Back camera looks out of the screen's back.
- */
-export function basisFromOrientation(alphaDeg, betaDeg, gammaDeg, screenAngleDeg) {
-  const a = alphaDeg * DEG, b = betaDeg * DEG, g = gammaDeg * DEG;
-  const ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b), cg = Math.cos(g), sg = Math.sin(g);
-  // R = Rz(alpha) * Rx(beta) * Ry(gamma); columns are the device axes in the Earth frame (E, N, U)
-  const X = [ca * cg - sa * sb * sg, sa * cg + ca * sb * sg, -cb * sg];
-  const Y = [-sa * cb, ca * cb, sb];
-  const Z = [ca * sg + sa * sb * cg, sa * sg - ca * sb * cg, cb * cg];
-  const enuToWorld = (v) => [v[0], v[2], v[1]];
-  let right = enuToWorld(X), up = enuToWorld(Y);
-  const fwd = enuToWorld(scale(Z, -1));
-  const th = screenAngleDeg * DEG, c = Math.cos(th), s = Math.sin(th);
-  const r2 = add(scale(right, c), scale(up, -s));
-  const u2 = add(scale(right, s), scale(up, c));
-  return { right: r2, up: u2, forward: fwd };
-}
-
 export class Controls {
   /**
    * @param {import('./engine.js').SkyEngine} engine
@@ -53,8 +35,9 @@ export class Controls {
     this.mode = 'fixed';
     this.heading = 180; this.pitch = 12; this.fov = 80;
     this.yawOffset = 0;                 // look mode: user calibration, radians
-    this.compassOffset = 0;             // iOS relative-alpha -> absolute, degrees
-    this.haveCompass = false;
+    this.compass = new CompassCalibrator();   // iOS relative-alpha -> absolute
+    this.debug = null;                  // last sensor reading, for ?vrdebug
+    this.ignoreScreenAngle = false;     // Settings override for browsers that already rotate the sensor frame
     this.sensor = null;                 // smoothed basis
     this.pointers = new Map();
     this.pinch0 = 0; this.fov0 = 0;
@@ -187,25 +170,17 @@ export class Controls {
     if (e.alpha == null || e.beta == null || e.gamma == null) return;
     if (!absoluteEvent && this._gotAbsolute) return;          // prefer the absolute stream when present
     this._firstCb?.(); this._firstCb = null;
-    const screenAngle = (screen.orientation && screen.orientation.angle) ?? window.orientation ?? 0;
+    const screenAngle = this.ignoreScreenAngle ? 0 : screenAngleNow();
 
-    let alpha = e.alpha;
+    let alpha = e.alpha, off = null;
     const absolute = absoluteEvent || e.absolute === true;
-    if (!absolute && typeof e.webkitCompassHeading === 'number') {
+    if (!absolute && typeof e.webkitCompassHeading === 'number' && e.webkitCompassHeading >= 0) {
       // iOS: alpha is relative to wherever the page started; calibrate it against the compass
-      const probe = basisFromOrientation(alpha, e.beta, e.gamma, screenAngle);
-      const f = probe.forward;
-      const flat = Math.abs(f[1]) > 0.85;                     // looking steeply up/down: compass ill-defined
-      if (!flat) {
-        const camHeading = (Math.atan2(f[0], f[2]) / DEG + 360) % 360;
-        let diff = e.webkitCompassHeading - camHeading;       // what to add to the relative heading
-        diff = ((diff + 540) % 360) - 180;
-        this.compassOffset = this.haveCompass ? this.compassOffset + diff * 0.08 : diff;
-        this.haveCompass = true;
-      }
-      alpha = alpha - this.compassOffset;                     // alpha grows counter-clockwise; heading clockwise
+      off = this.compass.update(e.alpha, e.beta, e.gamma, e.webkitCompassHeading, screenAngle);
+      if (off != null) alpha = e.alpha - off;                  // alpha grows counter-clockwise; heading clockwise
     }
     const b = basisFromOrientation(alpha, e.beta, e.gamma, screenAngle);
+    this.debug = { a: e.alpha, b: e.beta, g: e.gamma, screenAngle, abs: absolute, compass: e.webkitCompassHeading, off, mode: this.compass.mode(screenAngle) };
 
     // light nlerp smoothing: tames sensor jitter without adding perceptible lag
     if (!this.sensor) this.sensor = b;
@@ -230,4 +205,4 @@ export class Controls {
   }
 }
 
-export { yawAboutUp };
+export { yawAboutUp, basisFromOrientation };

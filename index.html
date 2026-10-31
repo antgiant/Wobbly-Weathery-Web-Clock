@@ -13,6 +13,7 @@
 <body>
   <canvas id="sky" aria-hidden="true"></canvas>
   <div id="hud" hidden aria-hidden="true"></div>
+  <div id="sunCountdown" role="timer" aria-live="off" hidden></div>
   <div id="toast" role="status" aria-live="polite" hidden></div>
   <button id="wakeBanner" type="button" hidden>Tap to keep the screen on</button>
   <div id="clock">
@@ -78,188 +79,331 @@
     <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h18a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-5l-2-2.5h-4L8 16H3a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="7.5" cy="12" r="0.6"/><circle cx="16.5" cy="12" r="0.6"/></svg>
   </button>
 
-  <!-- LIGHTBOX / MODAL -->
-  <div id="settingsModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" hidden>
+  <!-- SETTINGS: a side drawer on wide screens, a bottom sheet on phones -->
+  <div id="settingsModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" data-level="simple" hidden>
     <div class="modal__backdrop" data-close="true"></div>
-    
+
     <div class="modal__content" role="document">
+      <div class="sheet-handle" aria-hidden="true"></div>
       <header class="modal__header">
         <h2 id="settingsTitle">Settings</h2>
+        <div class="seg" role="group" aria-label="How many settings to show">
+          <button type="button" class="seg__btn" data-level="simple" aria-pressed="true">Simple</button>
+          <button type="button" class="seg__btn" data-level="advanced" aria-pressed="false">Advanced</button>
+        </div>
         <button type="button" class="modal__close" aria-label="Close settings" data-close="true">×</button>
       </header>
-      
+
+      <nav class="tabs" role="tablist" aria-label="Settings sections">
+        <button type="button" class="tab" role="tab" id="tab-clock" aria-controls="panel-clock" aria-selected="true" data-tab="clock">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>Clock</span>
+        </button>
+        <button type="button" class="tab" role="tab" id="tab-scene" aria-controls="panel-scene" aria-selected="false" data-tab="scene" tabindex="-1">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18a4 4 0 0 1-.5-7.97A5.5 5.5 0 0 1 17 8.5a4.75 4.75 0 0 1 0 9.5z"/></svg><span>Scene</span>
+        </button>
+        <button type="button" class="tab" role="tab" id="tab-view" aria-controls="panel-view" aria-selected="false" data-tab="view" tabindex="-1">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><span>View</span>
+        </button>
+        <button type="button" class="tab" role="tab" id="tab-display" aria-controls="panel-display" aria-selected="false" data-tab="display" tabindex="-1">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg><span>Display</span>
+        </button>
+        <button type="button" class="tab" role="tab" id="tab-place" aria-controls="panel-place" aria-selected="false" data-tab="place" tabindex="-1">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s7-6.2 7-11.5a7 7 0 0 0-14 0C5 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg><span>Place &amp; time</span>
+        </button>
+      </nav>
+
       <div class="modal__body">
-        <fieldset>
-          <legend>Clock</legend>
-          <label for="easing">Easing</label>
-          <select id="easing">
-          </select>
-          <br>
-          <label>
-            <input type="checkbox" id="twentyFourHourClock" >
-            Use 24 Hour Time
-          </label>
-          <br>
-          <label>
-            <input type="checkbox" id="hideSeconds">
-            Hide Seconds
-          </label>
-          <br>
-          <label for="clockStyle">Style</label>
-          <select id="clockStyle">
-            <option value="glass">Liquid glass</option>
-            <option value="stained">Stained glass</option>
-            <option value="solid">Solid ink</option>
-          </select>
-          <br>
-          <label for="glassFrost">Frosting <output id="glassFrostOut"></output> (glass styles)</label>
-          <input type="range" id="glassFrost" min="0" max="1" step="0.01">
-          <br>
-          <label for="clockColor">Ink colour (solid style)</label>
-          <select id="clockColor">
-            <option value="auto">Automatic (readable on any sky)</option>
-            <option value="classic">Classic blue</option>
-            <option value="white">White</option>
-          </select>
-        </fieldset>
 
-        <fieldset>
-          <legend>Sky</legend>
-          <label for="quality">Quality</label>
-          <select id="quality">
-            <option value="auto">Automatic (adapts to your device)</option>
-            <option value="low">Low (battery saver)</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-          </select><br>
-          <label for="bodySize">Sun &amp; moon size</label>
-          <select id="bodySize">
-            <option value="1">Realistic</option>
-            <option value="2">Enhanced</option>
-            <option value="3">Large</option>
-          </select><br>
-          <label for="nightBrightness">Night brightness <output id="nightBrightnessOut"></output></label>
-          <input type="range" id="nightBrightness" min="0.5" max="4" step="0.1"><br>
-          <label for="lightPollution">Light pollution</label>
-          <select id="lightPollution">
-            <option value="auto">Estimate from time zone</option>
-            <option value="off">None</option>
-            <option value="1">Bortle 1 (pristine)</option>
-            <option value="2">Bortle 2</option>
-            <option value="3">Bortle 3 (rural)</option>
-            <option value="4">Bortle 4</option>
-            <option value="5">Bortle 5 (suburban)</option>
-            <option value="6">Bortle 6</option>
-            <option value="7">Bortle 7 (urban)</option>
-            <option value="8">Bortle 8 (city)</option>
-            <option value="9">Bortle 9 (inner city)</option>
-          </select><br>
-          <label for="cloudMotion">Cloud &amp; water motion</label>
-          <select id="cloudMotion">
-            <option value="1">Real wind speed</option>
-            <option value="0.25">Slow</option>
-            <option value="0">Still (saves power)</option>
-          </select>
-          <p class="hint" id="skyStatus"></p>
-        </fieldset>
+        <!-- ================= CLOCK ================= -->
+        <section class="panel" role="tabpanel" id="panel-clock" aria-labelledby="tab-clock" data-panel="clock">
+          <div class="group">
+            <h3>The digits</h3>
+            <label class="field toggle"><span class="field__text">24-hour time</span><input type="checkbox" id="twentyFourHourClock"><span class="switch" aria-hidden="true"></span></label>
+            <label class="field toggle"><span class="field__text">Hide seconds</span><input type="checkbox" id="hideSeconds"><span class="switch" aria-hidden="true"></span></label>
+            <div class="field">
+              <label class="field__label" for="clockStyle">Style</label>
+              <select id="clockStyle">
+                <option value="glass">Liquid glass</option>
+                <option value="stained">Stained glass</option>
+                <option value="solid">Solid ink</option>
+              </select>
+            </div>
+          </div>
 
-        <fieldset>
-          <legend>Weather &amp; landscape</legend>
-          <label for="weatherMode">Weather</label>
-          <select id="weatherMode">
-            <option value="live">Live for my location</option>
-            <option value="clear">Clear</option>
-            <option value="partly">Partly cloudy</option>
-            <option value="cloudy">Mostly cloudy</option>
-            <option value="overcast">Overcast</option>
-            <option value="rain">Rain</option>
-            <option value="storm">Thunderstorm</option>
-            <option value="snow">Snow</option>
-            <option value="fog">Fog</option>
-            <option value="haze">Smoky haze</option>
-          </select>
-          <p class="hint" id="weatherStatus"></p>
-          <label for="landscape">Landscape</label>
-          <select id="landscape">
-            <option value="auto">Real terrain around my location</option>
-            <option value="flat">Flat plain</option>
-            <option value="hills">Rolling hills</option>
-            <option value="mountains">Mountains</option>
-            <option value="desert">Desert</option>
-            <option value="ocean">Ocean</option>
-            <option value="city">City</option>
-          </select>
-          <p class="hint" id="terrainStatus"></p>
-          <label><input type="checkbox" id="plants"> Plants that suit this place (grass, trees, cacti...), swaying in the wind</label>
-        </fieldset>
+          <div class="group">
+            <h3>Glass</h3>
+            <div class="field">
+              <label class="field__label" for="glassFrost">Frosting <output id="glassFrostOut"></output></label>
+              <input type="range" id="glassFrost" min="0" max="1" step="0.01">
+            </div>
+            <div class="field">
+              <label class="field__label" for="glassGlow">Light from inside <output id="glassGlowOut"></output></label>
+              <input type="range" id="glassGlow" min="0" max="1" step="0.01">
+              <p class="hint">Makes the glass glow. Liquid glass is unlit at 0; stained glass always glows a little and gets brighter.</p>
+            </div>
+            <div class="field adv">
+              <label class="field__label" for="glassGlowColor">Colour of the light (liquid glass)</label>
+              <select id="glassGlowColor">
+                <option value="warm">Warm white</option>
+                <option value="white">White</option>
+                <option value="cool">Cool blue</option>
+                <option value="follow">Follows the sun or moon</option>
+              </select>
+            </div>
+          </div>
 
-        <fieldset>
-          <legend>View</legend>
-          <label for="viewMode">Mode</label>
-          <select id="viewMode">
-            <option value="fixed">Clock view (fixed)</option>
-            <option value="drag">Look around (drag &amp; pinch)</option>
-            <option value="look">VR look-around (move your phone)</option>
-          </select><br>
-          <label for="viewHeading">Facing <output id="viewHeadingOut"></output>° (0 north, 90 east, 180 south)</label>
-          <input type="range" id="viewHeading" min="0" max="359" step="1"><br>
-          <label><input type="checkbox" id="viewPitchAuto"> Keep the horizon on the clock digits (so the ground always shows through them)</label><br>
-          <label for="horizonInDigits">Ground inside the digits <output id="horizonInDigitsOut"></output> (0 = horizon at the bottom edge)</label>
-          <input type="range" id="horizonInDigits" min="0" max="0.8" step="0.05"><br>
-          <label for="viewPitch">Tilt up <output id="viewPitchOut"></output>°</label>
-          <input type="range" id="viewPitch" min="-10" max="80" step="1"><br>
-          <label for="viewFov">Field of view <output id="viewFovOut"></output>°</label>
-          <input type="range" id="viewFov" min="30" max="110" step="1"><br>
-          <label><input type="checkbox" id="showLabels"> Label the sun, moon and planets</label>
-          <p class="hint">VR mode needs a phone or tablet with motion sensors. Drag to fine-tune the compass direction, pinch to zoom.</p>
-        </fieldset>
+          <div class="group adv">
+            <h3>Motion &amp; ink <span class="badge">Advanced</span></h3>
+            <div class="field">
+              <label class="field__label" for="easing">Easing (how the digits morph)</label>
+              <select id="easing"></select>
+            </div>
+            <div class="field">
+              <label class="field__label" for="clockColor">Ink colour (solid style)</label>
+              <select id="clockColor">
+                <option value="auto">Automatic (readable on any sky)</option>
+                <option value="classic">Classic blue</option>
+                <option value="white">White</option>
+              </select>
+            </div>
+          </div>
+        </section>
 
-        <fieldset>
-          <legend>Display</legend>
-          <label><input type="checkbox" id="keepAwake"> Keep the screen on</label>
-          <p class="hint" id="wakeStatus">Stops the phone dimming and locking while this page is open, handy as a bedside or travel clock. It lasts only while the page is visible, and it uses battery, so plug in if you can.</p>
-        </fieldset>
+        <!-- ================= SCENE ================= -->
+        <section class="panel" role="tabpanel" id="panel-scene" aria-labelledby="tab-scene" data-panel="scene" hidden>
+          <div class="group">
+            <h3>Weather</h3>
+            <div class="field">
+              <label class="field__label" for="weatherMode">Weather</label>
+              <select id="weatherMode">
+                <option value="live">Live for my location</option>
+                <option value="clear">Clear</option>
+                <option value="partly">Partly cloudy</option>
+                <option value="cloudy">Mostly cloudy</option>
+                <option value="overcast">Overcast</option>
+                <option value="rain">Rain</option>
+                <option value="storm">Thunderstorm</option>
+                <option value="snow">Snow</option>
+                <option value="fog">Fog</option>
+                <option value="haze">Smoky haze</option>
+              </select>
+              <p class="hint" id="weatherStatus"></p>
+            </div>
+          </div>
 
-        <fieldset>
-          <legend>Time travel</legend>
-          <label><input type="checkbox" id="simEnabled"> Simulate a different time</label><br>
-          <input type="datetime-local" id="simTime">
-          <label for="simSpeed">Speed</label>
-          <select id="simSpeed">
-            <option value="1">Real time</option>
-            <option value="60">1 minute / second</option>
-            <option value="600">10 minutes / second</option>
-            <option value="3600">1 hour / second</option>
-          </select>
-          <button id="simNow" type="button">Back to now</button>
-        </fieldset>
+          <div class="group">
+            <h3>Landscape</h3>
+            <div class="field">
+              <label class="field__label" for="landscape">Landscape</label>
+              <select id="landscape">
+                <option value="auto">Real terrain around my location</option>
+                <option value="flat">Flat plain</option>
+                <option value="hills">Rolling hills</option>
+                <option value="mountains">Mountains</option>
+                <option value="desert">Desert</option>
+                <option value="ocean">Ocean</option>
+                <option value="city">City</option>
+              </select>
+              <p class="hint" id="terrainStatus"></p>
+            </div>
+            <label class="field toggle"><span class="field__text">Plants that suit this place<small>Grass, trees, cacti&hellip; swaying in the wind</small></span><input type="checkbox" id="plants"><span class="switch" aria-hidden="true"></span></label>
+          </div>
 
-        <fieldset>
-          <legend>Location</legend>
-          <label>
-            <input type="checkbox" id="preciseLocation">
-            Use Precise Location (instead of estimating by time zone.)
-          </label><br>
-          <label>
-            Location Update Frequency
-            <select id="gpsFrequency">
-              <option value="-1">Page Load</option>
-              <option value="1">1 Minute</option>
-              <option value="5">5 Minutes</option>
-              <option value="15">15 Minutes</option>
-              <option value="30">30 Minutes</option>
-              <option value="60">1 hour</option>
-              <option value="120">2 hours</option>
-              <option value="720">12 hours</option>
-              <option value="1440">24 hours</option>
-              <option value ="-2">Manually Entered</option>
-            </select>
-            <br><span id="coords">&nbsp;</span><br>
-          </label>
-          <button id="refreshLocation" type="button">Refresh Location</button>
-        </fieldset>
+          <div class="group adv">
+            <h3>Sky quality &amp; tuning <span class="badge">Advanced</span></h3>
+            <div class="field">
+              <label class="field__label" for="quality">Quality</label>
+              <select id="quality">
+                <option value="auto">Automatic (adapts to your device)</option>
+                <option value="low">Low (battery saver)</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="field__label" for="bodySize">Sun &amp; moon size</label>
+              <select id="bodySize">
+                <option value="1">Realistic</option>
+                <option value="2">Enhanced</option>
+                <option value="3">Large</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="field__label" for="nightBrightness">Night brightness <output id="nightBrightnessOut"></output></label>
+              <input type="range" id="nightBrightness" min="0.5" max="4" step="0.1">
+            </div>
+            <div class="field">
+              <label class="field__label" for="lightPollution">Light pollution</label>
+              <select id="lightPollution">
+                <option value="auto">Estimate from time zone</option>
+                <option value="off">None</option>
+                <option value="1">Bortle 1 (pristine)</option>
+                <option value="2">Bortle 2</option>
+                <option value="3">Bortle 3 (rural)</option>
+                <option value="4">Bortle 4</option>
+                <option value="5">Bortle 5 (suburban)</option>
+                <option value="6">Bortle 6</option>
+                <option value="7">Bortle 7 (urban)</option>
+                <option value="8">Bortle 8 (city)</option>
+                <option value="9">Bortle 9 (inner city)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="field__label" for="cloudMotion">Cloud &amp; water motion</label>
+              <select id="cloudMotion">
+                <option value="1">Real wind speed</option>
+                <option value="0.25">Slow</option>
+                <option value="0">Still (saves power)</option>
+              </select>
+              <p class="hint" id="skyStatus"></p>
+            </div>
+          </div>
+        </section>
 
-        <p class="hint">Sky: physically based atmosphere (Hillaire 2020), astronomy-engine, d3-celestial star data, NASA LRO moon map, live weather and terrain via Open-Meteo. <a href="https://github.com/antgiant/Wobbly-Weathery-Web-Clock#credits" target="_blank" rel="noopener">Credits</a></p>
+        <!-- ================= VIEW ================= -->
+        <section class="panel" role="tabpanel" id="panel-view" aria-labelledby="tab-view" data-panel="view" hidden>
+          <div class="group">
+            <h3>Where you look</h3>
+            <div class="field">
+              <label class="field__label" for="viewMode">Mode</label>
+              <select id="viewMode">
+                <option value="fixed">Clock view (fixed)</option>
+                <option value="drag">Look around (drag &amp; pinch)</option>
+                <option value="look">VR look-around (move your phone)</option>
+              </select>
+              <p class="hint">VR needs a phone or tablet with motion sensors. Drag to fine-tune the direction, pinch to zoom.</p>
+            </div>
+            <label class="field toggle"><span class="field__text">Follow the sun<small>Rises on the right, sets on the left, never tilts up or down (clock view)</small></span><input type="checkbox" id="followSun"><span class="switch" aria-hidden="true"></span></label>
+            <label class="field toggle"><span class="field__text">Label the sun, moon and planets</span><input type="checkbox" id="showLabels"><span class="switch" aria-hidden="true"></span></label>
+          </div>
+
+          <div class="group adv">
+            <h3>Camera <span class="badge">Advanced</span></h3>
+            <div class="field">
+              <label class="field__label" for="viewHeading">Facing <output id="viewHeadingOut"></output>° <span class="muted">(0 north, 90 east, 180 south)</span></label>
+              <input type="range" id="viewHeading" min="0" max="359" step="1">
+            </div>
+            <label class="field toggle"><span class="field__text">Keep the horizon on the digits<small>So the ground always shows through them</small></span><input type="checkbox" id="viewPitchAuto"><span class="switch" aria-hidden="true"></span></label>
+            <div class="field">
+              <label class="field__label" for="horizonInDigits">Ground inside the digits <output id="horizonInDigitsOut"></output> <span class="muted">(0 = bottom edge)</span></label>
+              <input type="range" id="horizonInDigits" min="0" max="0.8" step="0.05">
+            </div>
+            <div class="field">
+              <label class="field__label" for="viewPitch">Tilt up <output id="viewPitchOut"></output>°</label>
+              <input type="range" id="viewPitch" min="-10" max="80" step="1">
+            </div>
+            <div class="field">
+              <label class="field__label" for="viewFov">Field of view <output id="viewFovOut"></output>°</label>
+              <input type="range" id="viewFov" min="30" max="110" step="1">
+            </div>
+          </div>
+
+          <div class="group adv">
+            <h3>Motion sensor fixes <span class="badge">Advanced</span></h3>
+            <p class="hint">Only for VR look-around. If the sky is 90° off, or the view lurches when you rotate the device, try these.</p>
+            <div class="field">
+              <label class="field__label" for="sensorRotation">Screen rotation</label>
+              <select id="sensorRotation">
+                <option value="auto">Automatic</option>
+                <option value="ignore">Ignore (the browser already rotates the sensors)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="field__label" for="compassRef">Compass reference (iPhone &amp; iPad)</label>
+              <select id="compassRef">
+                <option value="auto">Automatic</option>
+                <option value="cam">The way the back of the device faces</option>
+                <option value="top">The way the top edge points</option>
+              </select>
+            </div>
+            <label class="field toggle"><span class="field__text">Show sensor readout</span><input type="checkbox" id="vrDebug"><span class="switch" aria-hidden="true"></span></label>
+          </div>
+        </section>
+
+        <!-- ================= DISPLAY ================= -->
+        <section class="panel" role="tabpanel" id="panel-display" aria-labelledby="tab-display" data-panel="display" hidden>
+          <div class="group">
+            <h3>Sunrise &amp; sunset</h3>
+            <div class="field">
+              <label class="field__label" for="countdown">Countdown timer</label>
+              <select id="countdown">
+                <option value="off">Off</option>
+                <option value="both">Sunrise and sunset</option>
+                <option value="sunrise">Sunrise only</option>
+                <option value="sunset">Sunset only</option>
+              </select>
+              <p class="hint">Appears shortly before the sun reaches the horizon and counts down to it.</p>
+            </div>
+            <div class="field adv">
+              <label class="field__label" for="countdownLead">Start counting</label>
+              <select id="countdownLead">
+                <option value="10">10 minutes before</option>
+                <option value="15">15 minutes before</option>
+                <option value="20">20 minutes before</option>
+                <option value="30">30 minutes before</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="group">
+            <h3>Screen</h3>
+            <div class="field">
+              <label class="field__label" for="screenMode">Look of the screen</label>
+              <select id="screenMode">
+                <option value="normal">Normal</option>
+                <option value="led">LED panel (64 &times; 32 pixels)</option>
+              </select>
+              <p class="hint" id="screenHint">Shows exactly what the normal screen would, averaged into chunky LED pixels, glass styles included. It turns itself sideways (32 &times; 64) when the screen is upright, and the sunrise / sunset countdown is drawn on it too.</p>
+            </div>
+            <label class="field toggle"><span class="field__text">Keep the screen on<small id="wakeStatus">Stops the phone dimming and locking while this page is open, handy as a bedside or travel clock. It lasts only while the page is visible, and it uses battery, so plug in if you can.</small></span><input type="checkbox" id="keepAwake"><span class="switch" aria-hidden="true"></span></label>
+          </div>
+        </section>
+
+        <!-- ================= PLACE & TIME ================= -->
+        <section class="panel" role="tabpanel" id="panel-place" aria-labelledby="tab-place" data-panel="place" hidden>
+          <div class="group">
+            <h3>Location</h3>
+            <label class="field toggle"><span class="field__text">Use precise location<small>Instead of estimating from your time zone</small></span><input type="checkbox" id="preciseLocation"><span class="switch" aria-hidden="true"></span></label>
+            <p class="hint coords-line"><span id="coords">&nbsp;</span></p>
+            <div class="field adv">
+              <label class="field__label" for="gpsFrequency">Location update frequency</label>
+              <select id="gpsFrequency">
+                <option value="-1">Page load</option>
+                <option value="1">1 minute</option>
+                <option value="5">5 minutes</option>
+                <option value="15">15 minutes</option>
+                <option value="30">30 minutes</option>
+                <option value="60">1 hour</option>
+                <option value="120">2 hours</option>
+                <option value="720">12 hours</option>
+                <option value="1440">24 hours</option>
+                <option value="-2">Manually entered</option>
+              </select>
+            </div>
+            <button id="refreshLocation" type="button" class="btn">Refresh location</button>
+          </div>
+
+          <div class="group adv">
+            <h3>Time travel <span class="badge">Advanced</span></h3>
+            <label class="field toggle"><span class="field__text">Simulate a different time</span><input type="checkbox" id="simEnabled"><span class="switch" aria-hidden="true"></span></label>
+            <div class="field">
+              <label class="field__label" for="simTime">Date and time</label>
+              <input type="datetime-local" id="simTime">
+            </div>
+            <div class="field">
+              <label class="field__label" for="simSpeed">Speed</label>
+              <select id="simSpeed">
+                <option value="1">Real time</option>
+                <option value="60">1 minute / second</option>
+                <option value="600">10 minutes / second</option>
+                <option value="3600">1 hour / second</option>
+              </select>
+            </div>
+            <button id="simNow" type="button" class="btn">Back to now</button>
+          </div>
+        </section>
+
+        <p class="hint credits">Sky: physically based atmosphere (Hillaire 2020), astronomy-engine, d3-celestial star data, NASA LRO moon map, live weather and terrain via Open-Meteo. <a href="https://github.com/antgiant/Wobbly-Weathery-Web-Clock#credits" target="_blank" rel="noopener">Credits</a></p>
       </div>
     </div>
   </div>
