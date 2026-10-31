@@ -803,14 +803,39 @@ body[data-clockstyle="led"] #clock {
 
 /* LED panel, held upright: the panel is 32 pixels wide, so the digits stack two to a row (hours, minutes,
    seconds) instead of six across. The shader draws them; this only decides where they go. */
+/* The LED panel is a 2:1 (or, upright, 1:2) rectangle in the middle of the window, so the clock is laid out inside
+   that rectangle instead of across the whole window, or the outer digits fall off the panel and get cropped. */
+body[data-screen="led"] #clock {
+  --pw: min(100vw, 200vh);
+  --ph: min(50vw, 100vh);
+  width: calc(var(--pw) * 0.93);
+  height: calc(var(--ph) * 0.98);
+  margin: calc((100vh - var(--ph)) / 2 + var(--ph) * 0.01) auto 0 !important;
+}
+
+@supports (height: 100dvh) {
+  body[data-screen="led"] #clock {
+    --pw: min(100vw, 200dvh);
+    --ph: min(50vw, 100dvh);
+    margin-top: calc((100dvh - var(--ph)) / 2 + var(--ph) * 0.01) !important;
+  }
+}
+
 @media (orientation: portrait) {
   body[data-screen="led"] #clock {
+    --pw: min(100vw, 50vh);
+    --ph: min(200vw, 100vh);
     display: grid;
     grid-template-columns: 1fr 1fr;
     align-content: center;
     justify-items: center;
-    margin-left: auto !important;
-    margin-right: auto;
+  }
+
+  @supports (height: 100dvh) {
+    body[data-screen="led"] #clock {
+      --pw: min(100vw, 50dvh);
+      --ph: min(200vw, 100dvh);
+    }
   }
 
   body[data-screen="led"] #clock svg {
