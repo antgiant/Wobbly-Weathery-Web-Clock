@@ -21,13 +21,33 @@ export function sunHorizon(date, obs) {
 const dirOf = (az, alt) => [Math.sin(az * DEG) * Math.cos(alt * DEG), Math.sin(alt * DEG), Math.cos(az * DEG) * Math.cos(alt * DEG)];
 
 /**
- * The sunrises and sunsets around `date`: the last and the next of each (null near the poles, where
- * there may be none for months).
+ * What the countdown can count down to. Each has a morning ("rise") and an evening ("set") event.
+ *   sun        sunrise and sunset (upper limb on the horizon)
+ *   golden     the start of golden hour: the sun at -4 degrees rising, and at +6 degrees falling
+ *   civil, nautical, astro   dawn and dusk, the sun at -6, -12 and -18 degrees
+ *   moon       moonrise and moonset
  */
-export function sunEvents(date, lat, lon, elevM) {
-  const obs = observer(lat, lon, elevM), t = A.MakeTime(date);
+export const EVENT_KINDS = {
+  sun: { rise: 'Sunrise', set: 'Sunset', body: 'sun' },
+  golden: { rise: 'Golden hour', set: 'Golden hour', body: 'sun', alt: { rise: -4, set: 6 } },
+  civil: { rise: 'Civil dawn', set: 'Civil dusk', body: 'sun', alt: { rise: -6, set: -6 } },
+  nautical: { rise: 'Nautical dawn', set: 'Nautical dusk', body: 'sun', alt: { rise: -12, set: -12 } },
+  astro: { rise: 'Astronomical dawn', set: 'Astronomical dusk', body: 'sun', alt: { rise: -18, set: -18 } },
+  moon: { rise: 'Moonrise', set: 'Moonset', body: 'moon' },
+};
+
+/**
+ * The events around `date`: the last and the next of each of the morning and evening kind (null near the poles, where
+ * there may be none for months, or when the sun never gets that far below the horizon).
+ */
+export function sunEvents(date, lat, lon, elevM, type = 'sun') {
+  const obs = observer(lat, lon, elevM), t = A.MakeTime(date), k = EVENT_KINDS[type] || EVENT_KINDS.sun;
   const find = (dir, limit) => {
-    try { const r = A.SearchRiseSet('Sun', obs, dir, t, limit); return r ? r.date : null; } catch (_) { return null; }
+    try {
+      if (k.body === 'moon') { const r = A.SearchRiseSet('Moon', obs, dir, t, limit); return r ? r.date : null; }
+      if (k.alt) { const r = A.SearchAltitude('Sun', obs, dir, t, limit, k.alt[dir > 0 ? 'rise' : 'set']); return r ? r.date : null; }
+      const r = A.SearchRiseSet('Sun', obs, dir, t, limit); return r ? r.date : null;
+    } catch (_) { return null; }
   };
   return {
     prevRise: find(+1, -1.6), prevSet: find(-1, -1.6),
@@ -38,16 +58,18 @@ export function sunEvents(date, lat, lon, elevM) {
 /**
  * Which countdown to show, if any.
  * @param {'both'|'sunrise'|'sunset'} mode
- * @returns {null | {kind: 'sunrise'|'sunset', msLeft: number}}  msLeft <= 0 for the first minute after the event
+ * @param {string} [type]  a key of EVENT_KINDS
+ * @returns {null | {kind: 'sunrise'|'sunset', msLeft: number, name: string, body: 'sun'|'moon'}}  kind is the morning or evening one; msLeft <= 0 for the first minute after the event
  */
-export function countdownState(ev, nowMs, mode, leadMin) {
+export function countdownState(ev, nowMs, mode, leadMin, type = 'sun') {
+  const k = EVENT_KINDS[type] || EVENT_KINDS.sun;
   const want = (k) => mode === 'both' || mode === k;
   let best = null;
   const consider = (kind, date, sign) => {
     if (!date || !want(kind)) return;
     const left = (date.getTime() - nowMs);
     if (sign > 0 ? (left < 0 || left > leadMin * 60000) : (left > 0 || left < -60000)) return;   // upcoming, or just happened
-    if (!best || Math.abs(left) < Math.abs(best.msLeft)) best = { kind, msLeft: left };
+    if (!best || Math.abs(left) < Math.abs(best.msLeft)) best = { kind, msLeft: left, name: kind === 'sunrise' ? k.rise : k.set, body: k.body };
   };
   consider('sunrise', ev.nextRise, +1); consider('sunset', ev.nextSet, +1);
   consider('sunrise', ev.prevRise, -1); consider('sunset', ev.prevSet, -1);

@@ -219,6 +219,7 @@ export function applyQuality() {
   });
   engine._resetScale();
   applyPlants();
+  glass?.apply();                                         // the automatic clock style is flat colour while saving power
 }
 
 // Light pollution from the settlements around the spot (see lightpollution.js); the time-zone guess is the fallback.

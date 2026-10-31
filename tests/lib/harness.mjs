@@ -133,13 +133,16 @@ export async function startHarness({ headless = true } = {}) {
       const A = await load(a64), B = await load(b64);
       if (A.width !== B.width || A.height !== B.height) return { size: false };
       let n = 0, sum = 0, x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+      const xs = [], ys = [];
       for (let i = 0; i < A.data.length; i += 4) {
         const d = Math.max(Math.abs(A.data[i] - B.data[i]), Math.abs(A.data[i + 1] - B.data[i + 1]), Math.abs(A.data[i + 2] - B.data[i + 2]));
         sum += (Math.abs(A.data[i] - B.data[i]) + Math.abs(A.data[i + 1] - B.data[i + 1]) + Math.abs(A.data[i + 2] - B.data[i + 2])) / 3;
-        if (d > threshold) { n++; const p = i / 4, x = p % A.width, y = Math.floor(p / A.width); x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+        if (d > threshold) { n++; const p = i / 4, x = p % A.width, y = Math.floor(p / A.width); xs.push(x); ys.push(y); x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
       }
       const px = A.width * A.height;
-      return { size: true, share: n / px, mean: sum / px / 255, count: n, box: n ? [x0, y0, x1, y1] : null };
+      const pct = (v, q) => { v.sort((p, r) => p - r); return v[Math.min(v.length - 1, Math.floor(v.length * q))]; };
+      // `core` is the box holding the middle 96% of the differing pixels: a few stray pixels (a twinkle, a glint) cannot stretch it
+      return { size: true, share: n / px, mean: sum / px / 255, count: n, box: n ? [x0, y0, x1, y1] : null, core: n ? [pct(xs, 0.02), pct(ys, 0.02), pct(xs, 0.98), pct(ys, 0.98)] : null };
     }, { a64: a.toString('base64'), b64: b.toString('base64'), threshold });
   }
 

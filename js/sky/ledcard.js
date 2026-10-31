@@ -39,10 +39,10 @@ const FONT3 = {
 const SIZES = {
   big: { font: FONT, h: 7, iw: 9,
     arrow: { up: ['....#....', '...###...', '..#####..'], down: ['..#####..', '...###...', '....#....'] },
-    sun: ['...###...', '..#####..', '.#######.'], horizon: '#########' },
+    sun: ['...###...', '..#####..', '.#######.'], moon: ['...##....', '..###....', '.####....'], horizon: '#########' },
   small: { font: FONT3, h: 5, iw: 7,
     arrow: { up: ['...#...', '..###..'], down: ['..###..', '...#...'] },
-    sun: ['..###..', '.#####.'], horizon: '#######' },
+    sun: ['..###..', '.#####.'], moon: ['..##...', '.###...'], horizon: '#######' },
 };
 
 const textWidth = (font, t) => [...t].reduce((w, ch) => w + font[ch][0].length + 1, -1);
@@ -107,7 +107,7 @@ export function drawLedCard(st, leadMs, off = false, rain = null) {
     if (P.cardH + 2 > rows * 0.6 || P.tw + 2 > cols) P = null;                  // no room that would leave the clock readable
     if (P) filled = Math.round(Math.max(0, Math.min(1, st.msLeft / leadMs)) * (P.cardW - 2));
   }
-  const key = `${P ? `${st.kind}|${text}|${filled}|${P.sz.h}` : '-'}|${rain ? rain.level : '-'}|${cols}x${rows}`;
+  const key = `${P ? `${st.kind}|${st.body}|${text}|${filled}|${P.sz.h}` : '-'}|${rain ? rain.level : '-'}|${cols}x${rows}`;
   if (key === ledCardKey) return;
   ledCardKey = key;
 
@@ -121,11 +121,11 @@ export function drawLedCard(st, leadMs, off = false, rain = null) {
     const { sz, tw, stacked, cardH, cardW } = P, { font, h: fh, iw } = sz;
     const x0 = Math.floor((cols - cardW) / 2), y0 = 1, innerW = cardW - 2;
     c.fillStyle = '#000'; c.fillRect(x0, y0, cardW, cardH);
-    const sun = rise ? '#ffd24a' : '#ff7a2e';
+    const moon = st.body === 'moon', sun = moon ? '#cfe3ff' : rise ? '#ffd24a' : '#ff7a2e';
     const iconX = stacked ? x0 + 1 + Math.floor((innerW - iw) / 2) : x0 + 2, iconY = y0 + 1;
     const arrow = rise ? sz.arrow.up : sz.arrow.down;
     blit(arrow, iconX, iconY, '#fff');                                           // which way the sun is going
-    blit(sz.sun, iconX, iconY + arrow.length, sun);                              // the sun ...
+    blit(moon ? sz.moon : sz.sun, iconX, iconY + arrow.length, sun);            // the sun (or the moon) ...
     blit([sz.horizon], iconX, iconY + arrow.length + sz.sun.length, '#cfd6ff');  // ... on the horizon
     const tx = stacked ? x0 + 1 + Math.floor((innerW - tw) / 2) : x0 + 2 + iw + 2, ty = stacked ? iconY + fh + 1 : iconY;
     let pen = tx;
@@ -165,7 +165,7 @@ function pill(c, cx, top, parts, s) {
 
 function drawFit(st, rain) {
   const W = Math.round(engine.canvas.width / 2), H = Math.round(engine.canvas.height / 2);
-  const key = `${st ? `${st.kind}|${timeText(st)}|${st.msLeft <= 0}` : '-'}|${rain ? rain.text : '-'}|${W}x${H}`;
+  const key = `${st ? `${st.kind}|${st.body}|${timeText(st)}|${st.msLeft <= 0}` : '-'}|${rain ? rain.text : '-'}|${W}x${H}`;
   if (key === fitKey) return;
   fitKey = key;
   fitCard.width = W; fitCard.height = H;
@@ -174,10 +174,10 @@ function drawFit(st, rain) {
   let y = Math.max(H * 0.07, 14 * s);
   const f = (size, weight = 600) => (k) => `${weight} ${size * k}px system-ui, sans-serif`;
   if (st) {
-    const rise = st.kind === 'sunrise', col = rise ? '#ffd27a' : '#ff9a5c', name = rise ? 'Sunrise' : 'Sunset';
+    const rise = st.kind === 'sunrise', moon = st.body === 'moon', col = moon ? '#cfe3ff' : rise ? '#ffd27a' : '#ff9a5c', name = st.name, g = moon ? '☾' : '☀';
     const parts = st.msLeft <= 0
-      ? [{ t: rise ? '☀↑' : '☀↓', color: col, font: f(20), size: 20 }, { t: name, color: '#fff', font: f(20), size: 20 }]
-      : [{ t: rise ? '☀↑' : '☀↓', color: col, font: f(20), size: 20 }, { t: `${name} in`, color: 'rgba(255,255,255,0.88)', font: f(20), size: 20 }, { t: timeText(st), color: '#fff', font: f(28), size: 28 }];
+      ? [{ t: g + (rise ? '↑' : '↓'), color: col, font: f(20), size: 20 }, { t: name, color: '#fff', font: f(20), size: 20 }]
+      : [{ t: g + (rise ? '↑' : '↓'), color: col, font: f(20), size: 20 }, { t: `${name} in`, color: 'rgba(255,255,255,0.88)', font: f(20), size: 20 }, { t: timeText(st), color: '#fff', font: f(28), size: 28 }];
     y = pill(c, W / 2, y, parts, s);
   }
   if (rain) {

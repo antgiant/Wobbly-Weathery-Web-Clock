@@ -1282,3 +1282,56 @@ body[data-screen="led"] .ledsize {
 .ledsize .pair input {
   margin-top: 6px;
 }
+
+/* the iPhone install walkthrough */
+.steps {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.steps li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--field);
+}
+
+.steps__n {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  background: var(--accent, #4aa3ff);
+  color: #fff;
+}
+
+.steps strong {
+  display: block;
+}
+
+.steps small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.steps__icon {
+  width: 1.1em;
+  height: 1.1em;
+  vertical-align: -0.2em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

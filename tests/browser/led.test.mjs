@@ -73,6 +73,7 @@ export async function run(t) {
   const h = await t.open({ query: NOON, width: 1000, height: 560, conf: { screenMode: 'led', clockStyle: 'solid' } });
   await h.page.evaluate(() => document.getElementById('settings').dispatchEvent(new MouseEvent('click', { bubbles: true })));
   await h.page.click('#tab-display');
+  await h.page.click('.seg__btn[data-level="advanced"]');                        // the LED controls are Advanced settings
   await h.page.selectOption('#ledPreset', '128x64');
   await h.page.waitForTimeout(600);
   let s = await h.page.evaluate(() => ({ cols: window.__sky.glass.led.cols, rows: window.__sky.glass.led.rows, c: JSON.parse(localStorage.getItem('conf')), box: [document.getElementById('ledCols').value, document.getElementById('ledRows').value] }));

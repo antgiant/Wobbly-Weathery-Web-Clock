@@ -102,6 +102,7 @@ export const DEFAULTS = {
   // sun & screen
   followSun: true,            // clock view only: sun rises on the right quarter, sets on the left, tilt never changes
   countdown: 'off',           // off | both | sunrise | sunset
+  countdownKind: 'sun',       // sun | golden | civil | nautical | astro | moon: what the countdown counts down to (morning and evening events)
   countdownLead: 20,          // minutes before the event the countdown appears
   screenMode: 'normal',       // normal | led (LED panel simulator)
   ledCols: 64,                // LEDs across the panel (64 x 32 is the classic panel)
@@ -135,9 +136,29 @@ if ((conf.confVersion || 0) < CONF_VERSION) {
   conf.confVersion = CONF_VERSION;
 }
 
-/** The clock style in force: the user's choice, or while it is left on automatic, coloured lights at Christmas time. */
+/**
+ * Whether the device is short of power: the Battery saver quality setting, or (where the browser reports it; Chrome and
+ * Android do, Safari does not) a battery that is under 20% and not charging.
+ */
+export const power = { battery: false };
+export const lowPower = () => conf.quality === 'low' || power.battery;
+try {
+  navigator.getBattery?.().then((b) => {
+    const update = () => {
+      const low = !b.charging && b.level <= 0.2;
+      if (low !== power.battery) { power.battery = low; window.dispatchEvent(new Event('powerchange')); }
+    };
+    b.addEventListener('levelchange', update); b.addEventListener('chargingchange', update); update();
+  }).catch(() => {});
+} catch (_) { /* no battery information */ }
+
+/**
+ * The clock style in force: the user's choice, or while it is left on automatic: liquid glass, coloured lights at
+ * Christmas time, and flat colour whenever the device is saving power (glass is the most expensive thing to draw).
+ */
 export function clockStyleNow() {
   if (conf.clockStyle === 'glass' || conf.clockStyle === 'stained' || conf.clockStyle === 'solid') return conf.clockStyle;
+  if (lowPower()) return 'solid';
   return isChristmasSeason(simNow()) ? 'stained' : 'glass';
 }
 

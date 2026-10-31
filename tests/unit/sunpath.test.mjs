@@ -74,5 +74,34 @@ for (const [name, lat, lon, day] of [['New York equinox', 40.7, -74, '2026-03-20
   check('shows "now" for the first minute after', now && now.msLeft < 0 && now.kind === 'sunset');
   check('gone 2 minutes after', c(120000) === null);
 }
+
+// ---- the other things to count down to ----
+{
+  const { EVENT_KINDS } = await import('../../js/sky/sunpath.js');
+  const noon = new Date('2026-06-21T17:00:00Z'), at = (k) => sunEvents(noon, 40.7, -74, 0, k);
+  const ms = (d) => d.getTime() / 60000;
+  const sun = at('sun');
+  check('all six kinds exist with a morning and an evening name', ['sun', 'golden', 'civil', 'nautical', 'astro', 'moon'].every((k) => EVENT_KINDS[k]?.rise && EVENT_KINDS[k]?.set));
+  // morning order: astronomical, nautical, civil dawn, golden hour starts at -4, then sunrise
+  const m = (k) => ms(at(k).nextRise);
+  check('morning order: astronomical < nautical < civil dawn < sunrise', m('astro') < m('nautical') && m('nautical') < m('civil') && m('civil') < m('sun'));
+  check('evening order: sunset < civil < nautical < astronomical dusk', ms(sun.nextSet) < ms(at('civil').nextSet) && ms(at('civil').nextSet) < ms(at('nautical').nextSet) && ms(at('nautical').nextSet) < ms(at('astro').nextSet));
+  check('golden hour starts in the evening before sunset (sun at +6 degrees)', ms(at('golden').nextSet) < ms(sun.nextSet) && ms(sun.nextSet) - ms(at('golden').nextSet) > 30 && ms(sun.nextSet) - ms(at('golden').nextSet) < 120);
+  const alt = (d) => { const o = new Astronomy.Observer(40.7, -74, 0), t = Astronomy.MakeTime(d), eq = Astronomy.Equator('Sun', t, o, true, true); return Astronomy.Horizon(t, o, eq.ra, eq.dec, null).altitude; };   // twilight is defined on the sun's centre without refraction
+  check('civil dusk is the sun at -6 degrees, nautical -12, astronomical -18', Math.abs(alt(at('civil').nextSet) + 6) < 0.3 && Math.abs(alt(at('nautical').nextSet) + 12) < 0.3 && Math.abs(alt(at('astro').nextSet) + 18) < 0.3, `${alt(at('civil').nextSet).toFixed(2)} ${alt(at('nautical').nextSet).toFixed(2)} ${alt(at('astro').nextSet).toFixed(2)}`);
+  check('golden hour (evening) is the sun at +6 degrees', Math.abs(alt(at('golden').nextSet) - 6) < 0.3, alt(at('golden').nextSet).toFixed(2));
+  const moon = at('moon');
+  check('moonrise and moonset are found, and are not the sun\'s', moon.nextRise && moon.nextSet && Math.abs(ms(moon.nextRise) - ms(sun.nextRise)) > 20);
+  // the countdown names and body
+  const ev = at('civil'), t = +ev.nextSet - 5 * 60000;
+  const st = countdownState(ev, t, 'both', 20, 'civil');
+  check('civil dusk five minutes away: named, evening, sun', st && st.name === 'Civil dusk' && st.kind === 'sunset' && st.body === 'sun' && Math.abs(st.msLeft - 300000) < 1000);
+  const mv = at('moon'), ms2 = countdownState(mv, +mv.nextRise - 3 * 60000, 'both', 20, 'moon');
+  check('moonrise three minutes away: named, morning kind, moon', ms2 && ms2.name === 'Moonrise' && ms2.kind === 'sunrise' && ms2.body === 'moon');
+  check('"sunset only" ignores the morning event for any kind', countdownState(ev, +ev.nextRise - 60000, 'sunset', 20, 'civil') === null);
+  // far north in midsummer: no astronomical night, so no event, and no crash
+  const polar = sunEvents(noon, 69.6, 18.9, 0, 'astro');
+  check('where the sun never gets that far down there is simply no event', polar.nextSet === null && polar.nextRise === null && countdownState(polar, +noon, 'both', 20, 'astro') === null);
+}
 console.log(fails ? `${fails} FAILED` : 'all passed');
 process.exit(fails ? 1 : 0);

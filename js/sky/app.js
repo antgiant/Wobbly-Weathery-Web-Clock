@@ -88,6 +88,7 @@ function init() {
   every('live-retry', loadLiveData, () => (state.needRetry && navigator.onLine !== false ? 60000 : Infinity));   // a lookup failed: try again soon
   // the connection came back: bring in everything that could not be fetched, at once
   window.addEventListener('online', () => { dayLoad.key = ''; scheduleLiveData(); syncTimeData(); updateRain(); });
+  window.addEventListener('powerchange', () => glassRef.apply());       // the battery ran low (or was plugged in): the automatic clock style follows
   window.addEventListener('offline', () => applyWeather());               // the status line says "offline"
   every('timedata', syncTimeData, () => (simActive() ? 4000 : 60000));     // history and seasons follow the (simulated) date
   every('tree', applyTree, () => (simActive() ? 4000 : 60000));            // Thanksgiving arrives, or time travel moves the date
