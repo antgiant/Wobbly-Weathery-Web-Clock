@@ -112,7 +112,7 @@ export function initGlass(engine, getBasis) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, mask.width, mask.height);
     ctx.strokeStyle = '#fff';
-    ctx.lineJoin = 'miter'; ctx.miterLimit = 4;                      // SVG defaults
+    ctx.lineJoin = 'round';                                          // rounded corners and ends, like the solid style
 
     const strokePath = (pts, lineWidth, cap) => {
       ctx.lineWidth = lineWidth; ctx.lineCap = cap;
@@ -129,7 +129,7 @@ export function initGlass(engine, getBasis) {
       s.paths.forEach((p, pi) => {
         const d = p.el.getAttribute('d');
         if (!d) return;
-        if (!stained) { ctx.lineWidth = 80; ctx.lineCap = p.round ? 'round' : 'butt'; ctx.stroke(new Path2D(d)); return; }
+        if (!stained) { ctx.lineWidth = 80; ctx.lineCap = 'round'; ctx.stroke(new Path2D(d)); return; }
 
         const pts = flatten(d);
         if (pts.length < 2) return;
@@ -143,6 +143,12 @@ export function initGlass(engine, getBasis) {
           const pc = slice(pts, cum, a, b);
           ctx.strokeStyle = idColor(hash(s.idx, pi, j, 0), hash(j, pi, s.idx, 7));
           strokePath(pc, 80, p.round ? 'round' : 'butt');
+          // the outer ends of a stroke are rounded; the joints between tubes stay square so the gap shows
+          if (!p.round) {
+            ctx.fillStyle = ctx.strokeStyle;
+            if (j === 0) { ctx.beginPath(); ctx.arc(pc[0][0], pc[0][1], 40, 0, 6.2832); ctx.fill(); }
+            if (j === n - 1) { const e = pc[pc.length - 1]; ctx.beginPath(); ctx.arc(e[0], e[1], 40, 0, 6.2832); ctx.fill(); }
+          }
         }
       });
     }
