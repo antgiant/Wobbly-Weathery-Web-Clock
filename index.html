@@ -27,6 +27,7 @@
   <link rel="modulepreload" href="js/clock.js">
   <link rel="modulepreload" href="js/config.js">
   <link rel="modulepreload" href="js/wind.js">
+  <link rel="modulepreload" href="js/countdown.js">
   <link rel="modulepreload" href="js/easing.js">
   <link rel="modulepreload" href="js/location.js">
   <link rel="modulepreload" href="js/settings_gear.js">
@@ -79,6 +80,7 @@
   <div id="alerts">
     <div id="sunCountdown" role="timer" aria-live="off" hidden></div>
     <div id="rainAlertPill" role="status" hidden></div>
+    <div id="timerPill" role="status" hidden></div>
   </div>
   <div id="toast" role="status" aria-live="polite" hidden></div>
   <button id="wakeBanner" type="button" hidden>Tap to keep the screen on</button>
@@ -126,6 +128,13 @@
       <path id="s1p1" d="M 400 0 L 0 500" transform="scale(0.2)" />
       <path id="s1p2" d="M 400 0 L 400 500" transform="scale(0.2)" />
       <path id="s1p3" d="M 400 0 L 0 0 0 500 400 500" transform="scale(0.2)" />Sorry, your browser does not support inline SVG.
+    </svg>
+    <!-- countdown mode, 100 days or more: the hundreds digit of the days, drawn first (last in the markup so the other digits keep their place) -->
+    <svg id="hundredsDigit" class="hidden" viewBox="0 -8 100 116" preserveAspectRatio="xMidYMid meet">
+      <path id="x0p0" d="M 0 0 L 400 500" transform="scale(0.2)" />
+      <path id="x0p1" d="M 400 0 L 0 500" transform="scale(0.2)" />
+      <path id="x0p2" d="M 400 0 L 400 500" transform="scale(0.2)" />
+      <path id="x0p3" d="M 400 0 L 0 0 0 500 400 500" transform="scale(0.2)" />
     </svg>
   </div>
   <svg id="settings" width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" role="button" tabindex="0" aria-haspopup="dialog" aria-controls="settingsModal" aria-label="Open settings">
@@ -251,6 +260,20 @@
             <h3>The digits</h3>
             <label class="field toggle"><span class="field__text">24-hour time</span><input type="checkbox" id="twentyFourHourClock"><span class="switch" aria-hidden="true"></span></label>
             <label class="field toggle"><span class="field__text">Hide seconds</span><input type="checkbox" id="hideSeconds"><span class="switch" aria-hidden="true"></span></label>
+            <div class="field">
+              <label class="field__label" for="clockMode">The digits show</label>
+              <select id="clockMode">
+                <option value="time">The time</option>
+                <option value="countdown">A countdown to a date</option>
+              </select>
+            </div>
+            <div class="field" id="timerFields" hidden>
+              <label class="field__label" for="timerTarget">Count down to</label>
+              <input type="datetime-local" id="timerTarget">
+              <label class="field__label" for="timerLabel">Name (optional)</label>
+              <input type="text" id="timerLabel" maxlength="40" placeholder="Launch, Birthday, Holiday…" autocomplete="off">
+              <p class="hint" id="timerHint">Days:hours:minutes:seconds, in your own time zone. With the seconds shown it never has more than 6 digits (a day or more shows days:hours:minutes), and with them hidden never more than 4 (days:hours).</p>
+            </div>
             <div class="field adv">
               <label class="field__label" for="digitWeather">Rain and snow on the digits</label>
               <select id="digitWeather">

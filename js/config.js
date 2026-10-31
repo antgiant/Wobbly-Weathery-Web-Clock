@@ -89,6 +89,9 @@ export const DEFAULTS = {
   viewFov: 80,
   showLabels: false,
   plants: true,               // grass, trees, cacti ... swaying in the wind
+  clockMode: 'time',          // time | countdown: the digits show the time, or the time left to timerTarget
+  timerTarget: '',            // countdown: a datetime-local value ("2026-12-25T08:00"), in the viewer's own time zone
+  timerLabel: '',             // countdown: a name shown with it
   digitWeather: 'on',         // on | off: rain beads and splashes, snow settling on the digits (glass, tube and LED styles)
   windSway: 'off',            // off | lean | full: the digits lean downwind like palm trees (steady lean, or lean and gusts)
   antiBurnIn: 'auto',         // auto (while the screen is kept on) | on | off: step the digits a few pixels round a small square, once a minute

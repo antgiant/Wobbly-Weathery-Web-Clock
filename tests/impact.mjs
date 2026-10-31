@@ -6,12 +6,13 @@
 // Every file under js/ must match a rule (tests/unit/impact.test.mjs fails otherwise), so a new file cannot silently be
 // left untested.
 
-export const ALL_FAST = ['smoke', 'clock', 'settings', 'sky', 'options', 'led', 'alerts', 'wind', 'digitweather', 'offline', 'startup'];
+export const ALL_FAST = ['smoke', 'clock', 'countdown', 'settings', 'sky', 'options', 'led', 'alerts', 'wind', 'digitweather', 'offline', 'startup'];
 
 // [pattern on the path, suites to run]. The first matching rules all apply.
 export const RULES = [
   [/^js\/(wind\.js|sky\/windsway\.js)$/, ['wind', 'clock']],
-  [/^js\/(clock|easing)\.js$/, ['clock', 'wind', 'led']],
+  [/^js\/(clock|easing)\.js$/, ['clock', 'countdown', 'wind', 'led']],
+  [/^js\/countdown\.js$/, ['countdown', 'clock']],
   [/^js\/(config|units|simtime|location|index)\.js$/, 'ALL'],
   [/^js\/(season)\.js$/, ['options', 'christmas']],
   [/^js\/(install)\.js$/, ['options']],

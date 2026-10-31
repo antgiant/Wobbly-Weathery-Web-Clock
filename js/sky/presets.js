@@ -66,7 +66,7 @@ export function applyConfPatch(patch) {
 
 function resetAll() {
   if (!confirm('Put every setting back to how it was the first time? Your location is kept.')) return;
-  applyConfPatch({ ...standard, showLabels: false, countdownKind: 'sun', antiBurnIn: 'auto' });
+  applyConfPatch({ ...standard, showLabels: false, countdownKind: 'sun', antiBurnIn: 'auto', clockMode: 'time' });
   // the other settings that have defaults: units follow the region again, 24-hour time follows the browser
   conf.tempUnit = DEFAULTS.tempUnit;
   const t = document.getElementById('tempUnit'); if (t) { t.value = 'auto'; t.dispatchEvent(new Event('change', { bubbles: true })); }
