@@ -7,7 +7,7 @@ import { toast } from './core.js';
 
 /** The settings that "Standard" sets and that a reset restores. Location, first-run choice and panel state are never touched. */
 export const APPEARANCE_KEYS = ['clockStyle', 'glassFrost', 'glassGlow', 'glassGlowColor', 'legibility', 'clockColor', 'hideSeconds',
-  'quality', 'cloudMotion', 'plants', 'holidayTree', 'showLabels', 'countdown', 'countdownLead', 'screenMode', 'rainAlert',
+  'quality', 'cloudMotion', 'plants', 'holidayTree', 'showLabels', 'countdown', 'countdownLead', 'screenMode', 'ledCols', 'ledRows', 'ledTurn', 'rainAlert',
   'nightDim', 'nightDimLevel', 'followSun', 'viewMode', 'keepAwake', 'weatherMode', 'landscape'];
 
 const standard = Object.fromEntries(APPEARANCE_KEYS.map((k) => [k, DEFAULTS[k]]));

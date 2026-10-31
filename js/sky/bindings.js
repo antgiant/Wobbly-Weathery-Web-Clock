@@ -9,6 +9,8 @@ import { applyView, atDefault, updateHud, updateVrReadout, applySensorFixes, set
 import { updateClockColor } from './appearance.js';
 import { updateCountdown, updateRain } from './alerts.js';
 import { updateDim } from './dim.js';
+import { applyLedPanel } from './ledpanel.js';
+import { LED_PRESETS, MIN_LEDS, MAX_LEDS, presetIdFor } from './ledgrid.js';
 
 /** @returns {{simEn: HTMLInputElement, simTime: HTMLInputElement, toLocalInput: (d: Date) => string}} handles the deep links need */
 export function bindSettings() {
@@ -50,6 +52,24 @@ export function bindSettings() {
   $('coarseLookups').addEventListener('change', (e) => { conf.coarseLookups = e.target.checked; dayLoad.key = ''; scheduleLiveData(); syncTimeData(); });
   bindSelect('legibility', 'legibility', () => { glass.apply(); updateClockColor(); });
   bindSelect('screenMode', 'screenMode', () => { glass.apply(); updateClockColor(); updateCountdown(); engine.dirty = true; });
+  // LED panel size: a preset shortcut and the two counts
+  const ledSel = $('ledPreset');
+  ledSel.innerHTML = LED_PRESETS.map((p) => `<option value="${p.id}">${p.label}</option>`).join('') + '<option value="custom">Custom</option>';
+  const syncLed = () => { ledSel.value = presetIdFor(conf.ledCols, conf.ledRows); $('ledCols').value = conf.ledCols; $('ledRows').value = conf.ledRows; };
+  syncLed();
+  ledSel.addEventListener('change', () => {
+    const p = LED_PRESETS.find((x) => x.id === ledSel.value);
+    if (p) { conf.ledCols = p.cols; conf.ledRows = p.rows; syncLed(); applyLedPanel(); }
+  });
+  for (const [id, key] of [['ledCols', 'ledCols'], ['ledRows', 'ledRows']]) {
+    $(id).addEventListener('change', () => {
+      const n = Math.round(Number($(id).value));
+      conf[key] = Number.isFinite(n) ? Math.min(MAX_LEDS, Math.max(MIN_LEDS, n)) : conf[key];
+      syncLed(); applyLedPanel(); updateCountdown();
+    });
+  }
+  $('ledTurn').checked = conf.ledTurn !== false;
+  $('ledTurn').addEventListener('change', (e) => { conf.ledTurn = e.target.checked; applyLedPanel(); updateCountdown(); });
   bindSelect('countdown', 'countdown', updateCountdown);
   bindSelect('countdownLead', 'countdownLead', updateCountdown, parseFloat);
   bindSelect('sensorRotation', 'sensorRotation', applySensorFixes);

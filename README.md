@@ -38,7 +38,7 @@ With thanks to
 | **Always readable** | Settings → Clock → "Keep the time readable" (on by default). The edge of every digit gets a thin outline that is near-black where the sky behind it is bright and near-white where it is dark, so it beats the sky by at least about 3.8:1 whatever the sky is; the colour follows the sky smoothly, so where a horizon crosses a digit the top edge is dark and the bottom edge light, and the glass itself stays glass (the body is only eased a little darker under a bright sky and lighter under a dark one). Judged by brightness, not colour, so it works for colour-blind eyes. "Extra strong" thickens the effect, "Off" is pure glass. Solid ink picks light or dark by worst-case contrast and gets a halo of the opposite tone. |
 | **Sunrise & sunset countdown** | Settings → Display. Starting 10 to 30 minutes (20 by default) before the sun reaches the horizon, a pill counts down to it ("Sunset in 04:09"), then says "Sunset" for a minute. Sunrise, sunset or both. Times are the almanac ones (upper limb, standard refraction) so real hills hide the sun slightly earlier. Follows time travel. |
 | **Follow the sun** | Settings → View (clock view only). Only the compass direction moves, never the tilt, so the sun stays at one height while it crosses the screen from the right quarter at sunrise to the left quarter at sunset, in either hemisphere, like east to west on a map. The position comes from the sun's real azimuth, so the seasons show: in June the sun rises further round to the north and starts nearer the right edge, in December nearer the middle. Overnight the view turns back, slowly, to the next sunrise. |
-| **LED panel** | Settings → Display. The whole picture becomes a 64 × 32 LED matrix: square pixels with black lines between them, the clock as lit pixels. It turns itself to 32 × 64 when the screen is upright, and the digits stack two to a row. The panel is letter-boxed so the pixels stay square. |
+| **LED panel** | Settings → Display. The whole picture becomes a grid of square LEDs with black lines between them, the clock as lit pixels. You choose how many LEDs across and down (8 to 256 each; presets for 64 × 32, 32 × 64, 96 × 48, 128 × 64, 64 × 64, 128 × 32, 32 × 32, 32 × 16 and 16 × 16), and the panel turns on its side by itself when the screen is the other way round (switch off with "Turn to match the screen"). The classic 64 × 32 / 32 × 64 panel has a hand-tuned layout: the digits are packed to fit the panel and, on a tall one, stacked two to a row, and the countdown and umbrella are drawn in a pixel font on whole LEDs. Other sizes use the same tuned layout wherever it works (at least 32 × 24 LEDs, no more than 4 times longer than high; it picks digits in a row or stacked, whichever gives taller digits); anything outside that (for example 32 × 16 or 16 × 16) is shown exactly like the normal page, with its normal countdown pill, just turned into LEDs. LEDs are never drawn smaller than 3 pixels: if the count is too high for the screen the grid is reduced, keeping its shape. |
 
 ## Loading
 
@@ -151,12 +151,13 @@ These are not saved to your settings:
     js/sky/data.js                    location, live + historical weather, landscape, plants, tree, quality, time travel
     js/sky/view.js                    camera: clock view, look-around, VR, follow-the-sun, labels, return-to-default
     js/sky/appearance.js              loading screen, no-WebGL fallback, clock ink colour, favicon
-    js/sky/alerts.js, ledcard.js      countdown and umbrella pills; the LED panel's pixel overlay
+    js/sky/alerts.js, ledcard.js      countdown and umbrella pills; the LED panel's pixel overlay (or full-size pills on untuned sizes)
+    js/sky/ledgrid.js, ledpanel.js    LED panel size, turning, tuned layout or fit (pure maths + page glue)
     js/sky/bindings.js, presets.js    settings controls; presets and reset
     js/sky/dim.js                     night dimming
     js/sky/scheduler.js               the one timer for periodic work (a period of Infinity = nothing to do)
     data/                             star catalogue, Milky Way, moon map (built by tools/build-data.py)
-    tools/                            data builder; tests: node tools/test-orientation.mjs, node tools/test-sunpath.mjs, tools/test-weather.mjs, tools/test-lightpollution.mjs, tools/test-season.mjs, tools/test-rain.mjs, tools/test-pwa.mjs
+    tools/                            data builder; tests: node tools/test-orientation.mjs, node tools/test-sunpath.mjs, tools/test-weather.mjs, tools/test-lightpollution.mjs, tools/test-season.mjs, tools/test-rain.mjs, tools/test-pwa.mjs, tools/test-ledgrid.mjs
 
 ## What is and is not verified
 

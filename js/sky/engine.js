@@ -232,9 +232,16 @@ export class SkyEngine {
     gl.bindVertexArray(null);
 
     this.sceneTarget = null;
-    this.glass = { mode: 0, frost: 0.35, contrast: 3, glow: 0, glowCol: [1, 0.85, 0.6], led: { on: false, cols: 64, rows: 32, gap: 0.16, brightness: 1 }, overlay: false, ink: [0.96, 0.97, 1], stroke: 30, light: [-0.5, 0.8, 0.6], lightCol: [1, 1, 1], rect: [0, 0, 1, 1], maskW: 1, maskH: 1, hasMask: false };
+    this.glass = { mode: 0, frost: 0.35, contrast: 3, glow: 0, glowCol: [1, 0.85, 0.6], led: { on: false, cols: 64, rows: 32, gap: 0.16, brightness: 1 }, overlay: false, overlayFull: false, ink: [0.96, 0.97, 1], stroke: 30, light: [-0.5, 0.8, 0.6], lightCol: [1, 1, 1], rect: [0, 0, 1, 1], maskW: 1, maskH: 1, hasMask: false };
     this.overlayTex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.overlayTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.overlayFullTex = gl.createTexture();                  // full-size overlay for panels the tuned layout does not cover
+    gl.bindTexture(gl.TEXTURE_2D, this.overlayFullTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -670,11 +677,12 @@ export class SkyEngine {
     this._2f('uRes', cw, ch);
     this._3f('uLight', g.light);
     this._3f('uLightCol', g.lightCol);
-    const portraitLed = ch > cw;
-    this._4f('uGlow', g.glow, led ? Math.max(2, Math.floor(Math.min(cw / (portraitLed ? g.led.rows : g.led.cols), ch / (portraitLed ? g.led.cols : g.led.rows)))) : 0, 0, 0);
+    this._4f('uGlow', g.glow, led ? Math.max(2, Math.floor(Math.min(cw / g.led.cols, ch / g.led.rows))) : 0, 0, 0);
     this._3f('uGlowCol', g.glowCol);
     this._3f('uInk', g.ink);
     this._1f('uContrast', g.contrast);
+    this._1i('uFull', 3); this._bind(3, this.overlayFullTex);
+    this._1f('uFullOn', led && g.overlayFull ? 1 : 0);
     gl.bindVertexArray(this.vaoEmpty);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     if (led) this._ledPass(cw, ch);
@@ -698,12 +706,23 @@ export class SkyEngine {
     this._use(this.pLed);
     this._1i('uComp', 0); this._bind(0, C.tex);
     this._2f('uRes', cw, ch);
-    const portrait = ch > cw;
-    this._4f('uLed', portrait ? L.rows : L.cols, portrait ? L.cols : L.rows, L.gap, L.brightness);
+    this._4f('uLed', L.cols, L.rows, L.gap, L.brightness);       // the grid already turned to match the screen (ledpanel.js)
     this._1i('uOverlay', 1); this._bind(1, this.overlayTex);
     this._1f('uOverlayOn', this.glass.overlay ? 1 : 0);
     gl.bindVertexArray(this.vaoEmpty);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  /** A picture covering the whole screen, drawn over the scene before the LED pixels are taken (the pills, on panels the tuned layout does not cover). */
+  setOverlayFull(canvas) {
+    const gl = this.gl;
+    if (canvas) {
+      gl.bindTexture(gl.TEXTURE_2D, this.overlayFullTex);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    }
+    this.glass.overlayFull = !!canvas;
+    this.redrawGlass();
   }
 
   /** Picture drawn over the scene before the LED pixels are taken (the countdown card); null removes it. */

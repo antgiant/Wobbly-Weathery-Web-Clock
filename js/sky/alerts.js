@@ -55,6 +55,7 @@ export async function updateRain() {
       }
     }
   }
+  if (a && a.level !== 'none') a.text = rainText(a);
   rainState.a = a;
   const show = !!a && a.level !== 'none';
   if (pill) {

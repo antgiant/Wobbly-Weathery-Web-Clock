@@ -626,7 +626,8 @@ body {
 }
 
 .modal select,
-.modal input[type="datetime-local"] {
+.modal input[type="datetime-local"],
+.modal input[type="number"] {
   width: 100%;
   min-height: 46px;
   box-sizing: border-box;
@@ -644,7 +645,8 @@ body {
   background-position: right 13px center;
 }
 
-.modal input[type="datetime-local"] {
+.modal input[type="datetime-local"],
+.modal input[type="number"] {
   padding-right: 12px;
   background-image: none;
 }
@@ -803,77 +805,75 @@ body[data-clockstyle="led"] #clock {
 
 /* LED panel, held upright: the panel is 32 pixels wide, so the digits stack two to a row (hours, minutes,
    seconds) instead of six across. The shader draws them; this only decides where they go. */
-/* The LED panel is a 2:1 (or, upright, 1:2) rectangle in the middle of the window, so the clock is laid out inside
-   that rectangle instead of across the whole window, or the outer digits fall off the panel and get cropped.
-   --units / --rows come from clock.js (how many digit widths the row is, how many rows it stacks into) and
-   --led-top from app.js (the share of the panel's height the countdown card takes at the top, 0 without one):
-   the digits shrink to fit what is left, so the card never covers the time.
+/* The LED panel is a rectangle (the chosen number of LEDs across and down) in the middle of the window, so the clock is
+   laid out inside that rectangle instead of across the whole window, or the outer digits fall off the panel and get
+   cropped. ledpanel.js sets body[data-led] and --led-aspect (columns / rows):
+     row    the digits in one line (a wide panel)     stack  hours, minutes, seconds one above the other (a tall one)
+     fit    no rules at all: the page looks exactly as normal, only made of LEDs (panels too small or too thin for the above)
+   --units / --rows come from clock.js (how many digit widths the row is, how many lines it stacks into) and --led-top
+   from ledcard.js (the share of the panel's height the countdown card takes at the top, 0 without one): the digits shrink
+   to fit what is left, so the card never covers the time.
    A digit's ink fills the middle ~64% of its 100-wide box, so boxes overlap (-0.12 each side, a pitch of 0.76);
    a colon's ink sits at the far left of its box, so it is nudged (translateX) into the middle of its 0.3 slot.
    That is what keeps the row centred. */
-body[data-screen="led"] #clock {
-  --pw: min(100vw, 200vh);
-  --ph: min(50vw, 100vh);
-  --top: var(--led-top, 0);
-  --w: min(calc(var(--pw) * 0.93 / var(--units, 7)), calc(var(--ph) * (1 - var(--top)) * 0.9 / 1.16));
-  width: calc(var(--pw) * 0.93);
-  height: calc(var(--ph) * (1 - var(--top)) * 0.98);
-  margin: calc((100vh - var(--ph)) / 2 + var(--ph) * (var(--top) + 0.01)) auto 0 !important;
-  justify-content: center;
+body[data-led] {
+  --vh: 100vh;
 }
 
 @supports (height: 100dvh) {
-  body[data-screen="led"] #clock {
-    --pw: min(100vw, 200dvh);
-    --ph: min(50vw, 100dvh);
-    margin-top: calc((100dvh - var(--ph)) / 2 + var(--ph) * (var(--top) + 0.01)) !important;
+  body[data-led] {
+    --vh: 100dvh;
   }
 }
 
-body[data-screen="led"] #clock svg {
+body[data-led="row"] #clock,
+body[data-led="stack"] #clock {
+  --pw: min(100vw, calc(var(--led-aspect, 2) * var(--vh)));
+  --ph: calc(var(--pw) / var(--led-aspect, 2));
+  --top: var(--led-top, 0);
+  width: calc(var(--pw) * 0.93);
+  height: calc(var(--ph) * (1 - var(--top)) * 0.98);
+  margin: calc((var(--vh) - var(--ph)) / 2 + var(--ph) * (var(--top) + 0.01)) auto 0 !important;
+}
+
+body[data-led="row"] #clock {
+  --w: min(calc(var(--pw) * 0.93 / var(--units, 7)), calc(var(--ph) * (1 - var(--top)) * 0.9 / 1.16));
+  justify-content: center;
+}
+
+body[data-led="row"] #clock svg {
   flex: none;
   width: var(--w) !important;
   margin: 0 calc(var(--w) * -0.12) !important;
 }
 
 /* the colons take 0.3 of a digit's width */
-body[data-screen="led"] #clock svg:nth-child(3),
-body[data-screen="led"] #clock svg:nth-child(6) {
+body[data-led="row"] #clock svg:nth-child(3),
+body[data-led="row"] #clock svg:nth-child(6) {
   margin: 0 calc(var(--w) * -0.7) 0 0 !important;
   transform: translateX(5.4%);
 }
 
-@media (orientation: portrait) {
-  body[data-screen="led"] #clock {
-    --pw: min(100vw, 50vh);
-    --ph: min(200vw, 100vh);
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    align-content: center;
-    justify-items: center;
-  }
-
-  @supports (height: 100dvh) {
-    body[data-screen="led"] #clock {
-      --pw: min(100vw, 50dvh);
-      --ph: min(200vw, 100dvh);
-    }
-  }
-
-  body[data-screen="led"] #clock svg {
-    width: min(100%, calc(var(--ph) * (1 - var(--top)) * 0.95 / (var(--rows, 3) * 1.16))) !important;
-    margin: 0 !important;
-  }
-
-  body[data-screen="led"] #clock svg:nth-child(1) { grid-area: 1 / 1; }
-  body[data-screen="led"] #clock svg:nth-child(2) { grid-area: 1 / 2; }
-  body[data-screen="led"] #clock svg:nth-child(4) { grid-area: 2 / 1; }
-  body[data-screen="led"] #clock svg:nth-child(5) { grid-area: 2 / 2; }
-  body[data-screen="led"] #clock svg:nth-child(7) { grid-area: 3 / 1; }
-  body[data-screen="led"] #clock svg:nth-child(8) { grid-area: 3 / 2; }
-  body[data-screen="led"] #clock svg:nth-child(3),
-  body[data-screen="led"] #clock svg:nth-child(6) { display: none !important; }
+body[data-led="stack"] #clock {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-content: center;
+  justify-items: center;
 }
+
+body[data-led="stack"] #clock svg {
+  width: min(100%, calc(var(--ph) * (1 - var(--top)) * 0.95 / (var(--rows, 3) * 1.16))) !important;
+  margin: 0 !important;
+}
+
+body[data-led="stack"] #clock svg:nth-child(1) { grid-area: 1 / 1; }
+body[data-led="stack"] #clock svg:nth-child(2) { grid-area: 1 / 2; }
+body[data-led="stack"] #clock svg:nth-child(4) { grid-area: 2 / 1; }
+body[data-led="stack"] #clock svg:nth-child(5) { grid-area: 2 / 2; }
+body[data-led="stack"] #clock svg:nth-child(7) { grid-area: 3 / 1; }
+body[data-led="stack"] #clock svg:nth-child(8) { grid-area: 3 / 2; }
+body[data-led="stack"] #clock svg:nth-child(3),
+body[data-led="stack"] #clock svg:nth-child(6) { display: none !important; }
 
 /* sunrise / sunset countdown */
 /* the pills at the top: countdown and rain alert stack instead of covering each other */
@@ -1254,4 +1254,31 @@ html[data-snap] #loading .spin {
 
 @keyframes spin-in {
   to { opacity: 0.9; }
+}
+
+/* LED panel size: only shown while the LED look is on */
+.ledsize {
+  display: none;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+body[data-screen="led"] .ledsize {
+  display: block;
+}
+
+.ledsize .pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 8px 0 0;
+}
+
+.ledsize .pair .field__label {
+  margin-bottom: 0;
+}
+
+.ledsize .pair input {
+  margin-top: 6px;
 }

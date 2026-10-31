@@ -254,6 +254,8 @@ uniform vec3 uLightCol;
 uniform vec4 uGlow;        // x: light from inside the glass, 0..1; y: LED cell size in px when the LED panel is on (else 0)
 uniform vec3 uGlowCol;     // colour of that light (liquid glass)
 uniform vec3 uInk;         // flat ink colour (solid clock style while the LED panel is on)
+uniform sampler2D uFull;       // full-size overlay (the pills on panels the tuned layout does not cover), straight alpha
+uniform float uFullOn;
 uniform float uContrast;   // strength of the readability outline and tone, 0 off .. 1
 in vec2 vUv;
 out vec4 oColor;
@@ -416,6 +418,10 @@ void body() {
 
 void main() {
   body();
+  if (uFullOn > 0.5) {
+    vec4 o = texture(uFull, vec2(vUv.x, 1.0 - vUv.y));
+    oColor.rgb = mix(oColor.rgb, o.rgb, o.a);
+  }
 }`;
 
 // ---- LED panel: the finished picture (glass and all) averaged into a grid of square pixels ----
