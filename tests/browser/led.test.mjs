@@ -1,6 +1,7 @@
 // The LED panel: the grid you choose, turning, the tuned layouts and the "normal page made of LEDs" fallback,
 // checked on the page's geometry and on the pixels of what is drawn.
 export const name = 'led';
+export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 const NOON = 't=2026-06-21T17:00:00Z&speed=0';
 const cases = [
@@ -16,7 +17,8 @@ const cases = [
 ];
 
 export async function run(t) {
-  for (const c of cases) {
+  for (const [i, c] of cases.entries()) {
+    if (t.quick && i >= 2) break;                                       // the quick check: the first two panel sizes
     const h = await t.open({ query: NOON, width: c.w, height: c.h, conf: { screenMode: 'led', ledCols: c.cols, ledRows: c.rows, clockStyle: 'solid', twentyFourHourClock: true } });
     await h.settle(600);
     const s = await h.page.evaluate(() => {
@@ -69,6 +71,7 @@ export async function run(t) {
     await h.close();
   }
 
+  if (t.quick) return;
   // the settings: choosing a size changes the panel at once, and the choices are saved
   const h = await t.open({ query: NOON, width: 1000, height: 560, conf: { screenMode: 'led', clockStyle: 'solid' } });
   await h.page.evaluate(() => document.getElementById('settings').dispatchEvent(new MouseEvent('click', { bubbles: true })));

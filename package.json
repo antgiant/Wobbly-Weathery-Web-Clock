@@ -6,11 +6,13 @@
   "type": "module",
   "scripts": {
     "lint": "eslint .",
-    "test": "npm run lint && node tests/run.mjs all",
+    "test": "npm run lint && node tests/run.mjs changed",
     "test:unit": "node tests/run.mjs unit",
     "test:browser": "node tests/run.mjs browser",
     "test:visual:update": "UPDATE_BASELINES=1 node tests/run.mjs browser visual",
-    "serve": "python3 -m http.server 8000"
+    "serve": "python3 -m http.server 8000",
+    "test:quick": "npm run lint && TIER=fast node tests/run.mjs all",
+    "test:full": "npm run lint && node tests/run.mjs all"
   },
   "devDependencies": {
     "eslint": "^10.1.0",

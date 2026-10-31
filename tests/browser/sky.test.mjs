@@ -1,5 +1,6 @@
 // The sky is physically sensible: day is bright and blue, night is dark, twilight is warm at the horizon, weather changes it.
 export const name = 'sky';
+export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 async function sky(t, query, conf = {}) {
   const h = await t.open({ query: query + '&az=180&pitch=8', conf: { clockStyle: 'solid', ...conf }, width: 400, height: 500 });
@@ -21,6 +22,7 @@ export async function run(t) {
   t.check('night is much darker than noon', night.top.lum * 2 < noon.top.lum);
   t.check('dusk: the sun just below the horizon', dusk.alt < 0 && dusk.alt > -12, `alt ${dusk.alt.toFixed(1)}`);
   t.check('dusk: the horizon is lighter and warmer than the zenith', dusk.horizon.lum > dusk.top.lum && dusk.horizon.r / dusk.horizon.b > dusk.top.r / dusk.top.b, JSON.stringify({ hz: dusk.horizon.r / dusk.horizon.b, top: dusk.top.r / dusk.top.b }));
+  if (t.quick) return;                                              // the quick check stops here: storms and labels are in the full run
 
   const clear = await sky(t, 't=2026-06-21T16:00:00Z&speed=0&weather=clear');
   const storm = await sky(t, 't=2026-06-21T16:00:00Z&speed=0&weather=storm');

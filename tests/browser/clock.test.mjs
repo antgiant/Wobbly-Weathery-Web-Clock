@@ -1,5 +1,6 @@
 // The clock: 12 / 24 hour by locale until chosen, seconds, and the digits themselves.
 export const name = 'clock';
+export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 export async function run(t) {
   // 17:00 UTC = 13:00 in New York
@@ -13,6 +14,7 @@ export async function run(t) {
   h = await t.open({ query: q, locale: 'en-GB' });
   t.check('en-GB browser, nothing chosen: 24-hour clock (13:00:00)', (await h.page.title()) === '13:00:00', await h.page.title());
   await h.close();
+  if (t.quick) return;                                              // the quick check stops here: the rest is in the full run
 
   h = await t.open({ query: q, locale: 'en-US', conf: { twentyFourHourClock: true } });
   t.check('an explicit 24-hour choice wins over the browser locale', (await h.page.title()) === '13:00:00', await h.page.title());

@@ -1,5 +1,6 @@
 // First visit and upgrades: the one location question, and settings saved by an older version.
 export const name = 'startup';
+export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 export async function run(t) {
   // a brand new visitor (nothing saved, no location in the address)
@@ -36,6 +37,7 @@ export async function run(t) {
   t.check('upgrade: the page runs in look-around, following the sun', await h.page.evaluate(() => window.__controls.mode === 'drag'));
   t.check('upgrade: no errors', h.errors.length === 0, h.errors.join(' | '));
   await h.close();
+  if (t.quick) return;                                              // the quick check stops here: the rest is in the full run
 
   // the return-to-default-view button: hidden at the default view, shown after dragging, gone again after pressing
   h = await t.open({ query: 't=2026-06-21T17:00:00Z&speed=0', width: 900, height: 500 });

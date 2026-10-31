@@ -1,6 +1,7 @@
 // Rain and snow on the digits: snow settles on the top edges, rain beads on the glass; only in the glass styles, only
 // while it is raining or snowing, switchable, edge-thin, and the time stays readable.
 export const name = 'digitweather';
+export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 const wx = (page) => page.evaluate(() => ({ ...window.__sky.wx }));
 const GLASS = { clockStyle: 'glass', hideSeconds: false, followSun: false, glassFrost: 0.3 };
@@ -23,6 +24,16 @@ async function onOff(t, weather, conf, thr) {
 }
 
 export async function run(t) {
+  if (t.quick) {                                                      // the quick check: rain on the glass, snow on the LED panel (the shader compiles and draws both), nothing else
+    for (const [weather, conf, key] of [['rain', {}, 'rain'], ['snow', { clockStyle: 'solid', screenMode: 'led', ledCols: 64, ledRows: 32 }, 'snow']]) {
+      const h = await open(t, weather, conf);
+      await h.settle(900);
+      const w = await wx(h.page);
+      t.check(`${weather}${conf.clockStyle ? ' (' + conf.clockStyle + (conf.screenMode ? ', LED' : '') + ')' : ''}: the digits carry ${key}, no errors`, w[key] > 0.2 && h.errors.length === 0, `${JSON.stringify(w)} ${h.errors.join(' | ')}`);
+      await h.close();
+    }
+    return;
+  }
   // ---- snow ----
   let r = await onOff(t, 'snow', {}, 28);                 // snow is white on a pale sky: a low threshold
   t.check('snowing: the digits carry snow (the effect is on, and only snow)', r.wa.snow > 0.2 && r.wa.rain === 0, JSON.stringify(r.wa));

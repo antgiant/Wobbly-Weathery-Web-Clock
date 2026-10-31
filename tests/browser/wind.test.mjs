@@ -1,6 +1,7 @@
 // Wind sway: the digits lean downwind (bottom fixed, top moved), off by default, no gusts while saving power, readable.
 import { MAX_LEAN, MAX_GUST } from '../../js/wind.js';
 export const name = 'wind';
+export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 // the control points of every visible digit path, as [[x, y], ...] per digit id
 const digits = (page) => page.evaluate(() => {
@@ -48,6 +49,7 @@ export async function run(t) {
   t.check('the same wind seen looking south: the tops lean left', south - base < -10, `${(south - base).toFixed(1)} units`);
   t.check('and it is the mirror of the first (equal and opposite)', Math.abs((south - base) + (meanLean(north) - base)) < 4);
   await h.close();
+  if (t.quick) return;                                              // the quick check stops here: the rest is in the full run
 
   h = await q(0, { windSway: 'lean' }, 'clear');
   await h.settle(2500);
