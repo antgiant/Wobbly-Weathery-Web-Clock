@@ -1,3 +1,5 @@
+import { conf } from './config.js';
+
 // global variables for settings gear state
 const settingsEl = document.getElementById('settings');
 // floating buttons that fade out together with the gear when the page is idle
@@ -9,7 +11,8 @@ let hideTimerId = null;
 let isHidden = false;
 const modal = document.getElementById('settingsModal');
 const closeBtn = modal.querySelector('.modal__close');
-const firstFocusable = modal.querySelector('#easing'); // auto-focus target
+const tabs = [...modal.querySelectorAll('.tab')];
+const panels = [...modal.querySelectorAll('.panel')];
 let lastActive = null;
 
 function initalize() {
@@ -62,6 +65,10 @@ function initalize() {
     }
   });
   
+  initTabs();
+  initLevel();
+  initAdjusting();
+
   const backdrop = modal.querySelector('.modal__backdrop');
   
   // Close via X button or clicking the backdrop
@@ -69,6 +76,56 @@ function initalize() {
   backdrop.addEventListener('click', (e) => {
     if (e.target.dataset.close === 'true') closeModal();
   });
+}
+
+// ---- tabs (WAI-ARIA tabs pattern: arrow keys move between them) ----
+function selectTab(name, focus = false) {
+  if (!tabs.some(t => t.dataset.tab === name)) name = tabs[0].dataset.tab;
+  tabs.forEach(t => {
+    const on = t.dataset.tab === name;
+    t.setAttribute('aria-selected', String(on));
+    t.tabIndex = on ? 0 : -1;
+    if (on && focus) t.focus();
+  });
+  panels.forEach(p => { p.hidden = p.dataset.panel !== name; });
+  modal.querySelector('.modal__body').scrollTop = 0;
+  conf.settingsTab = name;
+}
+
+function initTabs() {
+  tabs.forEach((t, i) => {
+    t.addEventListener('click', () => selectTab(t.dataset.tab));
+    t.addEventListener('keydown', (e) => {
+      const k = e.key;
+      const to = k === 'ArrowRight' || k === 'ArrowDown' ? i + 1 : k === 'ArrowLeft' || k === 'ArrowUp' ? i - 1 : k === 'Home' ? 0 : k === 'End' ? tabs.length - 1 : null;
+      if (to == null) return;
+      e.preventDefault();
+      selectTab(tabs[(to + tabs.length) % tabs.length].dataset.tab, true);
+    });
+  });
+  selectTab(conf.settingsTab);
+}
+
+// ---- Simple / Advanced ----
+function setLevel(level) {
+  level = level === 'advanced' ? 'advanced' : 'simple';
+  modal.dataset.level = level;
+  modal.querySelectorAll('.seg__btn').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.level === level)));
+  conf.settingsLevel = level;
+}
+
+function initLevel() {
+  modal.querySelectorAll('.seg__btn').forEach(b => b.addEventListener('click', () => setLevel(b.dataset.level)));
+  setLevel(conf.settingsLevel);
+}
+
+// On a phone the sheet covers the clock; while a slider is held it fades away so the change can be seen.
+function initAdjusting() {
+  let t = 0;
+  const on = () => { clearTimeout(t); modal.classList.add('adjusting'); };
+  const off = () => { clearTimeout(t); t = setTimeout(() => modal.classList.remove('adjusting'), 450); };
+  modal.addEventListener('pointerdown', (e) => { if (e.target.matches('input[type="range"]')) on(); });
+  ['pointerup', 'pointercancel'].forEach(ev => window.addEventListener(ev, () => { if (modal.classList.contains('adjusting')) off(); }));
 }
 
 // management of Settings gear hiding and showing
@@ -101,13 +158,14 @@ function openModal() {
   document.body.style.overflow = 'hidden';
   // Focus inside the modal
   setTimeout(() => {
-    (firstFocusable || closeBtn || modal).focus();
+    (modal.querySelector('.tab[aria-selected="true"]') || closeBtn || modal).focus();
   }, 0);
   document.addEventListener('keydown', onKeydown);
 }
 
 function closeModal() {
   modal.hidden = true;
+  modal.classList.remove('adjusting');
   document.body.style.overflow = '';
   document.removeEventListener('keydown', onKeydown);
   if (lastActive && typeof lastActive.focus === 'function') {

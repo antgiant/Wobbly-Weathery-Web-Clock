@@ -210,7 +210,7 @@ export class SkyEngine {
     gl.bindVertexArray(null);
 
     this.sceneTarget = null;
-    this.glass = { mode: 0, frost: 0.35, stroke: 30, light: [-0.5, 0.8, 0.6], lightCol: [1, 1, 1], rect: [0, 0, 1, 1], maskW: 1, maskH: 1, hasMask: false };
+    this.glass = { mode: 0, frost: 0.35, glow: 0, glowCol: [1, 0.85, 0.6], led: { cols: 64, rows: 32, gap: 0.16, brightness: 1 }, ink: [0.96, 0.97, 1], stroke: 30, light: [-0.5, 0.8, 0.6], lightCol: [1, 1, 1], rect: [0, 0, 1, 1], maskW: 1, maskH: 1, hasMask: false };
     this.maskTex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.maskTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
@@ -600,6 +600,12 @@ export class SkyEngine {
     this._2f('uRes', cw, ch);
     this._3f('uLight', g.light);
     this._3f('uLightCol', g.lightCol);
+    this._4f('uGlow', g.glow, 0, 0, 0);
+    this._3f('uGlowCol', g.glowCol);
+    // the panel turns on its side when the screen is taller than wide
+    const portrait = ch > cw, L = g.led;
+    this._4f('uLed', portrait ? L.rows : L.cols, portrait ? L.cols : L.rows, L.gap, L.brightness);
+    this._3f('uInk', g.ink);
     gl.bindVertexArray(this.vaoEmpty);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }

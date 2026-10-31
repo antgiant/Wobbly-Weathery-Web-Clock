@@ -235,19 +235,27 @@ void main() {
 //   liquid glass  - refract the scene through the bevel (with a little dispersion),
 //                   blur it by the frost amount through the scene's mip chain, add
 //                   specular glints and a bright rim facing the real sun/moon, and
-//                   a soft shadow on the sky behind
-//   stained glass - jewel-coloured Voronoi panes with lead lines, lit by whatever
-//                   light is coming through the sky behind them
+//                   a soft shadow on the sky behind. Optionally lit from inside: the
+//                   thick middle of each stroke glows and a halo spills onto the sky
+//   stained glass - the same liquid glass, tinted: every pane carries a jewel tone that
+//                   colours what is seen through it and what it emits, split by thin
+//                   lead lines
+//   LED panel     - the whole picture sampled onto a 64x32 (or 32x64) grid of square
+//                   pixels with black lines between them
 export const FRAG_BLIT = `#version 300 es
 precision highp float;
 uniform sampler2D uTex;
 uniform sampler2D uMask;
-uniform vec4 uGlass;       // x frost 0..1, y mode (0 off, 1 liquid, 2 stained), z stroke width (canvas px), w time
+uniform vec4 uGlass;       // x frost 0..1, y mode (0 off, 1 liquid, 2 stained, 3 LED), z stroke width (canvas px), w time
 uniform vec4 uMaskRect;    // clock bounding box in canvas uv, y down: x, y, w, h
 uniform vec2 uMaskPx;      // mask texture size in texels
 uniform vec2 uRes;         // canvas size in px
 uniform vec3 uLight;       // xy: screen direction towards the light (y up), z: strength 0..1
 uniform vec3 uLightCol;
+uniform vec4 uGlow;        // x: light from inside the glass, 0..1
+uniform vec3 uGlowCol;     // colour of that light (liquid glass)
+uniform vec4 uLed;         // x columns, y rows, z gap as a fraction of a cell, w brightness
+uniform vec3 uInk;         // LED digits colour
 in vec2 vUv;
 out vec4 oColor;
 
@@ -265,24 +273,54 @@ float maskAt(vec2 uv, float lod) {
 float lumaOf(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 vec3 sceneAt(vec2 uv, float lod) { return textureLod(uTex, uv, lod).rgb; }
 
+// ---- LED panel ----
+vec3 ledPanel() {
+  float cell = max(floor(min(uRes.x / uLed.x, uRes.y / uLed.y)), 2.0);      // whole pixels, so the lines stay crisp
+  vec2 panel = vec2(uLed.x, uLed.y) * cell;
+  vec2 org = floor((uRes - panel) * 0.5);
+  vec2 p = gl_FragCoord.xy - org;
+  if (p.x < 0.0 || p.y < 0.0 || p.x >= panel.x || p.y >= panel.y) return vec3(0.0);   // the bezel
+  vec2 id = floor(p / cell);
+  vec2 f = p / cell - id;
+  vec2 e = min(f, 1.0 - f);
+  float g = uLed.z * 0.5, aa = 0.9 / cell;
+  float lit = smoothstep(g - aa, g + aa, e.x) * smoothstep(g - aa, g + aa, e.y);
+
+  vec2 cuv = (org + (id + 0.5) * cell) / uRes;
+  float lod = max(log2(cell * float(textureSize(uTex, 0).x) / uRes.x), 0.0);   // average the scene over the cell
+  vec3 sc = sceneAt(cuv, lod);
+  float maskScale = uMaskPx.x / (uMaskRect.z * uRes.x);
+  float cov = maskAt(cuv, max(log2(cell * maskScale), 0.0));
+  // LED panels are punchy: more saturation and contrast than the soft sky
+  float l = lumaOf(sc);
+  sc = pow(max(mix(vec3(l), sc, 1.25), 0.0), vec3(1.12));
+  vec3 col = mix(sc, uInk, smoothstep(0.12, 0.7, cov));
+  return col * (lit + 0.035) * uLed.w;
+}
+
 void main() {
   vec3 base = texture(uTex, vUv).rgb;
   float mode = uGlass.y;
   if (mode < 0.5) { oColor = vec4(base, 1.0); return; }
+  if (mode > 2.5) { oColor = vec4(ledPanel(), 1.0); return; }
 
   vec2 px = 1.0 / uRes;
   float stroke = uGlass.z;                                  // canvas px
   float maskScale = uMaskPx.x / (uMaskRect.z * uRes.x);     // mask texels per canvas px
   float lodH = max(log2(stroke * 0.30 * maskScale), 0.0);
   float lodS = max(log2(stroke * 0.9 * maskScale), 0.0);
+  float lodG = max(log2(stroke * 1.5 * maskScale), 0.0);
+  float glow = uGlow.x;
+  bool stained = mode > 1.5;
 
   // soft shadow of the glass cast on the sky, away from the light
   vec2 sh = vUv - uLight.xy * stroke * 0.22 * px;
-  float shadow = maskAt(sh, lodS) * (0.10 + 0.20 * uLight.z);
+  float shadow = maskAt(sh, lodS) * (0.10 + 0.20 * uLight.z) * (1.0 - 0.7 * glow);
 
   float cover = maskAt(vUv, 0.0);
   float wide = maskAt(vUv, lodS);
-  if (cover < 0.004 && wide < 0.004 && shadow < 0.004) { oColor = vec4(base, 1.0); return; }
+  float halo = glow > 0.002 ? maskAt(vUv, lodG) : 0.0;     // light spilling out of the glass onto the sky
+  if (cover < 0.004 && wide < 0.004 && shadow < 0.004 && halo * glow < 0.004) { oColor = vec4(base, 1.0); return; }
 
   // height field = blurred coverage; gradient = bevel
   float d = stroke * 0.22;
@@ -302,37 +340,14 @@ void main() {
   float rim = smoothstep(0.02, 0.55, slope);
   float frost = uGlass.x;
 
-  vec3 shaded = base * (1.0 - shadow * (1.0 - cover));
-  vec3 glass;
-
-  if (mode < 1.5) {
-    // ---- liquid glass ----
-    vec2 off = n.xy * stroke * (0.9 + 0.8 * h) * px;                  // lens-like displacement
-    float lodF = frost * 6.0;
-    vec3 c;
-    float disp = (1.0 - frost) * 0.10 + 0.015;
-    c.r = sceneAt(vUv + off * (1.0 + disp), lodF).r;
-    c.g = sceneAt(vUv + off, lodF).g;
-    c.b = sceneAt(vUv + off * (1.0 - disp), lodF).b;
-    // frost: diffuse towards the local average sky colour and go milky; clear glass stays clear
-    vec3 avg = sceneAt(vUv, 6.5);
-    c = mix(c, mix(avg, c, 0.5), frost * 0.6);
-    float lum = lumaOf(c);
-    c = mix(c, vec3(lum), 0.12 * frost);
-    c += uLightCol * (0.012 + 0.26 * frost * frost + 0.06 * frost) * (0.45 + 0.55 * uLight.z);
-    c += (hash21(gl_FragCoord.xy) - 0.5) * 0.05 * frost;             // fine grain of etched glass
-    c *= 1.0 - 0.10 * rim * away;                                     // bevel facing away from the light darkens
-    c += uLightCol * spec * mix(1.1, 0.35, frost);                    // frost scatters the glint into a soft sheen
-    c += uLightCol * rim * facing * (0.30 + 0.45 * uLight.z) * mix(1.0, 0.65, frost);
-    c += uLightCol * rim * 0.05;
-    c += uLightCol * exp(-pow((h - 0.62) * 5.0, 2.0)) * spec * 0.35 * (1.0 - frost);
-    glass = c;
-  } else {
-    // ---- stained glass ----
-    // The panes are baked into the mask by glass.js: every stroke is cut into pieces along
-    // its length (and into an inner and an outer lane), each filled with its own id colour.
-    // Because the pieces are slices of the morphing curves, the leading stretches and bends
-    // with the digit. Lead lines are simply where the pane id changes.
+  // Stained glass: the panes are baked into the mask by glass.js. Every stroke is cut into pieces along
+  // its length (and into an inner and an outer lane), each filled with its own id colour. Because the
+  // pieces are slices of the morphing curves, the leading stretches and bends with the digit. Lead lines
+  // are simply where the pane id changes.
+  vec3 tint = vec3(1.0);
+  vec3 emit = uGlowCol;
+  float lead = 0.0;
+  if (stained) {
     vec4 mk = textureLod(uMask, (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw, 0.0);
     float pid = floor(mk.r * 255.0 / 40.0 + 0.5);
     float shade = mk.g;
@@ -345,23 +360,59 @@ void main() {
       vec4 q = textureLod(uMask, mm, 0.0);
       diffN += step(0.5, q.a) * step(0.04, abs(q.r - mk.r) + abs(q.g - mk.g));
     }
-    float lead = smoothstep(0.0, 2.5, diffN);
+    lead = smoothstep(0.0, 2.5, diffN);
     vec3 pal;
-    if (pid < 0.5)      pal = vec3(0.80, 0.08, 0.10);                 // ruby
-    else if (pid < 1.5) pal = vec3(0.10, 0.28, 0.85);                 // cobalt
-    else if (pid < 2.5) pal = vec3(0.95, 0.62, 0.08);                 // amber
-    else if (pid < 3.5) pal = vec3(0.06, 0.62, 0.30);                 // emerald
-    else if (pid < 4.5) pal = vec3(0.55, 0.15, 0.75);                 // amethyst
-    else                pal = vec3(0.90, 0.35, 0.50);                 // rose
-    vec3 sky = sceneAt(vUv, 4.5);
-    float through = mix(0.22, 1.25, smoothstep(0.02, 0.7, lumaOf(sky))); // sunlight shining through the pane
-    float pane = 0.78 + 0.40 * shade;
-    vec3 c = pal * pane * through * (0.72 + 0.28 * smoothstep(0.0, 0.55, h));   // hand-made glass: darker towards the edges
-    c = mix(c, c * 0.55 + sky * 0.45 * pal, frost * 0.6);             // frost: more translucent, takes on the sky
-    c += uLightCol * spec * 0.7 + uLightCol * rim * facing * 0.35;    // bevelled outer edge catches light
-    c = mix(c, vec3(0.035, 0.03, 0.028) + uLightCol * spec * 0.12, clamp(lead + rim * 0.5, 0.0, 1.0));   // lead came
-    glass = c;
+    if (pid < 0.5)      pal = vec3(0.90, 0.10, 0.14);                 // ruby
+    else if (pid < 1.5) pal = vec3(0.14, 0.36, 1.00);                 // cobalt
+    else if (pid < 2.5) pal = vec3(1.00, 0.68, 0.10);                 // amber
+    else if (pid < 3.5) pal = vec3(0.08, 0.78, 0.38);                 // emerald
+    else if (pid < 4.5) pal = vec3(0.66, 0.22, 0.92);                 // amethyst
+    else                pal = vec3(1.00, 0.42, 0.60);                 // rose
+    float pane = 0.80 + 0.40 * shade;                                 // each pane is a slightly different piece of glass
+    tint = mix(vec3(1.0), pal, 0.88) * pane;
+    emit = pal * (0.85 + 0.30 * shade);
   }
+
+  // ---- liquid glass (stained glass is the same glass with a colour in it) ----
+  vec2 off = n.xy * stroke * (0.9 + 0.8 * h) * px;                    // lens-like displacement
+  float lodF = frost * 6.0;
+  vec3 c;
+  float disp = (1.0 - frost) * 0.10 + 0.015;
+  c.r = sceneAt(vUv + off * (1.0 + disp), lodF).r;
+  c.g = sceneAt(vUv + off, lodF).g;
+  c.b = sceneAt(vUv + off * (1.0 - disp), lodF).b;
+  // frost: diffuse towards the local average sky colour and go milky; clear glass stays clear
+  vec3 avg = sceneAt(vUv, 6.5);
+  c = mix(c, mix(avg, c, 0.5), frost * 0.6);
+  float lum = lumaOf(c);
+  c = mix(c, vec3(lum), 0.12 * frost);
+  if (stained) c *= tint * 1.25;                                      // colour the light passing through the pane
+  c += uLightCol * (0.012 + 0.26 * frost * frost + 0.06 * frost) * (0.45 + 0.55 * uLight.z) * (stained ? tint : vec3(1.0));
+  c += (hash21(gl_FragCoord.xy) - 0.5) * 0.05 * frost;               // fine grain of etched glass
+  c *= 1.0 - 0.10 * rim * away;                                       // bevel facing away from the light darkens
+
+  // light from inside: brightest in the thick middle of the stroke, the bevelled edge stays glassy
+  float core = smoothstep(0.10, 0.80, h);
+  float inner = glow * (0.28 + 0.72 * core) * (1.0 - 0.45 * rim);
+  vec3 lamp = emit * inner;
+  c += lamp * (stained ? 0.95 : 0.80);
+  c += emit * glow * 0.10 * (1.0 - frost * 0.4);                      // faint all-over fill so thin strokes light up too
+
+  c += uLightCol * spec * mix(1.1, 0.35, frost) * (stained ? 0.7 : 1.0);   // frost scatters the glint into a soft sheen
+  c += uLightCol * rim * facing * (0.30 + 0.45 * uLight.z) * mix(1.0, 0.65, frost) * (stained ? 0.8 : 1.0);
+  c += uLightCol * rim * 0.05;
+  c += uLightCol * exp(-pow((h - 0.62) * 5.0, 2.0)) * spec * 0.35 * (1.0 - frost);
+  if (stained) {
+    // lead came between the panes: nearly opaque, blocks the glow, and the bevel still catches light on it
+    vec3 leadCol = vec3(0.035, 0.03, 0.028) + uLightCol * spec * 0.12;
+    c = mix(c, leadCol, clamp(lead, 0.0, 1.0) * 0.88);
+  }
+  vec3 glass = min(c, vec3(1.6));
+
+  // halo on the sky around lit glass
+  vec3 shaded = base * (1.0 - shadow * (1.0 - cover));
+  vec3 haloCol = stained ? mix(vec3(1.0, 0.92, 0.82), vec3(0.8, 0.9, 1.0), 0.3) : uGlowCol;
+  shaded += haloCol * halo * glow * (1.0 - cover) * 0.30;
 
   oColor = vec4(mix(shaded, glass, cover), 1.0);
 }`;

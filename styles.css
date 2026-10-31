@@ -163,6 +163,15 @@ body {
   padding: 3px 8px;
   border-radius: 10px;
   background: rgba(0, 0, 0, 0.35);
+  transform: translate(-50%, -50%);
+}
+
+#hud .lbl.edge.l {
+  transform: translate(0, -50%);
+}
+
+#hud .lbl.edge.r {
+  transform: translate(-100%, -50%);
 }
 
 #hud .readout {
@@ -214,7 +223,10 @@ body {
   outline-offset: 2px;
 }
 
-/* Modal root: hidden by [hidden] attribute by default */
+/* ------------------------------------------------------------------ settings ----
+   A side drawer on wide screens (the sky stays visible beside it), a bottom sheet on phones.
+   Dark glass to match the sky; light when the device asks for it. Everything has a 44px touch target and
+   16px type, because iOS zooms into smaller form controls. */
 .modal[hidden] {
   display: none;
 }
@@ -223,90 +235,629 @@ body {
   position: fixed;
   inset: 0;
   z-index: 1000;
+  color-scheme: dark;
+  --panel: rgba(13, 19, 36, 0.86);
+  --panel-edge: rgba(255, 255, 255, 0.14);
+  --card: rgba(255, 255, 255, 0.055);
+  --card-edge: rgba(255, 255, 255, 0.10);
+  --line: rgba(255, 255, 255, 0.10);
+  --field: rgba(255, 255, 255, 0.09);
+  --text: #eef2ff;
+  --muted: #a6b1cf;
+  --accent: #7db2ff;
+  --on-accent: #06122e;
+  --adv: #ffc069;
+  --adv-bg: rgba(255, 192, 105, 0.07);
+  --adv-edge: rgba(255, 192, 105, 0.45);
+  --scrim: rgba(0, 0, 0, 0.32);
+  font: 16px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+@media (prefers-color-scheme: light) {
+  .modal {
+    color-scheme: light;
+    --panel: rgba(247, 249, 255, 0.90);
+    --panel-edge: rgba(10, 20, 50, 0.14);
+    --card: rgba(255, 255, 255, 0.75);
+    --card-edge: rgba(10, 20, 50, 0.10);
+    --line: rgba(10, 20, 50, 0.10);
+    --field: rgba(10, 20, 50, 0.06);
+    --text: #121a33;
+    --muted: #55607e;
+    --accent: #1f5fd1;
+    --on-accent: #fff;
+    --adv: #9a5a00;
+    --adv-bg: rgba(255, 170, 40, 0.12);
+    --adv-edge: rgba(190, 110, 0, 0.5);
+    --scrim: rgba(10, 20, 50, 0.22);
+  }
 }
 
 .modal__backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
+  background: var(--scrim);
 }
 
 .modal__content {
-  position: relative;
-  max-width: 520px;
-  width: 92vw;
-  margin: 5vh auto 0;
-  background: #fff;
-  color: #111;
-  border-radius: 12px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  padding: 1rem 1.25rem 1.25rem;
-  animation: modal-in 160ms ease-out;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(440px, 100vw);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  background: var(--panel);
+  color: var(--text);
+  border-left: 1px solid var(--panel-edge);
+  box-shadow: -18px 0 50px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(26px) saturate(1.5);
+  -webkit-backdrop-filter: blur(26px) saturate(1.5);
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) 0;
+  animation: drawer-in 200ms ease-out;
+  transition: opacity 160ms ease;
 }
 
-@keyframes modal-in {
-  from {
-    transform: translateY(10px);
-    opacity: 0;
-  }
+@keyframes drawer-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
 
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
+@keyframes sheet-in {
+  from { transform: translateY(32px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+.sheet-handle {
+  display: none;
 }
 
 .modal__header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: .5rem;
-  margin-bottom: .75rem;
+  gap: 10px;
+  padding: 14px 14px 10px 18px;
+}
+
+.modal__header h2 {
+  margin: 0;
+  flex: 1;
+  font-size: 1.25rem;
+  font-weight: 650;
 }
 
 .modal__close {
+  width: 44px;
+  height: 44px;
+  margin: -4px -4px -4px 0;
   border: none;
-  background: transparent;
-  font-size: 1.5rem;
+  border-radius: 50%;
+  background: var(--field);
+  color: inherit;
+  font-size: 1.6rem;
   line-height: 1;
   cursor: pointer;
 }
 
-.modal__body {
-  display: grid;
-  gap: .75rem;
-  max-height: 78vh;
-  max-height: 78dvh;
-  overflow-y: auto;
+/* Simple / Advanced */
+.seg {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--field);
 }
 
-.modal__body label {
-  font-size: .9rem;
-  color: #333;
+.seg__btn {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
 }
 
-.modal__body select,
-.modal__body input[type="datetime-local"] {
+.seg__btn[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.seg__btn[data-level="advanced"][aria-pressed="true"] {
+  background: var(--adv);
+  color: #2a1700;
+}
+
+/* section tabs */
+.tabs {
+  display: flex;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line);
+  gap: 2px;
+}
+
+.tab {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 56px;
+  padding: 6px 2px 4px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.69rem;
+  font-weight: 600;
+  line-height: 1.1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tab svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tab span {
   max-width: 100%;
-  margin: .15rem 0 .4rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.modal__body input[type="range"] {
+.tab[aria-selected="true"] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.modal__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 14px 14px 22px 18px;
+}
+
+.panel[hidden] {
+  display: none;
+}
+
+/* groups of related settings */
+.group {
+  margin: 0 0 14px;
+  padding: 2px 14px 8px;
+  background: var(--card);
+  border: 1px solid var(--card-edge);
+  border-radius: 14px;
+}
+
+.group h3 {
+  margin: 0;
+  padding: 12px 0 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* advanced settings are visibly a different kind of thing: amber, dashed, tagged */
+.group.adv {
+  background: var(--adv-bg);
+  border: 1px dashed var(--adv-edge);
+  border-left: 4px solid var(--adv);
+}
+
+.group.adv h3 {
+  color: var(--adv);
+}
+
+.badge {
+  margin-left: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--adv);
+  color: #2a1700;
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  vertical-align: 1px;
+}
+
+.field.adv {
+  margin-left: -4px;
+  padding-left: 10px;
+  border-left: 3px solid var(--adv);
+}
+
+.modal[data-level="simple"] .adv {
+  display: none;
+}
+
+.field {
+  display: block;
+  padding: 10px 0;
+  font-size: 1rem;
+}
+
+.field + .field,
+.field + .hint + .field,
+.field + .btn {
+  border-top: 1px solid var(--line);
+}
+
+.field__label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.94rem;
+  font-weight: 550;
+  color: var(--text);
+}
+
+.field__label output {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.muted {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.82rem;
+}
+
+/* switch rows */
+.field.toggle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 48px;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.field__text {
+  flex: 1;
+  min-width: 0;
+  font-weight: 550;
+  font-size: 0.94rem;
+}
+
+.field__text small {
+  display: block;
+  margin-top: 2px;
+  font-weight: 400;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.field.toggle input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.switch {
+  flex: none;
+  position: relative;
+  width: 50px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--field);
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition: background 160ms ease;
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  transition: transform 160ms ease;
+}
+
+.field.toggle input:checked + .switch {
+  background: var(--accent);
+}
+
+.field.toggle input:checked + .switch::after {
+  transform: translateX(20px);
+}
+
+.field.toggle input:focus-visible + .switch,
+.modal select:focus-visible,
+.modal input[type="range"]:focus-visible,
+.modal button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.modal select,
+.modal input[type="datetime-local"] {
   width: 100%;
+  min-height: 46px;
+  box-sizing: border-box;
+  padding: 0 38px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background-color: var(--field);
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;            /* 16px: smaller makes iOS zoom the page */
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='9' viewBox='0 0 14 9'><path d='M1 1.5l6 6 6-6' fill='none' stroke='%23999' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 13px center;
 }
 
-.modal__body .hint {
-  margin: .25rem 0;
-  font-size: .8rem;
-  color: #555;
+.modal input[type="datetime-local"] {
+  padding-right: 12px;
+  background-image: none;
+}
+
+.modal select option {
+  background: #fff;
+  color: #111;
+}
+
+.modal input[type="range"] {
+  width: 100%;
+  height: 36px;
+  margin: 0;
+  accent-color: var(--accent);
+  touch-action: pan-y;
+}
+
+.btn {
+  display: block;
+  width: 100%;
+  min-height: 46px;
+  margin: 8px 0 6px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--field);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.btn:active {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.modal .hint {
+  margin: 6px 0 2px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.modal .hint:empty {
+  display: none;
+}
+
+.modal .hint a {
+  color: var(--accent);
+}
+
+.modal .credits {
+  margin: 4px 4px 0;
+}
+
+.coords-line {
+  padding: 2px 0 8px;
+}
+
+/* phones: a bottom sheet, thumb-reachable tabs along its bottom edge */
+@media (max-width: 720px) {
+  .modal__backdrop {
+    background: rgba(0, 0, 0, 0.12);
+  }
+
+  .modal__content {
+    top: auto;
+    left: 0;
+    right: 0;
+    width: auto;
+    height: min(80vh, 760px);
+    height: min(80dvh, 760px);
+    border-left: 0;
+    border-top: 1px solid var(--panel-edge);
+    border-radius: 22px 22px 0 0;
+    box-shadow: 0 -14px 44px rgba(0, 0, 0, 0.4);
+    padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    animation: sheet-in 220ms ease-out;
+  }
+
+  .sheet-handle {
+    display: block;
+    width: 40px;
+    height: 5px;
+    margin: 8px auto 0;
+    border-radius: 3px;
+    background: var(--line);
+    background: color-mix(in srgb, var(--text) 30%, transparent);
+  }
+
+  .modal__header {
+    padding: 8px 12px 8px 16px;
+  }
+
+  .modal__body {
+    padding: 12px 12px 16px;
+  }
+
+  .tabs {
+    order: 3;
+    border-bottom: 0;
+    border-top: 1px solid var(--line);
+    padding: 0 4px;
+  }
+
+  .tab {
+    border-bottom: 0;
+    border-top: 3px solid transparent;
+  }
+
+  .tab[aria-selected="true"] {
+    border-top-color: var(--accent);
+  }
+
+  /* while a slider is being dragged the sheet gets out of the way so the change can be seen */
+  .modal.adjusting .modal__content {
+    opacity: 0.16;
+  }
+
+  .modal.adjusting .modal__backdrop {
+    background: transparent;
+  }
+}
+
+@media (max-width: 380px) {
+  .seg__btn {
+    padding: 0 10px;
+  }
+}
+
+/* a phone on its side: little height, so keep the chrome thin */
+@media (max-height: 520px) and (orientation: landscape) {
+  .modal__header {
+    padding-top: 6px;
+    padding-bottom: 4px;
+  }
+
+  .tab {
+    min-height: 46px;
+    flex-direction: row;
+    gap: 6px;
+    font-size: 0.72rem;
+  }
+
+  .tab svg {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal__content,
+  .switch,
+  .switch::after {
+    animation: none;
+    transition: none;
+  }
 }
 
 /* the glass styles are drawn by the sky renderer from the same shapes; keep the SVG for layout only */
 body[data-clockstyle="glass"] #clock,
-body[data-clockstyle="stained"] #clock {
+body[data-clockstyle="stained"] #clock,
+body[data-clockstyle="led"] #clock {
   visibility: hidden;
+}
+
+/* LED panel, held upright: the panel is 32 pixels wide, so the digits stack two to a row (hours, minutes,
+   seconds) instead of six across. The shader draws them; this only decides where they go. */
+@media (orientation: portrait) {
+  body[data-screen="led"] #clock {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-content: center;
+    justify-items: center;
+    margin-left: auto !important;
+    margin-right: auto;
+  }
+
+  body[data-screen="led"] #clock svg {
+    width: 88% !important;
+    margin: 0 !important;
+  }
+
+  body[data-screen="led"] #clock svg:nth-child(1) { grid-area: 1 / 1; }
+  body[data-screen="led"] #clock svg:nth-child(2) { grid-area: 1 / 2; }
+  body[data-screen="led"] #clock svg:nth-child(4) { grid-area: 2 / 1; }
+  body[data-screen="led"] #clock svg:nth-child(5) { grid-area: 2 / 2; }
+  body[data-screen="led"] #clock svg:nth-child(7) { grid-area: 3 / 1; }
+  body[data-screen="led"] #clock svg:nth-child(8) { grid-area: 3 / 2; }
+  body[data-screen="led"] #clock svg:nth-child(3),
+  body[data-screen="led"] #clock svg:nth-child(6) { display: none !important; }
+}
+
+/* sunrise / sunset countdown */
+#sunCountdown {
+  position: fixed;
+  z-index: 3;
+  left: 50%;
+  top: max(7%, calc(env(safe-area-inset-top) + 14px));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: baseline;
+  gap: 0.6em;
+  padding: 0.55em 1.3em;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+  background: rgba(10, 16, 32, 0.5);
+  color: #fff;
+  font: 600 clamp(1rem, 3.8vw, 1.8rem)/1.1 system-ui, sans-serif;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  pointer-events: none;
+  transition: opacity 600ms ease;
+}
+
+#sunCountdown[hidden] {
+  display: none;
+}
+
+#sunCountdown .what {
+  opacity: 0.88;
+}
+
+#sunCountdown .time {
+  font-size: 1.4em;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+#sunCountdown[data-kind="sunrise"] .icon {
+  color: #ffd27a;
+}
+
+#sunCountdown[data-kind="sunset"] .icon {
+  color: #ff9a5c;
+}
+
+/* the LED panel draws everything itself; DOM overlays would break the illusion */
+body[data-screen="led"] #sunCountdown {
+  display: none;
 }
 
 /* shown while "keep the screen on" is wanted but the browser still needs a touch to allow it */
@@ -340,4 +891,32 @@ body[data-view="look"] {
 /* keep-screen-on video: always behind the sky canvas; only if there is no canvas does it fade out of sight */
 body.no-webgl video {
   opacity: 0.02;
+}
+
+/* raw motion-sensor numbers (Settings -> View -> Motion sensor fixes) */
+#vrReadout {
+  position: fixed;
+  z-index: 4;
+  left: 8px;
+  bottom: max(8px, env(safe-area-inset-bottom));
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #9fffb0;
+  font: 11px/1.35 ui-monospace, Menlo, Consolas, monospace;
+  pointer-events: none;
+  white-space: pre;
+}
+
+#vrReadout[hidden] {
+  display: none;
+}
+
+.led-note {
+  display: none;
+}
+
+body[data-screen="led"] .led-note {
+  display: block;
 }

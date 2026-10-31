@@ -19,11 +19,15 @@ With thanks to
 | **Landscape** | "Real terrain around my location" samples a public elevation model in 32 directions out to 40 km and builds your actual skyline, so the sun really does set behind the hills to your west. Or choose flat, hills, mountains, desert, ocean (with sun glitter) or a city with lit windows. |
 | **Ocean waves** | Two wave trains (wind sea and swell), each five components from the peak wavelength down to chop, with real deep-water dispersion. Height, period and direction come from Open-Meteo's marine forecast where it covers your spot (a live status line shows e.g. "2.6 m waves every 10 s"), otherwise the sea grows from the live wind speed. The glitter path widens as the sea roughens, whitecaps and wind-blown foam streaks appear from about a fresh breeze, rain dimples the surface with rings, and far swell lifts and drops the horizon. Calm weather gives glass. |
 | **Plants & ground** | Grass, wildflowers, shrubs, broadleaf and conifer trees, palms, cacti, acacia and rocks, chosen to suit the place. One satellite tile around your location (Sentinel-2) is classified into forest / grassland / steppe / desert / tundra / urban / snow / water, then region rules pick species (cacti only in the Americas, acacia in Africa and Australia, palms in the tropics) and the date picks the season (spring green, autumn orange, bare winter). Wind sways them at the real wind speed, rain darkens and bows them, wets the ground with puddle sheen and ripples, and snow settles on them. Falls back to latitude rules offline; Settings → Weather & landscape turns it off. |
+| **Settings** | A side drawer on wide screens (the sky stays visible beside it) and a bottom sheet on phones with the tabs along the thumb edge. Five tabs (Clock, Scene, View, Display, Place & time). A **Simple / Advanced** switch at the top: Simple shows the common settings; Advanced adds the rest, drawn in amber with an "Advanced" tag so it is obvious which is which. While you drag a slider on a phone the sheet fades so you can see the effect. Dark glass by default, light when the device asks for it. |
 | **VR look-around** | Tap the goggles button on a phone/tablet: the sky follows the device's orientation sensors. Drag to fine-tune the compass direction, pinch to zoom. "Look around" mode (drag and pinch, no sensors) works on desktop. Optional labels for the sun, moon and planets with arrows to find them. |
 | **Framing** | By default the camera tilts so the horizon sits exactly on the bottom of the clock digits, on any screen size, so the ground always shows beneath them. Untick it in Settings → View to set the tilt yourself. |
 | **Keep screen on** | Settings → Display uses the Screen Wake Lock API so the phone doesn't dim or lock while the page is open (bedside / travel clock). It is released when the page is hidden and re-acquired when it returns. iOS only allows it after a touch, so a "Tap to keep the screen on" banner appears until you tap. Two mechanisms run: the Wake Lock API and a hidden silent video (a real 256x144 clip behind the sky; Chrome ignores tiny ones). On iPhones both run together because Safari can grant a lock and still sleep. Settings shows which is active. |
 | **Time travel** | Settings → Time travel: jump to any date/time or run at up to 1 hour per second. |
-| **Clock** | The same wobbly morphing digits, in three styles: **Liquid glass** (default: bevelled glass that refracts the real sky behind it, catches the actual sun or moon as glints and a bright rim, and casts a soft shadow), **Stained glass** (jewel-coloured leaded panes lit by the sky behind them) and the classic **solid ink**, which flips between light and dark so it stays readable. A **Frosting** slider takes the glass from perfectly clear to fully etched. |
+| **Clock** | The same wobbly morphing digits, in three styles: **Liquid glass** (default: bevelled glass that refracts the real sky behind it, catches the actual sun or moon as glints and a bright rim, and casts a soft shadow), **Stained glass** (jewel-coloured leaded panes lit by the sky behind them) and the classic **solid ink**, which flips between light and dark so it stays readable. A **Frosting** slider takes the glass from perfectly clear to fully etched, and **Light from inside** makes the glass glow (a lamp in the thick middle of each stroke, a halo on the sky, in warm / white / cool or the colour of the sun or moon). **Stained glass** is the same liquid glass with colour in it: each pane tints what you see through it and glows in its own jewel tone, split by thin lead lines. |
+| **Sunrise & sunset countdown** | Settings → Display. Starting 10 to 30 minutes (20 by default) before the sun reaches the horizon, a pill counts down to it ("Sunset in 04:09"), then says "Sunset" for a minute. Sunrise, sunset or both. Times are the almanac ones (upper limb, standard refraction) so real hills hide the sun slightly earlier. Follows time travel. |
+| **Follow the sun** | Settings → View (clock view only). Only the compass direction moves, never the tilt, so the sun stays at one height while it crosses the screen from the right quarter at sunrise to the left quarter at sunset, in either hemisphere, like east to west on a map. The position comes from the sun's real azimuth, so the seasons show: in June the sun rises further round to the north and starts nearer the right edge, in December nearer the middle. Overnight the view turns back, slowly, to the next sunrise. |
+| **LED panel** | Settings → Display. The whole picture becomes a 64 × 32 LED matrix: square pixels with black lines between them, the clock as lit pixels. It turns itself to 32 × 64 when the screen is upright, and the digits stack two to a row. The panel is letter-boxed so the pixels stay square. |
 
 ## Why it is fast
 
@@ -60,6 +64,14 @@ Everything is static; deploy by pushing to GitHub Pages.
 Requirements: WebGL2 with floating-point render targets (all current phones and desktops). Without
 it you get a plain sky-coloured gradient and a note in Settings.
 
+### If VR look-around is off on an iPhone or iPad
+
+iOS reports the compass differently from Android, and what it does once the device is held upright in landscape is not
+documented. The code estimates the compass offset from the raw sensor angles (it used to feed its own correction back in,
+which made the view spin), tracks both plausible readings of the heading and uses portrait / landscape to pick when
+turning alone cannot tell them apart. If the sky is still 90° out, Settings → View → Advanced → Motion sensor fixes lets
+you choose the compass reference or ignore the screen rotation, and "Show sensor readout" prints the raw numbers.
+
 ### Developer deep links
 
 These are not saved to your settings:
@@ -90,9 +102,11 @@ These are not saved to your settings:
     js/sky/glsl-plants.js             instanced plant sprites with wind
     js/sky/glass.js                   rasterises the digits for the glass styles; light direction from sun/moon
     js/sky/controls.js                drag / pinch / VR sensors
+    js/sky/orientation.js             device orientation maths and the iOS compass calibration (testable in node)
+    js/sky/sunpath.js                 sunrise / sunset times, the countdown, the follow-the-sun camera
     js/sky/app.js                     settings, live data, HUD, clock colour
     data/                             star catalogue, Milky Way, moon map (built by tools/build-data.py)
-    tools/                            data builder, orientation test (node tools/test-orientation.mjs)
+    tools/                            data builder; tests: node tools/test-orientation.mjs, node tools/test-sunpath.mjs
 
 ## What is and is not verified
 
@@ -101,7 +115,7 @@ night, stars, Milky Way, moon phases, every landscape and weather preset, deskto
 layouts, the no-WebGL fallback, time-lapse, drag / zoom, and the VR sensor code path using
 synthetic orientation events (plus a unit test of the orientation math against known phone poses).
 
-**Not verified:** behaviour on real phones (frame rate, motion-sensor feel, iOS compass
+**Not verified:** behaviour on real phones and tablets (the iPad VR fix described above was reasoned out and unit-tested, not tried on an iPad) (frame rate, motion-sensor feel, iOS compass
 calibration, which uses `webkitCompassHeading`), and the live Open-Meteo calls (the build sandbox could not
 reach the service; the code was exercised against mocked responses in Open-Meteo's documented
 format). If a live call fails, the page quietly keeps clear-sky defaults.
