@@ -89,7 +89,6 @@ function selectTab(name, focus = false) {
   });
   panels.forEach(p => { p.hidden = p.dataset.panel !== name; });
   modal.querySelector('.modal__body').scrollTop = 0;
-  conf.settingsTab = name;
 }
 
 function initTabs() {
@@ -103,7 +102,7 @@ function initTabs() {
       selectTab(tabs[(to + tabs.length) % tabs.length].dataset.tab, true);
     });
   });
-  selectTab(conf.settingsTab);
+  selectTab('presets');                          // every visit starts on the presets
 }
 
 // ---- Simple / Advanced ----

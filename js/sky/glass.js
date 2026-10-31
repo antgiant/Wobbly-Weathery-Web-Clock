@@ -13,6 +13,8 @@
 // (coverage stays in alpha), and the shader turns them into a glow inside the glass.
 
 import { conf, clockStyleNow } from '../config.js';
+import { getSim } from '../simtime.js';
+import { every } from './scheduler.js';
 
 const VB_W = 100, VB_H = 116, VB_Y0 = -8;      // viewBox of each digit svg: "0 -8 100 116"
 const STROKE = 80 * 0.2;                        // stroke-width 80 under transform scale(0.2), in viewBox units
@@ -209,8 +211,7 @@ export function initGlass(engine, getBasis) {
       mode: st === 'glass' ? 1 : st === 'stained' ? 2 : led() ? 3 : 0,
       frost: Math.min(1, Math.max(0, +conf.glassFrost)),
       glow: glowAmount(),
-      // each LED pixel averages digit and sky, which halves the contrast, so the panel asks for twice as much
-      contrast: ({ off: 0, auto: 3, high: 4.5 }[conf.legibility] ?? 3) * (led() ? 2 : 1),
+      contrast: { off: 0, auto: 0.85, high: 1 }[conf.legibility] ?? 0.85,
       glowCol: glowColor(),
     });
     if (on) { schedule(); updateLight(); }
@@ -230,8 +231,8 @@ export function initGlass(engine, getBasis) {
   }
   document.addEventListener('visibilitychange', () => { if (!document.hidden) schedule(); });
   let lastStyle = style();
-  setInterval(() => { if (style() !== lastStyle) { lastStyle = style(); apply(); } }, 5000);      // the season (or time travel) changed the automatic style
-  setInterval(() => { updateLight(); if (active()) schedule(); }, 1000);    // belt and braces: re-measure once a second
+  every('glass-style', () => { if (style() !== lastStyle) { lastStyle = style(); apply(); } }, () => (getSim() ? 4000 : 60000));   // the season (or time travel) changed the automatic style
+  every('glass-light', () => { updateLight(); if (active()) schedule(); }, () => (active() ? 1000 : Infinity));   // the light moves with the sun; also re-measures the digits
   engine.onFrame(() => { if (active() && !engine._lightInit) { engine._lightInit = true; updateLight(); } });
   apply();
   return { apply, updateLight, setInk };

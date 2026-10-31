@@ -435,7 +435,16 @@ export class SkyEngine {
     return 1000;
   }
 
-  /** Called from the rAF loop. */
+  // ---- the loop ----
+  // Not a constant 60 Hz requestAnimationFrame: when the sky is still the page sleeps on a timer until the next redraw
+  // is due (about once a second), and only asks for animation frames while a frame is actually wanted. Anything that
+  // marks the scene dirty, or turns on `fast`, wakes it at once.
+  get dirty() { return this._dirty; }
+  set dirty(v) { this._dirty = v; if (v) this._wake(); }
+  get fast() { return this._fast; }
+  set fast(v) { const was = this._fast; this._fast = v; if (v && !was) this._wake(); }
+
+  /** Draws if a frame is due. */
   tick(t) {
     if (this.dirty || t - this.lastRender >= this.interval()) {
       this.lastRender = t;
@@ -443,18 +452,39 @@ export class SkyEngine {
     }
   }
 
+  _frame = (t) => {
+    this._raf = 0;
+    if (!this._running) return;
+    if (!document.hidden) this.tick(t);
+    this._schedule();
+  };
+
+  _schedule() {
+    if (!this._running || this._raf || this._to || document.hidden) return;   // hidden: visibilitychange wakes us
+    const wait = this._dirty || this._fast ? 0 : Math.max(0, this.interval() - (performance.now() - this.lastRender));
+    if (wait <= 4) this._raf = requestAnimationFrame(this._frame);
+    else this._to = setTimeout(() => { this._to = 0; this._raf = requestAnimationFrame(this._frame); }, wait);
+  }
+
+  _wake() {
+    if (!this._running || document.hidden) return;
+    if (this._to) { clearTimeout(this._to); this._to = 0; }
+    this._schedule();
+  }
+
   start() {
     if (this._running) return;
     this._running = true;
-    const loop = (t) => {
-      if (!this._running) return;
-      this._raf = requestAnimationFrame(loop);
-      if (document.hidden) return;
-      this.tick(t);
-    };
-    this._raf = requestAnimationFrame(loop);
+    this._onVis = () => { if (!document.hidden) this._wake(); };
+    document.addEventListener('visibilitychange', this._onVis);
+    this._schedule();
   }
-  stop() { this._running = false; cancelAnimationFrame(this._raf); }
+  stop() {
+    this._running = false;
+    cancelAnimationFrame(this._raf); clearTimeout(this._to);
+    this._raf = this._to = 0;
+    document.removeEventListener('visibilitychange', this._onVis);
+  }
 
   render(t) {
     const gl = this.gl, s = this.s;

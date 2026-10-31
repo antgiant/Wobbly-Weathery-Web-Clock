@@ -1158,3 +1158,81 @@ body:not(.ready) #clock {
   #loading .spin { animation-duration: 3s; }
   #loading { transition: none; }
 }
+
+/* ---------------------------------------------------------------- night dimming ---- */
+#dimmer {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 4s ease;
+}
+
+#dimmer[hidden] {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- presets ---- */
+.presets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.preset {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 92px;
+  padding: 12px;
+  border: 1px solid var(--card-edge);
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.preset strong {
+  font-size: 0.98rem;
+}
+
+.preset small {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.preset[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.preset[aria-pressed="true"] strong::after {
+  content: " ✓";
+  color: var(--accent);
+}
+
+.preset:active {
+  transform: scale(0.98);
+}
+
+.modal .intro {
+  margin: 2px 4px 12px;
+  font-size: 0.9rem;
+}
+
+.btn--danger {
+  color: #ff8c8c;
+}
+
+@media (prefers-color-scheme: light) {
+  .btn--danger {
+    color: #b3261e;
+  }
+}
