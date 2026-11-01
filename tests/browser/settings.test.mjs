@@ -12,7 +12,7 @@ export async function run(t) {
   await page.waitForTimeout(400);
   t.check('settings open on the Presets tab', await page.evaluate(() => document.querySelector('.tab[aria-selected="true"]').dataset.tab) === 'presets');
   t.check('there are nine presets, each a button with a name and a note', await page.evaluate(() => [...document.querySelectorAll('#presetList .preset')].filter((b) => b.querySelector('strong') && b.querySelector('small')).length) === 9);
-  t.check('the tab order starts with Presets', await page.evaluate(() => [...document.querySelectorAll('.tab')].map((x) => x.dataset.tab).join()) === 'presets,clock,scene,view,display,place');
+  t.check('the tab order starts with Presets', await page.evaluate(() => [...document.querySelectorAll('.tab')].map((x) => x.dataset.tab).join()) === 'presets,clock,scene,weather,extras,place');
   t.check('on a phone the panel is a bottom sheet (anchored to the bottom edge)', await page.evaluate(() => { const r = document.querySelector('.modal__content').getBoundingClientRect(); return Math.abs(r.bottom - innerHeight) < 2 && r.width >= innerWidth - 2; }));
   t.check('Simple / Advanced sits below the tabs: along the bottom edge on a phone', await page.evaluate(() => { const a = document.querySelector('.tab').getBoundingClientRect(), b = document.querySelector('.levelbar').getBoundingClientRect(); return b.top > a.bottom; }));
   const small = await page.evaluate(() => [...document.querySelectorAll('.modal button, .modal select, .modal input[type=number]')].filter((e) => e.offsetParent && (e.getBoundingClientRect().height < 36)).map((e) => e.id || e.className));
