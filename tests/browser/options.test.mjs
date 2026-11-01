@@ -16,7 +16,7 @@ export async function run(t) {
   await h.page.waitForTimeout(400);
   const shown = (id) => h.page.evaluate((i) => { const e = document.getElementById(i); return !!e && e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden'; }, id);
   const moved = ['tempUnit', 'showLabels', 'screenMode', 'countdownKind'];
-  const tabOf = { tempUnit: 'scene', showLabels: 'view', screenMode: 'display', countdownKind: 'display' };
+  const tabOf = { tempUnit: 'weather', showLabels: 'scene', screenMode: 'extras', countdownKind: 'extras' };
   for (const id of moved) {
     await h.page.click(`.tab[data-tab="${tabOf[id]}"]`);
     t.check(`Simple: ${id} is not shown`, !(await shown(id)));
@@ -26,6 +26,13 @@ export async function run(t) {
     await h.page.click(`.tab[data-tab="${tabOf[id]}"]`);
     t.check(`Advanced: ${id} is shown`, await shown(id));
   }
+  // where things live: View is part of Scene, Display is Extras, all the weather is on one Weather tab
+  const home = await h.page.evaluate(() => Object.fromEntries(['weatherMode', 'tempUnit', 'cloudMotion', 'rainAlert', 'digitWeather', 'windSway', 'viewMode', 'followSun', 'showLabels', 'viewHeading', 'sensorRotation', 'landscape', 'plants', 'quality', 'countdown', 'nightDim', 'screenMode', 'keepAwake', 'clockStyle', 'hideSeconds', 'simEnabled', 'preciseLocation'].map((id) => [id, document.getElementById(id)?.closest('[data-panel]')?.dataset.panel])));
+  t.check('the tabs are Presets, Clock, Scene, Weather, Extras, Place (no View, no Display)', await h.page.evaluate(() => [...document.querySelectorAll('.tab')].map((b) => b.textContent.trim()).join() === 'Presets,Clock,Scene,Weather,Extras,Place' && !document.getElementById('panel-view') && !document.getElementById('panel-display')));
+  t.check('all the weather is on the Weather tab: weather, temperature units, cloud and water motion, umbrella alert, rain and snow on the digits, wind sway', ['weatherMode', 'tempUnit', 'cloudMotion', 'rainAlert', 'digitWeather', 'windSway'].every((id) => home[id] === 'weather'), JSON.stringify(home));
+  t.check('the View settings are in Scene, with the landscape and the sky', ['viewMode', 'followSun', 'showLabels', 'viewHeading', 'sensorRotation', 'landscape', 'plants', 'quality'].every((id) => home[id] === 'scene'), JSON.stringify(home));
+  t.check('Extras has the sunrise / sunset countdown, night dimming and the screen', ['countdown', 'nightDim', 'screenMode', 'keepAwake'].every((id) => home[id] === 'extras'), JSON.stringify(home));
+  t.check('the Clock tab has only the clock (no weather settings left on it)', ['clockStyle', 'hideSeconds'].every((id) => home[id] === 'clock') && !['digitWeather', 'windSway'].some((id) => home[id] === 'clock'));
   await h.page.click('.seg__btn[data-level="simple"]');
   await h.page.click('.tab[data-tab="presets"]');
   t.check('Presets panel: the Offline block is the last one', await h.page.evaluate(() => { const g = [...document.querySelectorAll('#panel-presets .group')]; return g[g.length - 1].querySelector('#offlineStatus') !== null; }));

@@ -210,11 +210,11 @@
           <button type="button" class="tab" role="tab" id="tab-scene" aria-controls="panel-scene" aria-selected="false" data-tab="scene" tabindex="-1">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18a4 4 0 0 1-.5-7.97A5.5 5.5 0 0 1 17 8.5a4.75 4.75 0 0 1 0 9.5z"/></svg><span>Scene</span>
           </button>
-          <button type="button" class="tab" role="tab" id="tab-view" aria-controls="panel-view" aria-selected="false" data-tab="view" tabindex="-1">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><span>View</span>
+          <button type="button" class="tab" role="tab" id="tab-weather" aria-controls="panel-weather" aria-selected="false" data-tab="weather" tabindex="-1">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 15a4 4 0 0 1-.5-7.97A5.5 5.5 0 0 1 17 6.5a4.75 4.75 0 0 1 0 9.5"/><path d="M8 19l-1 2M12 19l-1 2M16 19l-1 2"/></svg><span>Weather</span>
           </button>
-          <button type="button" class="tab" role="tab" id="tab-display" aria-controls="panel-display" aria-selected="false" data-tab="display" tabindex="-1">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg><span>Display</span>
+          <button type="button" class="tab" role="tab" id="tab-extras" aria-controls="panel-extras" aria-selected="false" data-tab="extras" tabindex="-1">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.4 5.6L20 9.3l-4.3 3.9L17 19l-5-3-5 3 1.3-5.8L4 9.3l5.6-.7z"/></svg><span>Extras</span>
           </button>
           <button type="button" class="tab" role="tab" id="tab-place" aria-controls="panel-place" aria-selected="false" data-tab="place" tabindex="-1">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s7-6.2 7-11.5a7 7 0 0 0-14 0C5 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg><span>Place</span>
@@ -273,23 +273,6 @@
               <label class="field__label" for="timerLabel">Name (optional)</label>
               <input type="text" id="timerLabel" maxlength="40" placeholder="Launch, Birthday, Holiday…" autocomplete="off">
               <p class="hint" id="timerHint">Days:hours:minutes:seconds, in your own time zone. With the seconds shown it never has more than 6 digits (a day or more shows days:hours:minutes), and with them hidden never more than 4 (days:hours).</p>
-            </div>
-            <div class="field adv">
-              <label class="field__label" for="digitWeather">Rain and snow on the digits</label>
-              <select id="digitWeather">
-                <option value="on">On</option>
-                <option value="off">Off</option>
-              </select>
-              <p class="hint">In the liquid glass, coloured tube and LED styles, snow settles on the top edges of the digits, rain beads up on them (some beads slide, leaving a wet trail) and drops splash off the tops. Thin and edge-only, so the time stays readable. Flat colour (Solid) is left plain to save power.</p>
-            </div>
-            <div class="field adv">
-              <label class="field__label" for="windSway">Wind sway</label>
-              <select id="windSway">
-                <option value="off">Off</option>
-                <option value="lean">Lean downwind (steady)</option>
-                <option value="full">Lean and gusts</option>
-              </select>
-              <p class="hint">The digits lean like palm trees, the bottoms fixed and the tops pushed downwind: the stronger the wind, the further they lean, and the lean follows the way you are looking. Only the part of the wind across the screen shows as lean; wind blowing straight at you or away just flutters. The lean is capped so the time stays readable. Gusts redraw the digits 15 times a second, so they are not used while saving power.</p>
             </div>
             <div class="field">
               <label class="field__label" for="clockStyle">Style</label>
@@ -353,35 +336,6 @@
         <!-- ================= SCENE ================= -->
         <section class="panel" role="tabpanel" id="panel-scene" aria-labelledby="tab-scene" data-panel="scene" hidden>
           <div class="group">
-            <h3>Weather</h3>
-            <div class="field">
-              <label class="field__label" for="weatherMode">Weather</label>
-              <select id="weatherMode">
-                <option value="live">Live for my location</option>
-                <option value="clear">Clear</option>
-                <option value="partly">Partly cloudy</option>
-                <option value="cloudy">Mostly cloudy</option>
-                <option value="overcast">Overcast</option>
-                <option value="rain">Rain</option>
-                <option value="storm">Thunderstorm</option>
-                <option value="snow">Snow</option>
-                <option value="fog">Fog</option>
-                <option value="haze">Smoky haze</option>
-              </select>
-              <p class="hint" id="weatherStatus"></p>
-              <p class="hint">With time travel on, this is the weather of that date: recorded for the past, forecast for the next two weeks.</p>
-            </div>
-            <div class="field adv">
-              <label class="field__label" for="tempUnit">Temperature</label>
-              <select id="tempUnit">
-                <option value="auto">Automatic (by region)</option>
-                <option value="c">Celsius</option>
-                <option value="f">Fahrenheit</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="group">
             <h3>Landscape</h3>
             <div class="field">
               <label class="field__label" for="landscape">Landscape</label>
@@ -440,20 +394,8 @@
               </select>
               <p class="hint" id="lpStatus"></p>
             </div>
-            <div class="field">
-              <label class="field__label" for="cloudMotion">Cloud &amp; water motion</label>
-              <select id="cloudMotion">
-                <option value="1">Real wind speed</option>
-                <option value="0.25">Slow</option>
-                <option value="0">Still (saves power)</option>
-              </select>
-              <p class="hint" id="skyStatus"></p>
-            </div>
           </div>
-        </section>
 
-        <!-- ================= VIEW ================= -->
-        <section class="panel" role="tabpanel" id="panel-view" aria-labelledby="tab-view" data-panel="view" hidden>
           <div class="group">
             <h3>Where you look</h3>
             <div class="field">
@@ -512,8 +454,80 @@
           </div>
         </section>
 
-        <!-- ================= DISPLAY ================= -->
-        <section class="panel" role="tabpanel" id="panel-display" aria-labelledby="tab-display" data-panel="display" hidden>
+                <!-- ================= WEATHER ================= -->
+        <section class="panel" role="tabpanel" id="panel-weather" aria-labelledby="tab-weather" data-panel="weather" hidden>
+          <div class="group">
+            <h3>Weather</h3>
+            <div class="field">
+              <label class="field__label" for="weatherMode">Weather</label>
+              <select id="weatherMode">
+                <option value="live">Live for my location</option>
+                <option value="clear">Clear</option>
+                <option value="partly">Partly cloudy</option>
+                <option value="cloudy">Mostly cloudy</option>
+                <option value="overcast">Overcast</option>
+                <option value="rain">Rain</option>
+                <option value="storm">Thunderstorm</option>
+                <option value="snow">Snow</option>
+                <option value="fog">Fog</option>
+                <option value="haze">Smoky haze</option>
+              </select>
+              <p class="hint" id="weatherStatus"></p>
+              <p class="hint">With time travel on, this is the weather of that date: recorded for the past, forecast for the next two weeks.</p>
+            </div>
+            <div class="field adv">
+              <label class="field__label" for="tempUnit">Temperature</label>
+              <select id="tempUnit">
+                <option value="auto">Automatic (by region)</option>
+                <option value="c">Celsius</option>
+                <option value="f">Fahrenheit</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="group adv">
+            <h3>Clouds &amp; water <span class="badge">Advanced</span></h3>
+            <div class="field">
+              <label class="field__label" for="cloudMotion">Cloud &amp; water motion</label>
+              <select id="cloudMotion">
+                <option value="1">Real wind speed</option>
+                <option value="0.25">Slow</option>
+                <option value="0">Still (saves power)</option>
+              </select>
+              <p class="hint" id="skyStatus"></p>
+            </div>
+          </div>
+
+          <div class="group">
+            <h3>Rain &amp; snow</h3>
+            <label class="field toggle"><span class="field__text">Umbrella alert<small>Shows an umbrella when enough rain is coming before 11 pm to be worth one, and a yellow one with drops when it is heavy enough for a slicker</small></span><input type="checkbox" id="rainAlert"><span class="switch" aria-hidden="true"></span></label>
+            <p class="hint" id="rainStatus"></p>
+            <div class="field adv">
+              <label class="field__label" for="digitWeather">Rain and snow on the digits</label>
+              <select id="digitWeather">
+                <option value="on">On</option>
+                <option value="off">Off</option>
+              </select>
+              <p class="hint">In the liquid glass, coloured tube and LED styles, snow settles on the top edges of the digits, rain beads up on them (some beads slide, leaving a wet trail) and drops splash off the tops. Thin and edge-only, so the time stays readable. Flat colour (Solid) is left plain to save power.</p>
+            </div>
+          </div>
+
+          <div class="group adv">
+            <h3>Wind <span class="badge">Advanced</span></h3>
+            <div class="field">
+              <label class="field__label" for="windSway">Wind sway</label>
+              <select id="windSway">
+                <option value="off">Off</option>
+                <option value="lean">Lean downwind (steady)</option>
+                <option value="full">Lean and gusts</option>
+              </select>
+              <p class="hint">The digits lean like palm trees, the bottoms fixed and the tops pushed downwind: the stronger the wind, the further they lean, and the lean follows the way you are looking. Only the part of the wind across the screen shows as lean; wind blowing straight at you or away just flutters. The lean is capped so the time stays readable. Gusts redraw the digits 15 times a second, so they are not used while saving power.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= EXTRAS ================= -->
+        <section class="panel" role="tabpanel" id="panel-extras" aria-labelledby="tab-extras" data-panel="extras" hidden>
           <div class="group">
             <h3>Sunrise &amp; sunset</h3>
             <div class="field">
@@ -564,12 +578,6 @@
               <label class="field__label" for="nightDimLevel">How dark <output id="nightDimLevelOut"></output></label>
               <input type="range" id="nightDimLevel" min="0.1" max="0.9" step="0.05">
             </div>
-          </div>
-
-          <div class="group">
-            <h3>Rain</h3>
-            <label class="field toggle"><span class="field__text">Umbrella alert<small>Shows an umbrella when enough rain is coming before 11 pm to be worth one, and a yellow one with drops when it is heavy enough for a slicker</small></span><input type="checkbox" id="rainAlert"><span class="switch" aria-hidden="true"></span></label>
-            <p class="hint" id="rainStatus"></p>
           </div>
 
           <div class="group">

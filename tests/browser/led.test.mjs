@@ -75,7 +75,7 @@ export async function run(t) {
   // the settings: choosing a size changes the panel at once, and the choices are saved
   const h = await t.open({ query: NOON, width: 1000, height: 560, conf: { screenMode: 'led', clockStyle: 'solid' } });
   await h.page.evaluate(() => document.getElementById('settings').dispatchEvent(new MouseEvent('click', { bubbles: true })));
-  await h.page.click('#tab-display');
+  await h.page.click('#tab-extras');
   await h.page.click('.seg__btn[data-level="advanced"]');                        // the LED controls are Advanced settings
   await h.page.selectOption('#ledPreset', '128x64');
   await h.page.waitForTimeout(600);
