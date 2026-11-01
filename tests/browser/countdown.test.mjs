@@ -56,12 +56,35 @@ export async function run(t) {
 
   if (t.quick) return;                                              // the quick check stops here
 
-  // a target in the past: zeros and "now"
-  h = await open(t, '2026-06-20T08:00:00', { timerLabel: 'Done' });
-  await h.settle(900);
-  s = await state(h.page);
-  t.check('a date that has passed shows zeros and the caption says "now"', s.title === 'Done 0:00:00' && s.pill === 'Done · now', JSON.stringify(s));
+  // the date has arrived (earlier today): 00:00 for the rest of the day, in either seconds setting
+  for (const hs of [false, true]) {
+    h = await open(t, '2026-06-21T08:00:00', { timerLabel: 'Done', hideSeconds: hs });
+    await h.settle(900);
+    s = await state(h.page);
+    t.check(`today's date has arrived (seconds ${hs ? 'hidden' : 'shown'}): the digits show 00:00, four digits, and the caption says today`, s.title === 'Done 00:00' && s.digits === 4 && s.pill === 'Done · today', JSON.stringify(s));
+    await h.close();
+  }
+  // the day after: the clock is back, and the setting says so
+  h = await open(t, '2026-06-20T08:00:00', { timerLabel: 'Done', twentyFourHourClock: true });
+  await h.settle(1200);
+  const s0 = await state(h.page);
+  t.check('the day after the date, the digits show the time again (12:00:0x, six digits, no caption)', /^12:00:0\d$/.test(s0.title) && s0.digits === 6 && s0.pill === null, JSON.stringify(s0));
   await h.close();
+  // (with the page clock frozen instead of time travel, which would leave the setting alone) the setting goes back to "The time" by itself
+  h = await t.open({ fixedTime: '2026-06-21T12:00:00Z', timezone: 'UTC', width: 393, height: 852, conf: { clockStyle: 'solid', clockMode: 'countdown', timerTarget: '2026-06-20T08:00:00', timerLabel: 'Done', twentyFourHourClock: true } });
+  await h.settle(5200);
+  s = await state(h.page);
+  const back = await h.page.evaluate(() => ({ mode: JSON.parse(localStorage.getItem('conf')).clockMode, select: document.getElementById('clockMode').value }));
+  t.check('and the setting goes back to "The time" by itself', back.mode === 'time' && back.select === 'time', JSON.stringify(back));
+  await h.close();
+  // midnight itself: the last second of the day still shows 00:00, the first second of the next shows the time
+  for (const [at, expect] of [['2026-06-21T23:59:58Z', '00:00'], ['2026-06-22T00:00:02Z', 'clock']]) {
+    h = await t.open({ query: `t=${at}&speed=0`, timezone: 'UTC', width: 393, height: 852, conf: { clockStyle: 'solid', clockMode: 'countdown', timerTarget: '2026-06-21T08:00:00', twentyFourHourClock: true } });
+    await h.settle(900);
+    s = await state(h.page);
+    t.check(`${at.slice(11, 19)}: ${expect === '00:00' ? 'still 00:00 (the target\'s day has not ended)' : 'the time again (the day has ended)'}`, expect === '00:00' ? s.title === '00:00' : /^0:00:0\d$/.test(s.title), s.title);
+    await h.close();
+  }
 
   // switching in the settings: a new countdown starts at the next midnight, and Time brings the clock back
   h = await t.open({ query: NOW, timezone: 'UTC', width: 393, height: 852, conf: { clockStyle: 'solid', twentyFourHourClock: true } });

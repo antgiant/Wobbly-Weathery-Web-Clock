@@ -1,6 +1,6 @@
 // Countdown digits: which units show, never more than 6 digits (seconds shown) or 4 (hidden). Run: node tests/unit/countdown.test.mjs
 import { check, done } from '../lib/check.mjs';
-const { groupsFor, textOf, slotsFor, secondsLeft, parseTarget, defaultTarget, unitsFor, MAX_DIGITS } = await import('../../js/countdown.js');
+const { groupsFor, textOf, slotsFor, secondsLeft, parseTarget, defaultTarget, unitsFor, phaseOf, doneSlots, MAX_DIGITS } = await import('../../js/countdown.js');
 const D = 86400, H = 3600, M = 60;
 const t = (secs, sec) => textOf(groupsFor(secs, sec));
 
@@ -35,4 +35,14 @@ check('the digits tick when the clock\'s seconds do (every whole second)', secon
 check('parseTarget reads a datetime-local value, and rejects nothing and rubbish', Number.isFinite(parseTarget('2026-12-25T08:00')) && Number.isNaN(parseTarget('')) && Number.isNaN(parseTarget('soon')));
 check('a new countdown starts at the next local midnight', (() => { const v = defaultTarget(new Date(2026, 5, 21, 15, 30).getTime()); return v === '2026-06-22T00:00'; })());
 check('the caption names the units shown', unitsFor(5 * H, true) === 'hours:minutes:seconds' && unitsFor(5 * D, true) === 'days:hours:minutes' && unitsFor(200 * D, true) === 'days:hours' && unitsFor(5 * H, false) === 'hours:minutes' && unitsFor(5 * D, false) === 'days:hours' && unitsFor(200 * D, false) === 'days');
+
+// the day it arrives: 00:00 until the end of that day, then the clock again
+const tgt = new Date(2026, 5, 24, 16, 5, 0).getTime();
+check('before the target: counting', phaseOf(tgt, tgt - 1) === 'counting' && phaseOf(tgt, tgt - 86400e3) === 'counting');
+check('at the target and for the rest of that day: done (00:00)', phaseOf(tgt, tgt) === 'done' && phaseOf(tgt, new Date(2026, 5, 24, 23, 59, 59).getTime()) === 'done');
+check('from the next midnight: over (the clock comes back)', phaseOf(tgt, new Date(2026, 5, 25, 0, 0, 0).getTime()) === 'over' && phaseOf(tgt, tgt + 3 * 86400e3) === 'over');
+const mid = new Date(2026, 5, 24, 0, 0, 0).getTime();
+check('a target at exactly midnight counts as that day (done for 24 hours)', phaseOf(mid, mid) === 'done' && phaseOf(mid, mid + 86399e3) === 'done' && phaseOf(mid, mid + 86400e3) === 'over');
+const ds = doneSlots();
+check('done shows 00:00: two groups of two zeros, no seconds', ds.show.h0 && ds.show.m && !ds.show.s && !ds.show.x && ds.h.join() === '0,0' && ds.m.join() === '0,0');
 done();
