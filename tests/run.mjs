@@ -101,7 +101,7 @@ if (kind === 'browser' || kind === 'all') {
       failed++;
       console.log(`  FAIL  ${mod.name}  (${results.length - bad.length} of ${results.length} checks passed)`);
       for (const r of bad) console.log(`        - ${r.n}${r.extra ? '  [' + r.extra + ']' : ''}`);
-      if (crashed) console.log(`        - the test stopped: ${crashed.message.split('\n')[0]}`);
+      if (crashed) console.log(`        - the test stopped: ${(process.env.VERBOSE ? crashed.stack : crashed.message.split('\n')[0])}`);
     }
     for (const r of results.filter((x) => x.warn)) console.log(`        ! ${r.n}${r.extra ? '  [' + r.extra + ']' : ''}`);
     if (process.env.VERBOSE) for (const r of results.filter((x) => x.ok && !x.warn)) console.log(`        . ${r.n}`);

@@ -1,15 +1,17 @@
 // Offline / repeat-visit cache. Everything the page needs is stored on first visit (so it also works offline and as an
 // installed app), and from then on files are served from the device at once and refreshed in the background
 // (stale-while-revalidate): a returning visit does not wait for the network. Other origins (weather, terrain,
-// satellite tiles) are never touched. A change you deploy shows up on the visit after next; bump VERSION to
-// make old caches go.
-const VERSION = 'v10';
+// satellite tiles) are never touched. A change you deploy shows up on the visit after next, or at once from the
+// "new version" banner. The cache is named after the version of the app (js/version.js, stamped by tools/stamp.mjs), so a new
+// version starts a clean cache and the old ones go.
+importScripts('js/version.js');
+const VERSION = 'v' + self.APP_VERSION.number + '-' + self.APP_VERSION.hash;
 const CACHE = 'wwwc-' + VERSION;
 const opened = () => (opened.p || (opened.p = caches.open(CACHE)));     // one handle for all requests: opening it each time is the slow part of a cached start
 
 // keep in step with the files of the app: tools/test-pwa.mjs checks that every script and data file is listed
 const PRECACHE = [
-  './', 'index.html', 'styles.css', 'manifest.webmanifest',
+  './', 'index.html', 'styles.css', 'manifest.webmanifest', 'js/version.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png',
   'data/stars.bin', 'data/milkyway.png', 'data/moon.jpg',
   'js/vendor/astronomy.browser.min.js',
@@ -53,6 +55,7 @@ function tellPages() {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
+  if (req.cache === 'no-store' && req.mode !== 'navigate') return;      // a request that insists on the network (the version check) is not answered from the saved copy (a page reload, cache 'reload', still is: it must work offline)
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   e.respondWith((async () => {
