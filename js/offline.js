@@ -55,3 +55,14 @@ async function refreshApp() {
   location.reload();
 }
 document.addEventListener('DOMContentLoaded', () => document.getElementById('refreshApp')?.addEventListener('click', refreshApp));
+
+// The saved copy opens first, and the newer one is fetched behind it. When the service worker finds a file has changed it
+// says so, and this offers the reload (a banner at the top, so a clock left running on a shelf is never reloaded by surprise).
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    if (!e.data || e.data.type !== 'updated') return;
+    const b = document.getElementById('updateBanner');
+    if (b) b.hidden = false;
+  });
+}
+document.addEventListener('DOMContentLoaded', () => document.getElementById('updateBanner')?.addEventListener('click', refreshApp));
