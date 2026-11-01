@@ -56,5 +56,15 @@ export async function run(t) {
   await g.page.waitForFunction(() => document.body.classList.contains('ready'), null, { timeout: 60000 }).catch(() => {});
   const fresh = await g.page.evaluate(async () => { const k = (await caches.keys()).find((x) => x.startsWith('wwwc-')); const c = await caches.open(k); return (await (await c.match('/js/wind.js')).text()).length; });
   t.check('pressing it re-fetched the stale file from the server and reloaded the page', fresh > 1000, `${fresh} bytes`);
+
+  // a newer version on the server than the saved one: the page offers to update (and never reloads by itself)
+  t.check('(set up) no update banner while the saved copy matches the server', await g.page.evaluate(() => document.getElementById('updateBanner').hidden));
+  await g.page.evaluate(async () => { const k = (await caches.keys()).find((x) => x.startsWith('wwwc-')); const c = await caches.open(k); await c.put('/js/wind.js', new Response('// the old version', { headers: { 'content-type': 'text/javascript', etag: '"an-older-version"' } })); });
+  await g.page.evaluate(() => fetch('/js/wind.js').then((r) => r.text()));          // the page asks for a file: the saved copy is answered, the server's is fetched behind it
+  await g.page.waitForFunction(() => !document.getElementById('updateBanner').hidden, null, { timeout: 15000 }).catch(() => {});
+  t.check('when the server has a different copy of a file, the page shows "A new version is ready: tap to update"', await g.page.evaluate(() => { const b = document.getElementById('updateBanner'); return !b.hidden && /new version/i.test(b.textContent); }));
+  const url0 = g.page.url();
+  await g.page.waitForTimeout(1500);
+  t.check('and it did not reload by itself', g.page.url() === url0 && await g.page.evaluate(() => !document.getElementById('updateBanner').hidden));
   await g.close();
 }

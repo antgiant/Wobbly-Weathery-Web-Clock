@@ -3,7 +3,7 @@
 // (stale-while-revalidate): a returning visit does not wait for the network. Other origins (weather, terrain,
 // satellite tiles) are never touched. A change you deploy shows up on the visit after next; bump VERSION to
 // make old caches go.
-const VERSION = 'v9';
+const VERSION = 'v10';
 const CACHE = 'wwwc-' + VERSION;
 const opened = () => (opened.p || (opened.p = caches.open(CACHE)));     // one handle for all requests: opening it each time is the slow part of a cached start
 
@@ -37,6 +37,19 @@ self.addEventListener('activate', (e) => {
   })());
 });
 
+// Whether the server's copy is different from the saved one (by ETag, else Last-Modified, else length).
+function changed(saved, fresh) {
+  for (const h of ['etag', 'last-modified', 'content-length']) {
+    const a = saved.headers.get(h), b = fresh.headers.get(h);
+    if (a && b) return a !== b;
+  }
+  return false;
+}
+// Tell the open pages, so they can offer "a new version is ready" (the page itself was served from the saved copy).
+function tellPages() {
+  self.clients.matchAll({ includeUncontrolled: true }).then((cs) => cs.forEach((c) => c.postMessage({ type: 'updated' })));
+}
+
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
@@ -46,7 +59,13 @@ self.addEventListener('fetch', (e) => {
     const cache = await opened();
     // the page itself is the same file whatever the ?query (deep links, tests)
     const hit = await cache.match(req, { ignoreSearch: req.mode === 'navigate' });
-    const fresh = fetch(req).then((r) => { if (r && r.ok) cache.put(req, r.clone()); return r; }).catch(() => hit);
+    const fresh = fetch(req).then((r) => {
+      if (r && r.ok) {
+        if (hit && changed(hit, r) && /\.(js|css|html|webmanifest)$|\/$/.test(url.pathname)) tellPages();   // a newer version of the app is now saved: the page on screen is the old one
+        cache.put(req, r.clone());
+      }
+      return r;
+    }).catch(() => hit);
     return hit || fresh;
   })());
 });
