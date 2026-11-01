@@ -16,7 +16,7 @@ export const RULES = [
   [/^js\/(config|units|simtime|location|index)\.js$/, 'ALL'],
   [/^js\/(season)\.js$/, ['options', 'christmas']],
   [/^js\/(install)\.js$/, ['options']],
-  [/^js\/(offline)\.js$|^sw\.js$|^manifest\.webmanifest$|^icons\//, ['offline', 'smoke']],
+  [/^js\/(offline|version)\.js$|^sw\.js$|^manifest\.webmanifest$|^icons\//, ['offline', 'smoke']],
   [/^js\/(wakelock|settings_gear)\.js$/, ['settings', 'options']],
   [/^js\/sky\/glsl-scene\.js$/, ['sky', 'led', 'digitweather']],
   [/^js\/sky\/glass\.js$/, ['sky', 'led', 'digitweather', 'options']],

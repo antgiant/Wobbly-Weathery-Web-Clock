@@ -24,6 +24,7 @@
     } catch (e) {}
   </script>
   <!-- fetch the whole script graph and the data in parallel instead of one import at a time -->
+  <script src="js/version.js"></script>
   <link rel="modulepreload" href="js/clock.js">
   <link rel="modulepreload" href="js/config.js">
   <link rel="modulepreload" href="js/wind.js">
@@ -247,6 +248,12 @@
             <p class="hint">Puts every setting back to how it was the first time, except your location.</p>
             <button id="resetAll" type="button" class="btn btn--danger">Reset all settings</button>
           </div>
+          <div class="group">
+            <h3>About</h3>
+            <p class="hint" id="versionLine">Version …</p>
+            <p class="hint" id="versionNewest"></p>
+          </div>
+
           <div class="group">
             <h3>Offline</h3>
             <p class="hint" id="offlineStatus"></p>

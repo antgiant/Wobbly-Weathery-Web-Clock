@@ -66,5 +66,21 @@ export async function run(t) {
   const url0 = g.page.url();
   await g.page.waitForTimeout(1500);
   t.check('and it did not reload by itself', g.page.url() === url0 && await g.page.evaluate(() => !document.getElementById('updateBanner').hidden));
+
+  // the version: one definite answer to "which copy is this?"
+  const ver = await g.page.evaluate(async () => { const m = await import('/js/version.js').catch(() => null); void m; return { v: window.__version, line: document.getElementById('versionLine').textContent, dataset: document.documentElement.dataset.version }; });
+  const stamp = await g.page.evaluate(() => fetch('/js/version.js', { cache: 'no-store' }).then((r) => r.text()));
+  const file = { number: +/number: (\d+)/.exec(stamp)[1], hash: /hash: '([0-9a-f]+)'/.exec(stamp)[1] };
+  t.check('the running copy knows its version, and it is the one in js/version.js', ver.v && ver.v.number === file.number && ver.v.hash === file.hash, JSON.stringify({ ...ver, file }));
+  t.check('Settings -> Presets -> About says the version number, the hash and the build date', new RegExp(`Version ${file.number} \\(${file.hash}\\), built \\d{4}-\\d{2}-\\d{2}`).test(ver.line), ver.line);
+  await g.page.evaluate(() => document.getElementById('settings').dispatchEvent(new MouseEvent('click', { bubbles: true })));
+  await g.page.waitForFunction(() => /up to date|newer|differs|Could not/.test(document.getElementById('versionNewest').textContent), null, { timeout: 15000 }).catch(() => {});
+  t.check('and it checks the server: "the server has the same version: you are up to date"', /same version \(\d+\): you are up to date/.test(await g.page.evaluate(() => document.getElementById('versionNewest').textContent)));
+  // the server moves on (a newer number): About says so, and offers the update
+  await g.page.evaluate((n) => { const real = window.fetch.bind(window); window.fetch = (u, o) => (/js\/version\.js/.test(String(u)) ? Promise.resolve(new Response(`globalThis.APP_VERSION = { number: ${n}, hash: 'deadbeef', built: '2099-01-01' };`)) : real(u, o)); }, file.number + 5);   // the server has moved on
+  await g.page.evaluate(() => document.getElementById('settings').dispatchEvent(new MouseEvent('click', { bubbles: true })));
+  await g.page.waitForFunction((n) => new RegExp(`newer version: ${n}`).test(document.getElementById('versionNewest').textContent), file.number + 5, { timeout: 15000 }).catch(() => {});
+  const newest = await g.page.evaluate(() => ({ text: document.getElementById('versionNewest').textContent, banner: !document.getElementById('updateBanner').hidden }));
+  t.check('when the server has a higher number, About names it and the update banner appears', new RegExp(`newer version: ${file.number + 5} \\(deadbeef\\)`).test(newest.text) && newest.banner, JSON.stringify(newest));
   await g.close();
 }

@@ -66,3 +66,27 @@ if ('serviceWorker' in navigator) {
   });
 }
 document.addEventListener('DOMContentLoaded', () => document.getElementById('updateBanner')?.addEventListener('click', refreshApp));
+
+// ---- the version: which copy of the app is running, and whether the server has a newer one ----
+const V = globalThis.APP_VERSION;
+const parse = (t) => { const n = /number: (\d+)/.exec(t), h = /hash: '([0-9a-f]+)'/.exec(t); return n && h ? { number: +n[1], hash: h[1] } : null; };
+async function showVersion() {
+  const line = document.getElementById('versionLine'), newest = document.getElementById('versionNewest');
+  if (line) line.textContent = V ? `Version ${V.number} (${V.hash}), built ${V.built}. This is the copy of the app running now.` : 'Version unknown (js/version.js did not load).';
+  if (!newest || !V) return;
+  if (navigator.onLine === false) { newest.textContent = 'Offline: cannot check for a newer version.'; return; }
+  newest.textContent = 'Checking the server for a newer version…';
+  try {
+    const r = await fetch('js/version.js', { cache: 'no-store' });
+    const s = parse(await r.text());
+    if (!s) newest.textContent = 'Could not read the newest version.';
+    else if (s.hash === V.hash) newest.textContent = `The server has the same version (${s.number}): you are up to date.`;
+    else if (s.number > V.number) { newest.textContent = `The server has a newer version: ${s.number} (${s.hash}). Use "Update and reload" below.`; const b = document.getElementById('updateBanner'); if (b) b.hidden = false; }
+    else newest.textContent = `The server has version ${s.number} (${s.hash}), which differs from yours.`;
+  } catch (_) { newest.textContent = 'Could not reach the server to check.'; }
+}
+if (V) { document.documentElement.dataset.version = String(V.number); window.__version = V; }
+document.addEventListener('DOMContentLoaded', () => {
+  showVersion();
+  document.getElementById('settings')?.addEventListener('click', showVersion);        // look again each time Settings opens
+});
