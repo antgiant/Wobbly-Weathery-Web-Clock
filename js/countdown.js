@@ -65,3 +65,17 @@ export function unitsFor(secs, showSeconds) {
   if (showSeconds) return d >= 100 ? 'days:hours' : d >= 1 ? 'days:hours:minutes' : 'hours:minutes:seconds';
   return d >= 100 ? 'days' : d >= 1 ? 'days:hours' : 'hours:minutes';
 }
+
+/**
+ * Where a countdown is: 'counting' until the target, 'done' from the target to the end of that day (local time), which shows
+ * 00:00, and 'over' after that, when the clock goes back to showing the time.
+ */
+export function phaseOf(targetMs, nowMs) {
+  if (nowMs < targetMs) return 'counting';
+  const end = new Date(targetMs);
+  end.setHours(24, 0, 0, 0);                                   // the next local midnight (a target at exactly 00:00 counts as that day)
+  return nowMs < end.getTime() ? 'done' : 'over';
+}
+
+/** The digit slots for the finished state: 00:00. */
+export const doneSlots = () => ({ x: [0, 0], h: [0, 0], m: [0, 0], s: [0, 0], show: { x: false, h0: true, m: true, s: false } });

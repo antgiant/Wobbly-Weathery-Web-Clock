@@ -2,7 +2,7 @@ import { conf, vars, dd, adjustTimeSize, use24h } from './config.js';
 import { easing } from './easing.js'
 import { now as simNow, getSim } from './simtime.js'
 import { sway, topOffset, bend } from './wind.js'
-import { secondsLeft, slotsFor, groupsFor, textOf, parseTarget, unitsFor, defaultTarget } from './countdown.js'
+import { secondsLeft, slotsFor, groupsFor, textOf, parseTarget, unitsFor, defaultTarget, phaseOf, doneSlots } from './countdown.js'
 
 function ci(c, i) {
   var k = i * 6;
@@ -85,9 +85,14 @@ function getTime(date) {
 
 
 // ---- countdown mode (countdown.js): the same digits show days:hours:minutes:seconds to a date ----
-var cdShown = false;                         // the digit slots are currently arranged for a countdown
+var cdShown = false, overSince = 0;                         // the digit slots are currently arranged for a countdown
 function countdownTarget() {
   return conf.clockMode === 'countdown' ? parseTarget(conf.timerTarget) : NaN;
+}
+// the countdown has run its day: back to the clock, and the setting says so
+function endCountdown() {
+  conf.clockMode = 'time';
+  window.dispatchEvent(new Event('confreset'));
 }
 function svgOf(id) { var p = document.getElementById(id); return p ? p.closest('svg') : null; }
 function setHidden(el, hide) {
@@ -115,10 +120,10 @@ window.addEventListener('timerchange', function() { layoutStale = true; kickCloc
 
 // the caption: the name of the countdown and which units the digits are
 var pillText = null;
-function updateTimerPill(counting, left) {
+function updateTimerPill(counting, left, done) {
   var el = document.getElementById('timerPill');
   if (!el) return;
-  var text = counting ? (conf.timerLabel ? conf.timerLabel + ' · ' : '') + (left <= 0 ? 'now' : unitsFor(left, !conf.hideSeconds)) : '';
+  var text = counting ? (conf.timerLabel ? conf.timerLabel + ' · ' : '') + (done ? 'today' : unitsFor(left, !conf.hideSeconds)) : '';
   if (text === pillText) return;
   pillText = text;
   el.textContent = text;
@@ -147,12 +152,21 @@ document.addEventListener('DOMContentLoaded', function() {
 function clock() {
   if (document.hidden) return false;           // nothing to animate in a background tab
   var now = simNow();
-  var target = countdownTarget(), counting = Number.isFinite(target);
+  var target = countdownTarget(), counting = Number.isFinite(target), done = false;
+  if (counting) {
+    var phase = phaseOf(target, +now);
+    if (phase === 'over') {
+      counting = false;                                    // the digits show the time ...
+      // ... and, after it has stayed over for a few seconds (not while time travel is on, and not on the very first tick,
+      // which can run before a ?t= date is applied), the setting goes back to "The time" too
+      if (!getSim()) { if (!overSince) overSince = performance.now(); else if (performance.now() - overSince > 3000) endCountdown(); }
+    } else { overSince = 0; done = phase === 'done'; }
+  }
   var time, nTime, slots = vars.t, left = 0;
   if (counting) {
-    left = secondsLeft(target, +now);
-    time = slotsFor(left, !conf.hideSeconds);
-    nTime = slotsFor(Math.max(0, left - 1), !conf.hideSeconds);
+    left = done ? 0 : secondsLeft(target, +now);
+    time = done ? doneSlots() : slotsFor(left, !conf.hideSeconds);
+    nTime = done ? time : slotsFor(Math.max(0, left - 1), !conf.hideSeconds);
     arrangeCountdown(time.show);
     slots = ['x', 'h', 'm', 's'];
   } else {
@@ -173,7 +187,7 @@ function clock() {
       setDigit(t + i, morph(dd[d], dd[nd], cStep), performance.now());   // gusts run on the real clock, even while time travel holds the time still
     }
   });
-  updateTimerPill(counting, left);
+  updateTimerPill(counting, left, done);
   if (layoutStale) {
     layoutStale = false;
     updateSvgWidths();
@@ -183,7 +197,7 @@ function clock() {
     window.dispatchEvent(new Event('clockchange'));
   }
   var tempTime = counting
-    ? (conf.timerLabel ? conf.timerLabel + ' ' : '') + textOf(groupsFor(left, !conf.hideSeconds))
+    ? (conf.timerLabel ? conf.timerLabel + ' ' : '') + (done ? '00:00' : textOf(groupsFor(left, !conf.hideSeconds)))
     : Number(String(time.h[0]) + String(time.h[1])) + ":" + time.m[0] + time.m[1] + (conf.hideSeconds ? "" : ":" + time.s[0] + time.s[1]);
   if (document.title !== tempTime) {
     document.title = tempTime;
