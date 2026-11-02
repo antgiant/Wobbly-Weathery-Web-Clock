@@ -27,6 +27,7 @@ export const RULES = [
   [/^js\/sky\/(alerts|sunpath|rain)\.js$/, ['alerts', 'options']],
   [/^js\/sky\/(presets|bindings|dim)\.js$/, ['settings', 'options']],
   [/^js\/sky\/(burnin)\.js$/, ['options']],
+  [/^js\/sky\/(pillroom)\.js$/, ['alerts', 'countdown']],
   [/^js\/sky\/(weather|data)\.js$/, ['sky', 'alerts', 'digitweather']],
   [/^js\/sky\/(view|controls|orientation)\.js$/, ['startup', 'sky', 'wind']],
   [/^js\/sky\/(engine|scheduler|app|core|appearance)\.js$/, 'ALL'],
