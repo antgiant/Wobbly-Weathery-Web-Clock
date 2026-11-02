@@ -33,39 +33,85 @@ through, as the rest of the LED picture does.
   "nothing covers the time" checks in `tests/browser/alerts.test.mjs` stay green; a bright-sky and a dark-sky pixel-contrast check on the icon.
 - Check both the tuned layouts (pixel card) and the other sizes (full-size pills drawn through the LEDs).
 
-## What would an original Raspberry Pi Zero need?
+## Raspberry Pi targets: a range of Pis, full-resolution HDMI and LED panels of any size
 
-Working out what it takes to run this clock on an **original Pi Zero** (BCM2835, one ARM1176 core at 1 GHz, ARMv6, 512 MB, VideoCore IV),
-which is a natural driver for an LED panel (the 64 x 32 matrix is the case that matters most). The web page cannot do it as it is:
-it needs **WebGL2** with float render targets and a heavy physically based sky, and the Pi Zero's GPU driver offers only OpenGL ES 2.0
-and the last Chromium that runs on ARMv6 is old. Questions to answer, in order:
+(Replaces the earlier "original Pi Zero" entry; updated 2026-11-02.) **Goals:** run the clock on **a range of Raspberry Pis**, from the
+original Zero up to a 4, in **two output modes**: (1) **full resolution over HDMI**, and (2) **an LED matrix panel of configurable
+size**, driven through **[hzeller/rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix)** (the standard hub75 library) so any
+panel and wiring it supports works. Not started.
 
-1. **What is the display?** A hub75 LED matrix driven from the GPIO pins (the usual `rpi-rgb-led-matrix` library), or a small HDMI screen?
-   For a matrix the picture is only 64 x 32 (or 128 x 64) pixels, a few thousand pixels, which changes everything below.
-2. **Measure first.** Can the current page run at all on a Zero (a legacy 32-bit OS with Chromium, a very low quality setting, WebGL2
-   availability, frames per second, memory)? Probably not usefully, but it settles the baseline and the "do nothing" option.
-3. **A compiled, much smaller renderer.** For a few thousand pixels the sky does not need a GPU. Options, from least to most work:
-   - **Node.js (ARMv6 build) + a CPU port of the sky.** Reuse the JavaScript that matters (the vendored astronomy library, the weather and
-     countdown logic, the clock digit shapes) and render the sky in plain typed-array maths into a 64 x 32 buffer; the atmosphere from
-     precomputed lookup tables (the page's LUTs, baked once on a desktop and shipped as data) or a closed-form sky model instead of ray
-     marching. Drive the panel with a Node binding.
-   - **A compiled program (Rust or C, target `arm-unknown-linux-gnueabihf` for ARMv6)** doing the same: astronomy (a port or a crate), a
-     simplified analytic sky, the digit morph drawn with a tiny 2D rasteriser (the digits are four Bezier curves each), the landscape as a
-     skyline strip, and the weather over HTTP. Fastest and smallest; most work, and a second implementation to keep in step with the web one.
-   - **WebAssembly** for the hot loops (shared between the browser and a small host on the Pi), if one code base for both is worth the build step.
-   - **Pre-baked frames:** the sky changes slowly. Render a day's worth of 64 x 32 base frames (one a minute is about 6 KB each, under
-     9 MB a day per place) on a desktop and play them back, compositing only the digits live. Weather would mean re-baking, so this is
-     the fallback, not the plan.
-4. **Decide what is kept.** A feature table for the Pi build: sun, moon, planets, stars, clouds and weather tint, the horizon, the digits and
-   their morph, countdown mode and the sun countdown, night dimming and anti burn-in: yes in some form; liquid glass, refraction, rain beads,
-   wind sway, plants and the Christmas tree: probably not.
-5. **How do we know it matches?** Golden frames: render the same moments with the web renderer and the Pi renderer at 64 x 32 and compare
-   (average colour per region within a tolerance), so the compiled version cannot drift from the real one. Reuse the LED averaging of the
-   normal picture as the reference ("exactly what the normal screen would be, made of LEDs").
-6. **Build, install, update:** a cross-compile in CI, a release file for the Zero, a systemd service, settings from a config file or the
-   same shareable link (see the sign-link entry below) so it can be set up without a keyboard, and the same "keeps itself current" behaviour.
+### Can a Pi Zero do HDMI? (the question that decides the plan)
 
-Success looks like: a Pi Zero driving a 64 x 32 panel with a live sky and the time, over a few watts, with settings from a link.
+- **The hardware can:** the original Zero has a mini-HDMI port and drives 1080p fine. **The web page cannot run well on it.** The page
+  needs WebGL2 with float render targets and a heavy sky; the Zero is a single ARMv6 core at 1 GHz with 512 MB, its GPU (VideoCore IV)
+  offers only OpenGL ES 2.0, and browser support for ARMv6 is old and limited (check what the current Raspberry Pi OS ships before
+  relying on any of it). Expect "does not start" or "a few frames a minute".
+- **A native program can:** the sky does not need to be computed at screen resolution. It is a slow smooth gradient: render it at
+  low resolution (say 480 x 270) about once a second and let the GPU scale it up, then draw the digits crisp at full resolution as vector
+  shapes (four Bezier curves each; tessellated triangles, or an OpenGL ES 2 / DRM-KMS / SDL2 layer). That is well inside a Zero's budget
+  and looks right for a clock. So **HDMI on a Zero = yes, with the native renderer below, not with the web page.**
+- **The Pi 3 is the awkward middle:** 1 GB and four cores, but the same VideoCore IV GPU (OpenGL ES 2.0 only), so the web page is still
+  unlikely to get WebGL2. The native renderer runs well on it.
+- **The Pi 4 (and 5) is the easy case:** a modern GPU with OpenGL ES 3.x, so **Chromium in kiosk mode runs the existing page unchanged**
+  over HDMI at full resolution (verify frame rate and heat at 1080p and 4K, probably at quality "medium"). You said you have a 3 and a 4:
+  **use the 4 for the full web page over HDMI now** (almost no work: a kiosk-mode install guide and an auto-start service, plus the
+  shareable link from the entry below), and keep the Zero and 3 for the native renderer later.
+
+### Targets and how each would run (to be confirmed by measuring)
+
+| Pi | HDMI, full resolution | LED panel (hzeller) |
+|---|---|---|
+| Zero / Zero W (ARMv6, 1 core) | native renderer only | native renderer; light CPU use so the panel refresh keeps its time slices |
+| Zero 2 W, 3 (ARMv7/8, 4 cores) | native renderer (web page doubtful: GLES2 GPU) | native renderer |
+| 4 (and 5, check library support) | **the web page in Chromium kiosk, unchanged** (or native) | web page + bridge, or native |
+
+### Ways to build it (least work first)
+
+1. **Web page on a Pi 4 over HDMI.** Nothing to build but the kiosk setup and the sign-link / kiosk mode (see the sign-link entry).
+2. **A bridge from the page to an LED panel.** The page already computes the exact LED picture (the normal picture averaged into
+   a cols x rows grid, in the LED pass). Expose that grid (a small WebSocket or a shared frame on localhost) and add a tiny C++ or Python
+   program on the Pi that pushes each frame into the panel with the hzeller library. Same look as the web LED mode, for free. Needs a
+   browser, so a Pi 4 (or anything that runs the page); the panel is on that Pi's GPIO.
+3. **The native renderer (the real "range of Pis" answer).** One small compiled program that does not need a browser: astronomy (port of
+   the page's logic or a crate), a simplified sky (precomputed lookup tables baked on a desktop, or an analytic sky model instead of ray
+   marching), the digits and their morph as a tiny 2D rasteriser, the landscape strip, countdown mode, the sun countdown, night dimming,
+   anti burn-in, and weather over HTTP. **Rust or C, cross-compiled for ARMv6 (`arm-unknown-linux-gnueabihf`) and 64-bit ARM**, with two
+   output back ends: **a framebuffer / OpenGL ES / DRM-KMS back end for HDMI** at any resolution, and **a back end that links
+   rpi-rgb-led-matrix** for panels. WebAssembly for the shared hot loops is an option if one code base for the web page and the native
+   renderer is worth the build step.
+4. **Pre-baked frames** (fallback): render a day of base frames on a desktop and play them back with live digits; weather means re-baking.
+
+### LED panels: compatible with rpi-rgb-led-matrix
+
+- **One setting maps to the library's geometry:** panel width x height = `--led-cols` x `--led-rows` x `--led-chain` (and `--led-parallel`
+  rows of chains). Our existing "LEDs across / down" setting (and its presets) becomes the total pixel size; allow entering the library's
+  own numbers (rows, cols, chain, parallel) as a convenience, and its pixel-mapper ideas (rotate, U-arrangement) for odd layouts.
+- **Pass through the library's options** in a config file (and, for the sign link, as a few extra settings): `led-gpio-mapping` (regular,
+  Adafruit HAT / HAT-PWM), `led-brightness`, `led-slowdown-gpio` (needed on faster Pis), `led-pwm-bits`, `led-pwm-lsb-nanoseconds`,
+  `led-rgb-sequence`, `led-panel-type`, `led-multiplexing`, `led-row-addr-type`. A fixed example per common panel in the docs.
+- **Brightness and gamma:** matrices are very bright and non-linear; apply a gamma curve and a brightness limit in our output, tied to
+  the night-dimming setting (dim at night is the point of a bedroom matrix).
+- **CPU budget:** the library drives the panel from GPIO with tight timing and wants a core to itself (it recommends isolating one,
+  and disabling the Pi's onboard sound). On a **single-core Zero** every cycle our renderer uses is taken from the refresh and shows
+  as flicker, so the native renderer must be light: update the sky once a second, redraw only the digits while they morph, and keep
+  the frame rate modest. This is a design constraint for the native renderer, not an afterthought.
+- Check current Pi 5 support in the library before promising it (it has been different hardware for GPIO).
+
+### Questions to answer first, in order
+
+1. Which panel(s) do you have or plan to buy (size, chain, hub75 type, a HAT or a bonnet), and which Pi goes with each?
+2. **Measure the real limits** on your Zero, 3 and 4: can the current page run at all on each (OS, Chromium version, WebGL2 yes/no,
+   frames per second, memory, temperature); this settles what the native renderer must cover.
+3. A **feature table for the native renderer**: sun, moon, planets, stars, clouds and a weather tint, horizon, digits and morph,
+   countdown mode and the sun countdown, night dimming, anti burn-in: yes in some form. Liquid glass, refraction, rain beads, wind
+   sway, plants and the tree: probably not (or later).
+4. **How do we know it matches?** Golden frames: render the same moments with the web renderer and the native one at LED sizes and at a
+   few HDMI sizes and compare average colour per region within a tolerance, so the native version cannot drift from the real one.
+5. **Build, install, update:** cross-compile in CI, a release file per Pi family, a systemd service, settings from a config file or the
+   shareable link (see the sign-link entry), and the same "keeps itself current" behaviour as the kiosk web page.
+
+Success looks like: the same clock on a Pi 4 over HDMI today (the web page), and on a Zero or 3 over HDMI or on an LED panel of any size
+(the native renderer), set up from a link, a few watts, no keyboard.
 
 ## CI hygiene: never merge on a red CI
 
