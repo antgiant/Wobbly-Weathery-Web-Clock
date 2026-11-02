@@ -44,6 +44,7 @@ export async function run(t) {
   later = await read();
   t.check('time runs: the minute turned over while watching', later.title.slice(0, 5) !== first.title.slice(0, 5), `${first.title} -> ${later.title}`);
   t.check('and the minute digit changed shape with it', later.d !== first.d);
-  t.check('each digit is drawn with four curves', await h.page.evaluate(() => document.querySelectorAll('#clock svg path[id]').length === 24));
+  // seven digit slots (the hundreds-of-days digit of countdown mode, then hours, minutes, seconds), four curves each; the hundreds digit stays hidden while the clock shows the time
+  t.check('each digit is drawn with four curves (7 digit slots x 4), and the countdown-only hundreds digit is hidden', await h.page.evaluate(() => document.querySelectorAll('#clock svg path[id]').length === 28 && document.getElementById('hundredsDigit').classList.contains('hidden') && getComputedStyle(document.getElementById('hundredsDigit')).display === 'none'));
   await h.close();
 }
