@@ -31,7 +31,7 @@ export const RULES = [
   [/^js\/sky\/(view|controls|orientation)\.js$/, ['startup', 'sky', 'wind']],
   [/^js\/sky\/(engine|scheduler|app|core|appearance)\.js$/, 'ALL'],
   [/^js\/(vendor|virgo)\//, ['sky', 'smoke']],
-  [/^(index\.html|styles\.css)$/, ['smoke', 'settings', 'options', 'led']],
+  [/^(index\.html|styles\.css)$/, ['smoke', 'settings', 'options', 'led', 'alerts']],
   [/^data\//, ['sky', 'smoke']],
   [/^tests\/browser\/([a-z]+)\.test\.mjs$/, (m) => [m[1]]],
   [/^tests\/(lib\/|run\.mjs|impact\.mjs)/, 'ALL'],

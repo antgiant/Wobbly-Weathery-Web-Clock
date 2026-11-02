@@ -876,13 +876,18 @@ body[data-led="stack"] #clock svg:nth-child(3),
 body[data-led="stack"] #clock svg:nth-child(6) { display: none !important; }
 
 /* sunrise / sunset countdown */
-/* the pills at the top: countdown and rain alert stack instead of covering each other */
+/* The pills (sunrise / sunset countdown, rain alert, countdown name) stack at the bottom, where they never cover the time.
+   Upright: a row above the corner buttons, the whole width. Landscape: in the row of the corner buttons, between them.
+   A pill may wrap onto two lines instead of running off the screen. (Centred with a full-width flex row, not left: 50% and a
+   transform, because the anti burn-in step also uses transform.) */
 #alerts {
   position: fixed;
   z-index: 3;
-  left: 50%;
-  top: max(7%, calc(env(safe-area-inset-top) + 14px));
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  bottom: calc(max(5%, env(safe-area-inset-bottom)) + 64px);
+  box-sizing: border-box;
+  padding: 0 16px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -890,7 +895,21 @@ body[data-led="stack"] #clock svg:nth-child(6) { display: none !important; }
   pointer-events: none;
 }
 
+@media (min-aspect-ratio: 1/1) {
+  #alerts {
+    flex-direction: row;                                      /* side by side: stacked they would climb into the digits */
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: flex-end;
+    bottom: max(5%, env(safe-area-inset-bottom));
+    padding-left: calc(5% + 132px);                          /* the VR and return-to-default buttons */
+    padding-right: calc(5% + max(5vw, 44px) + 12px);          /* the settings button */
+  }
+}
+
 #sunCountdown {
+  max-width: 100%;
+  box-sizing: border-box;
   display: flex;
   align-items: baseline;
   gap: 0.6em;
@@ -946,7 +965,10 @@ body[data-screen="led"] #alerts {
   color: #fff;
   font: 600 clamp(0.85rem, 3vw, 1.15rem)/1.2 system-ui, sans-serif;
   text-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
-  white-space: nowrap;
+  white-space: normal;
+  text-align: center;
+  max-width: 100%;
+  box-sizing: border-box;
   backdrop-filter: blur(10px) saturate(1.4);
   -webkit-backdrop-filter: blur(10px) saturate(1.4);
 }
@@ -1386,10 +1408,10 @@ body[data-screen="led"] .ledsize {
   color: #fff;
   font: 600 0.95rem/1.2 system-ui, sans-serif;
   letter-spacing: 0.02em;
-  white-space: nowrap;
-  max-width: 92vw;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  text-align: center;
+  max-width: 100%;
+  box-sizing: border-box;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
 }
