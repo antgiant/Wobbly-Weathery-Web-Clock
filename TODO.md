@@ -1,6 +1,71 @@
 # To do
 
-Things we know we want, not yet done. Newest first.
+Things we know we want, not yet done. Newest first. (Added 2026-11-02, not started: the three items directly below.)
+
+## CI performance breakdown: what is tested and how long each part takes
+
+A table of the **full** test run: every suite, what it covers (its checks, grouped), how many pages it opens, and how long it takes on
+the CI machine, so we can see where the 7 minutes go and what to cut or move.
+
+- **Record it:** have `tests/run.mjs` and the harness write `test-results/timings.json` on every run: per suite (start, end, checks), per
+  page open (`t.open` to ready), per `settle()`/`waitForTimeout`, per unit test file. Print a markdown table to the job summary
+  (`$GITHUB_STEP_SUMMARY`) sorted by cost, with the three shares side by side, and keep the JSON as an artifact so runs can be compared.
+- **Describe it:** the same table lists each suite's one-line purpose and its check count (the suite files already export `name`; add a
+  `covers` line), so "what is tested" and "how long it takes" are one page. Generate `docs/TESTS.md` from it rather than writing it by hand.
+- **What we know now (rough, local, software WebGL):** a page open costs about 3 to 4 s (the first sky render is a heavy
+  software-WebGL computation); the browser run is about 100 page opens; slowest suites are `alerts` (about 3 min, ten screen shapes),
+  `options`, `perf` (about 90 s, real-time measurements), `digitweather` (about 100 s) and `led`; CI wall time is about 7 minutes, set by
+  the slowest of three shares. Unit tests and lint take about 5 s.
+- **Then use it:** list the biggest wins (fewer page opens by reusing a page for several checks, shorter settles, lower quality where the
+  picture does not matter, rebalancing the shares by measured time instead of file order), and decide what belongs in the fast local
+  tier (`tests/impact.mjs`). Show the breakdown in the README, with the date it was measured.
+
+## LED look: make the background of the pixel-art umbrella (and countdown card) transparent, not black
+
+On the LED panel the rain alert's umbrella (and the sunrise / sunset countdown card) is drawn on a solid black plate (`drawLedCard()` in
+`js/sky/ledcard.js` fills a black rectangle behind the icon and the pixel text). Make that plate **transparent** so the sky shows
+through, as the rest of the LED picture does.
+
+- Readability must not drop: replace the plate with a **one-LED dark outline** around every lit pixel (the same idea as the thin outline
+  round the digits), so the icon and the text stay legible on a bright or a dark sky, and for colour-blind readers (luminance, not hue).
+- The clock still makes room for the card (`--led-top`), so nothing covers the time; only the background changes.
+- Tests: the card's overlay has transparent pixels outside the glyphs (alpha 0) and a dark outline pixel next to each lit one; the existing
+  "nothing covers the time" checks in `tests/browser/alerts.test.mjs` stay green; a bright-sky and a dark-sky pixel-contrast check on the icon.
+- Check both the tuned layouts (pixel card) and the other sizes (full-size pills drawn through the LEDs).
+
+## What would an original Raspberry Pi Zero need?
+
+Working out what it takes to run this clock on an **original Pi Zero** (BCM2835, one ARM1176 core at 1 GHz, ARMv6, 512 MB, VideoCore IV),
+which is a natural driver for an LED panel (the 64 x 32 matrix is the case that matters most). The web page cannot do it as it is:
+it needs **WebGL2** with float render targets and a heavy physically based sky, and the Pi Zero's GPU driver offers only OpenGL ES 2.0
+and the last Chromium that runs on ARMv6 is old. Questions to answer, in order:
+
+1. **What is the display?** A hub75 LED matrix driven from the GPIO pins (the usual `rpi-rgb-led-matrix` library), or a small HDMI screen?
+   For a matrix the picture is only 64 x 32 (or 128 x 64) pixels, a few thousand pixels, which changes everything below.
+2. **Measure first.** Can the current page run at all on a Zero (a legacy 32-bit OS with Chromium, a very low quality setting, WebGL2
+   availability, frames per second, memory)? Probably not usefully, but it settles the baseline and the "do nothing" option.
+3. **A compiled, much smaller renderer.** For a few thousand pixels the sky does not need a GPU. Options, from least to most work:
+   - **Node.js (ARMv6 build) + a CPU port of the sky.** Reuse the JavaScript that matters (the vendored astronomy library, the weather and
+     countdown logic, the clock digit shapes) and render the sky in plain typed-array maths into a 64 x 32 buffer; the atmosphere from
+     precomputed lookup tables (the page's LUTs, baked once on a desktop and shipped as data) or a closed-form sky model instead of ray
+     marching. Drive the panel with a Node binding.
+   - **A compiled program (Rust or C, target `arm-unknown-linux-gnueabihf` for ARMv6)** doing the same: astronomy (a port or a crate), a
+     simplified analytic sky, the digit morph drawn with a tiny 2D rasteriser (the digits are four Bezier curves each), the landscape as a
+     skyline strip, and the weather over HTTP. Fastest and smallest; most work, and a second implementation to keep in step with the web one.
+   - **WebAssembly** for the hot loops (shared between the browser and a small host on the Pi), if one code base for both is worth the build step.
+   - **Pre-baked frames:** the sky changes slowly. Render a day's worth of 64 x 32 base frames (one a minute is about 6 KB each, under
+     9 MB a day per place) on a desktop and play them back, compositing only the digits live. Weather would mean re-baking, so this is
+     the fallback, not the plan.
+4. **Decide what is kept.** A feature table for the Pi build: sun, moon, planets, stars, clouds and weather tint, the horizon, the digits and
+   their morph, countdown mode and the sun countdown, night dimming and anti burn-in: yes in some form; liquid glass, refraction, rain beads,
+   wind sway, plants and the Christmas tree: probably not.
+5. **How do we know it matches?** Golden frames: render the same moments with the web renderer and the Pi renderer at 64 x 32 and compare
+   (average colour per region within a tolerance), so the compiled version cannot drift from the real one. Reuse the LED averaging of the
+   normal picture as the reference ("exactly what the normal screen would be, made of LEDs").
+6. **Build, install, update:** a cross-compile in CI, a release file for the Zero, a systemd service, settings from a config file or the
+   same shareable link (see the sign-link entry below) so it can be set up without a keyboard, and the same "keeps itself current" behaviour.
+
+Success looks like: a Pi Zero driving a 64 x 32 panel with a live sky and the time, over a few watts, with settings from a link.
 
 ## CI hygiene: never merge on a red CI
 
