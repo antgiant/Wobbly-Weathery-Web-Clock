@@ -33,6 +33,25 @@ through, as the rest of the LED picture does.
   "nothing covers the time" checks in `tests/browser/alerts.test.mjs` stay green; a bright-sky and a dark-sky pixel-contrast check on the icon.
 - Check both the tuned layouts (pixel card) and the other sizes (full-size pills drawn through the LEDs).
 
+## Brightness: a day level and a night level, with sunset and sunrise as the transition (web and native)
+
+Added 2026-11-02. Today "Dim the screen" is a black veil with three modes (Never, At night, Always) and one "how dark" slider
+(`js/sky/dim.js`), which only ever darkens, and only around dusk. Replace it, on the **web version too**, with a clearer model that the
+native version (below) also needs, because an LED panel's brightness is a real hardware setting:
+
+- **Two levels:** a **day brightness** and a **night brightness** (percent), each settable on its own (a bright day, a dim day for a bedroom,
+  a very dim night).
+- **The transition follows the sun:** brightness eases from the day level to the night level around **sunset**, and back around
+  **sunrise**, over a set time (default about 45 minutes, centred on the sunset or sunrise, or defined by the sun's altitude, civil
+  twilight to full dark, as the veil does now), on a smooth curve so nothing steps.
+- Replaces "Dim the screen" and "How dark": old settings migrate (Never = both levels 100%; At night = day 100%, night = 1 minus the old level;
+  Always = both at the old dim level). Presets (Bedside, Battery saver, LED panel, Everyday) set sensible pairs.
+- **Web:** applied as the veil/opacity as now, so it costs nothing extra; keep the dimming **time-travel aware** (follows the simulated sun).
+- **Native:** the same numbers drive the panel's hardware brightness (`--led-brightness`) or the output's scaling, with a gamma curve so 20% looks
+  like 20%; with the manual-brightness and a "never below" floor so a sign cannot go black by mistake.
+- Tests: the level at noon, midnight, and at sunset +/- the transition half-width (monotone, smooth, no jump); migration of old settings;
+  the polar day / polar night cases (no sunset: use the day or the night level by the sun's altitude); time travel.
+
 ## Raspberry Pi targets: a range of Pis, full-resolution HDMI and LED panels of any size
 
 (Replaces the earlier "original Pi Zero" entry; updated 2026-11-02.) **Goals:** run the clock on **a range of Raspberry Pis**, from the
@@ -96,6 +115,59 @@ panel and wiring it supports works. Not started.
   as flicker, so the native renderer must be light: update the sky once a second, redraw only the digits while they morph, and keep
   the frame rate modest. This is a design constraint for the native renderer, not an afterthought.
 - Check current Pi 5 support in the library before promising it (it has been different hardware for GPIO).
+
+### What the native version must be (requirements, added 2026-11-02)
+
+Think of it as a proper small product, not a script. It should:
+
+- **Ask what output you want** the first time it runs (and any time after, with `wobbly-clock setup`): HDMI (full resolution, with a
+  choice of mode or "whatever the screen says") or an LED panel.
+- **For an LED panel, ask for the panel configuration in a friendly way**, modelled on the configuration of
+  [rpi-fb-matrix](https://github.com/antgiant/rpi-fb-matrix) (your fork): panel width and height, how many panels are chained and
+  stacked in parallel, how they are laid out as tiles and which way up, with named presets for common panels (32 x 16, 32 x 32, 64 x 32, 64 x 64,
+  and chains of them), wiring (regular GPIO, Adafruit HAT / bonnet), and a **small picture in the terminal of the layout it understood**
+  so a mistake is visible before anything is lit. (I have not read your fork's current config: model the questions and the file format on it.)
+- **Have a test option**: `wobbly-clock test` lights the output with patterns and stops (a few seconds each, Ctrl-C to quit): colour bars
+  and a grey ramp (colour order and gamma), an "identify" pattern that numbers every tile and marks its top-left corner (for chain and
+  rotation mistakes), a white-to-black brightness sweep, a border box (is every edge lit?), then a short live render of the real clock.
+  The same checks run before the first start and after a config change.
+- **Let the user control brightness**, day and night, with the sunset as the transition: the model in the brightness entry above,
+  shared with the web version.
+- **Update itself** (see "Keep itself current"): checks a release feed on a schedule at a quiet hour, downloads, **verifies a checksum and a
+  signature**, swaps the program atomically, restarts, and **rolls back** if the new version fails to start. Can be turned off, and an update
+  never happens in the middle of a transition or a countdown's last minute.
+- **Have a command-line configuration that mirrors the web configuration**: the same setting names, values and defaults, so
+  `wobbly-clock set hideSeconds on`, `wobbly-clock set clockStyle glass`, `wobbly-clock set countdown both`, `wobbly-clock get`,
+  `wobbly-clock presets` / `wobbly-clock preset bedside`, a config file with the same keys, and **the shareable link accepted as a
+  configuration** (`wobbly-clock apply 'https://clock.wooleys.us/?c=...'`). One **settings schema** (a single file: key, type, range or
+  options, default, short description, which presets set it, and the hardware it needs) is the single source of truth that generates the
+  web settings, the share-link codec table, the CLI, and the man page, so they cannot drift.
+- **Be smart about the hardware.** Probe the machine at start (CPU architecture and cores, RAM, GPU and OpenGL ES version, output type, how
+  fast it can render) and **disable the options it cannot handle, saying why** ("Liquid glass needs an OpenGL ES 3 GPU: not available on
+  this Pi", "Rain beads are off on a Pi Zero"), in `wobbly-clock set` (refuses with the reason), in the setup questions (never offers it),
+  in `--help` and in the man page. Each schema entry carries what it needs (`requires: gles3`, `cores >= 2`, `output: hdmi`). Where an option is
+  merely slow rather than impossible, warn and suggest the cheaper setting.
+- **Have a quality man page**: `man wobbly-clock` (usage, every setting with its default and what it needs, presets, examples, files,
+  exit codes, environment, troubleshooting, "see also") and `man wobbly-clock.conf`, **generated from the settings schema** so it is always
+  complete, linted in CI (`mandoc -Tlint`), with `--help` giving the same content in short form.
+- **Have clear instructions for LED panels**: a guide from unboxing to a lit panel: what to buy (panels, hub75, a HAT or bonnet, a power
+  supply sized for the panels, with the amperage worked out), wiring with a picture and the pin table, which Pi and which wiring mode,
+  the Pi settings the library wants (isolating a core, turning off onboard sound, GPIO slowdown for faster Pis), a worked example for
+  each common panel and chain, the test pattern and what each wrong result means (flicker, ghosting, wrong colours: `rgb-sequence`,
+  half the panel dark: multiplexing or row address type, upside-down tiles), brightness and heat, and where to ask for help.
+- **Run on boot, fully headless**: `wobbly-clock install-service` writes and enables a **systemd service** (starts after the network,
+  restarts on failure, logs to the journal, a watchdog if the render loop hangs, drops privileges after opening the GPIO as the library
+  allows), `wobbly-clock status`, `logs`, `restart`; configuration can come from a **file on the boot partition** (like wifi's
+  `wpa_supplicant.conf`) or the share link, so a Pi can be set up without a keyboard or a screen; first boot with no config shows a
+  friendly pattern on the output ("setup needed") rather than nothing.
+- **Work on Raspberry Pi OS Lite** (the command-line-only image) and nothing heavier: no desktop, no X11 or Wayland, no browser. HDMI
+  output goes straight to the display through the kernel's DRM/KMS (or the framebuffer), the LED output through the matrix library, setup
+  is all in the terminal. Ships as a **single static binary plus a `.deb`** per architecture (ARMv6/ARMv7 `armhf`, `arm64`) from a GitHub
+  release, with a short install line and a way to verify it, and works on 32-bit and 64-bit Pi OS.
+- **Tests and docs for all of it** (see the CI entries): the schema round trip with the web settings; capability gating on faked
+  hardware profiles; the setup questions fed scripted answers; golden frames at LED and HDMI sizes against the web renderer; the man page
+  generated and linted; the install script and the service run in a container or QEMU; an update with a good build, a corrupt download and a
+  build that will not start (rolls back).
 
 ### Questions to answer first, in order
 
