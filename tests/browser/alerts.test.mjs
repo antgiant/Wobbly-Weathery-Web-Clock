@@ -15,7 +15,7 @@ export async function run(t) {
   await h.settle(1500);
   let p = await pill(h.page);
   t.check('4.5 minutes before sunset the pill says "Sunset in 04:30"', p && /Sunset in\s*0?4:[23]\d/.test(p), String(p));
-  t.check('the pill sits above the clock and does not cover the digits', await h.page.evaluate(() => { const d = [...document.querySelectorAll('#clock svg')].filter((e) => getComputedStyle(e).display !== 'none' && e.querySelector('path[id]')).map((e) => e.getBoundingClientRect()); return document.getElementById('sunCountdown').getBoundingClientRect().bottom <= Math.min(...d.map((r) => r.top)) + 8; }));
+  t.check('the pill sits at the bottom, below the clock, and does not cover the digits', await h.page.evaluate(() => { const pr = document.getElementById('sunCountdown').getBoundingClientRect(); const d = [...document.querySelectorAll('#clock svg')].filter((e) => getComputedStyle(e).display !== 'none' && e.querySelector('path[id]')).map((e) => e.getBoundingClientRect()); return pr.top >= Math.max(...d.map((r) => r.bottom)) - 8 || pr.top > innerHeight * 0.7; }));
   await h.close();
 
   h = await t.open({ query: `t=${at(sunset, -25 * 60e3)}&speed=0`, conf: { countdown: 'both', countdownLead: 20, clockStyle: 'solid' } });
@@ -27,6 +27,23 @@ export async function run(t) {
   await h.settle(1500);
   t.check('10 minutes before: counting down', /Sunset in\s*(10:0\d|09:5\d)/.test(String(await pill(h.page))), String(await pill(h.page)));
   await h.close();
+  // the pills sit at the bottom: all of one long rain alert on screen, clear of the digits and the corner buttons, upright and in landscape
+  for (const [label, w, hh] of [['upright phone', 393, 852], ['phone in landscape', 852, 393]]) {
+    h = await t.open({ fixedTime: '2026-06-21T12:00:00Z', width: w, height: hh, touch: true, conf: { weatherMode: 'live', rainAlert: true, clockStyle: 'solid', twentyFourHourClock: true, countdown: 'both', hideSeconds: false } });
+    await h.settle(4500);
+    const g = await h.page.evaluate(() => {
+      const pill = document.getElementById('rainAlertPill'), pr = pill.getBoundingClientRect();
+      const ink = [...document.querySelectorAll('#clock svg')].filter((e) => getComputedStyle(e).display !== 'none' && e.querySelector('path[id]')).map((e) => { const r = e.getBoundingClientRect(), pad = r.width * 0.08; const p = [...e.querySelectorAll('path')].map((q) => q.getBoundingClientRect()); return { left: Math.min(...p.map((q) => q.left)) - pad, right: Math.max(...p.map((q) => q.right)) + pad, top: Math.min(...p.map((q) => q.top)) - pad, bottom: Math.max(...p.map((q) => q.bottom)) + pad }; });
+      const corner = ['settings', 'vrButton', 'homeButton'].map((id) => document.getElementById(id)).filter((e) => e && !e.hidden && getComputedStyle(e).display !== 'none').map((e) => e.getBoundingClientRect());
+      const hit = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+      return { shown: !pill.hidden, left: pr.left, right: pr.right, top: pr.top, bottom: pr.bottom, vw: innerWidth, vh: innerHeight, text: pill.textContent, lines: Math.round(pr.height / parseFloat(getComputedStyle(pill).lineHeight)), overDigits: ink.some((d) => hit(pr, d)), overButtons: corner.some((c) => hit(pr, c)), centre: Math.abs((pr.left + pr.right) / 2 - innerWidth / 2) };
+    });
+    t.check(`${label}: the rain alert is shown in full on the screen (not cut off at an edge)`, g.shown && g.left >= 0 && g.right <= g.vw && g.text.length > 20, JSON.stringify(g));
+    t.check(`${label}: it is at the bottom, in the lower quarter`, g.top > g.vh * 0.74 && g.bottom <= g.vh, JSON.stringify(g));
+    t.check(`${label}: it does not cover the digits or the corner buttons`, !g.overDigits && !g.overButtons, JSON.stringify(g));
+    t.check(`${label}: it is centred`, g.centre < 40, `${g.centre.toFixed(0)} px off`);
+    await h.close();
+  }
   if (t.quick) return;                                              // the quick check stops here: the rest is in the full run
 
   h = await t.open({ query: `t=${at(sunset, 20e3)}&speed=0`, conf: { countdown: 'both', clockStyle: 'solid' } });
