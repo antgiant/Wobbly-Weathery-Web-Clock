@@ -13,6 +13,10 @@ often cap URLs (255 characters is common, 2,000 a comfortable limit, some hand t
 - **Apply the whole setup without any interaction**, and **not save it** on that device: it is an override for this load only
   (like the test deep links `?t=`, `?weather=`, `?lat=` are today), so a shared link never overwrites someone's own settings.
   Opening it on a normal phone can offer "Use this setup" / "Just look".
+- **A link that sets a location never shows the first-run location question** ("real location or estimated?"), whatever form the link
+  uses (a place by name, coordinates, a city index, or "estimate from the time zone"), and it never asks for geolocation. Today
+  only `?lat=&lon=` skips the question; the new link forms must too, and so must a link that carries no place at all when it is
+  a kiosk link (the sign then estimates from the time zone rather than asking).
 - **Kiosk behaviour** (a flag in the link, or implied by it): nothing that needs a finger. Hide the settings, VR and
   return-to-default buttons; skip the first-run location question (the link carries a place, or says "estimate from the time
   zone"); no "Tap to keep the screen on" banner, install prompt, toasts or "new version" banner; never ask for permissions.
@@ -75,6 +79,9 @@ another city's sky):
   own clock**; add "Show the time at that place" (the place's time zone) for a sign in one city showing another.
 - It is stored like the other location choices (privacy as now: weather lookups use the position rounded to 0.1 degree) and is part of
   the link in both forms: `place=Chicago` or `place=41.9,-87.6` (readable), a city index or two rounded numbers (short).
+- A link that carries a place, in either form, skips the first-run question (add to `tests/browser/startup.test.mjs` next to the
+  existing `?lat=&lon=` check: short link, readable link by name, readable link by coordinates, and "estimate"), and the question
+  does not appear later in the session either.
 - Tests: a typed place moves the sun to the right azimuth at a known time; out-of-range and empty values are rejected; the link
   round trip keeps it; manual overrides estimated and real, and a link never asks for geolocation.
 
