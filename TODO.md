@@ -44,6 +44,40 @@ Query-per-setting (`?hideSeconds=1&glassFrost=0.55&...`) and JSON in base64 are 
    files in the repository (`?sign=lobby`, a JSON file committed to the site: shortest of all, but needs a deploy per change; a
    good extra for fixed installations, not the main route).
 
+### Two kinds of link: short and readable
+
+- **Short** (`?c=...`, the bit-packed form above): for signs with tight limits and for QR codes. Not meant to be read.
+- **Readable** (longer, human friendly): for when length is not the problem and you want to see, edit and explain it:
+  `?preset=bedside&seconds=off&style=glass&place=Chicago&kiosk=1`. Real names for the settings, the presets and their values
+  (`on`/`off`, option names, plain numbers), and a place by name or as `place=41.9,-87.6`. Anyone can change one word by hand,
+  paste it into a ticket, or keep it in a notes file. Rules: the key names are stable and never reused (a renamed setting keeps its
+  old name as an alias), unknown keys are ignored, and values are clamped as for the short form. It decodes to exactly the same
+  setup, and the Share box can convert either to the other.
+- The Share box shows both, with their lengths, and **a one-line description in words** under them ("Bedside preset, seconds hidden,
+  Chicago, kiosk mode"), so you can check a link says what you meant before it goes to a sign.
+- The readable form has no frozen preset table to keep (it names the preset and lists every difference from the preset
+  *as it was*), but then a changed preset would change an old link: write the **full** setup into a readable link by default
+  (the preset name is then only a label), and treat "preset plus changes" as the short form's job.
+
+### A way to set the location by hand
+
+A sign has no GPS, nobody to approve a permission, and a time zone that may be wrong (a server in another place), so the link
+has to carry a place, and the app needs a **manual location** option to match (and it is useful on its own, for a clock that shows
+another city's sky):
+
+- **Settings → Place**: a third way beside "Use my real location" and "Estimate from the time zone": **"Set it myself"**, with
+  latitude and longitude boxes (decimal degrees, with a hint on the format and a check that they are in range) and a name to show.
+- **Search by name** (a text box with suggestions): offline from a built-in list of cities (the time-zone centroids data is a
+  start; a list of about 25,000 larger places is a few hundred KB, to be weighed against the page size budget in
+  `tests/unit/weight.test.mjs`), or the free Open-Meteo geocoding service when online. A built-in list keeps a kiosk working
+  offline and keeps the link short (a city is an index, about 2 characters, not 4 coordinates).
+- Sunrise, the sky, the weather and the time zone all follow the chosen place. The time shown is by default still **the device's
+  own clock**; add "Show the time at that place" (the place's time zone) for a sign in one city showing another.
+- It is stored like the other location choices (privacy as now: weather lookups use the position rounded to 0.1 degree) and is part of
+  the link in both forms: `place=Chicago` or `place=41.9,-87.6` (readable), a city index or two rounded numbers (short).
+- Tests: a typed place moves the sun to the right azimuth at a known time; out-of-range and empty values are rejected; the link
+  round trip keeps it; manual overrides estimated and real, and a link never asks for geolocation.
+
 ### The trap: presets change, links must not
 
 A link that says "preset 3 plus changes" means something different if preset 3 is edited next month. So the **codec is
