@@ -91,6 +91,11 @@ panel and wiring it supports works. Not started.
    a cols x rows grid, in the LED pass). Expose that grid (a small WebSocket or a shared frame on localhost) and add a tiny C++ or Python
    program on the Pi that pushes each frame into the panel with the hzeller library. Same look as the web LED mode, for free. Needs a
    browser, so a Pi 4 (or anything that runs the page); the panel is on that Pi's GPIO.
+   **Even less work: use `rpi-fb-matrix` itself as the bridge.** It mirrors the screen to the panel and your `matrix.cfg` already
+   describes the panels. Show the page in a kiosk window **exactly `display_width x display_height` pixels** and let it copy that
+   rectangle 1:1 with `crop_origin` (no scaling blur). For that the web LED look needs a **"raw" output mode**: one screen pixel per LED, no
+   black lines between LEDs, no bezel, no countdown card drawn over it that the panel cannot show, so that what is on screen is what goes
+   on the panel. (A new web setting under Extras, Advanced, next to the LED size: "Output for capture: raw LED pixels".)
 3. **The native renderer (the real "range of Pis" answer).** One small compiled program that does not need a browser: astronomy (port of
    the page's logic or a crate), a simplified sky (precomputed lookup tables baked on a desktop, or an analytic sky model instead of ray
    marching), the digits and their morph as a tiny 2D rasteriser, the landscape strip, countdown mode, the sun countdown, night dimming,
@@ -122,11 +127,31 @@ Think of it as a proper small product, not a script. It should:
 
 - **Ask what output you want** the first time it runs (and any time after, with `wobbly-clock setup`): HDMI (full resolution, with a
   choice of mode or "whatever the screen says") or an LED panel.
-- **For an LED panel, ask for the panel configuration in a friendly way**, modelled on the configuration of
-  [rpi-fb-matrix](https://github.com/antgiant/rpi-fb-matrix) (your fork): panel width and height, how many panels are chained and
-  stacked in parallel, how they are laid out as tiles and which way up, with named presets for common panels (32 x 16, 32 x 32, 64 x 32, 64 x 64,
-  and chains of them), wiring (regular GPIO, Adafruit HAT / bonnet), and a **small picture in the terminal of the layout it understood**
-  so a mistake is visible before anything is lit. (I have not read your fork's current config: model the questions and the file format on it.)
+- **For an LED panel, ask for the panel configuration in a friendly way**, built on what your `rpi-fb-matrix` fork's `matrix.cfg` already
+  expresses (sample read 2026-11-02). That file is libconfig text with: `display_width` / `display_height` (the **total** pixels of
+  all the chained panels), `panel_width` (normally 32) and `panel_height` (8, 16 or 32; every panel the same height), `chain_length` (panels
+  per chain; with parallel chains, the largest), `parallel_count` (1 on the Adafruit HAT, up to 3 on a Pi 2 or later), a **`panels` grid**
+  (a two-dimensional list, one entry per panel in its physical place, each with `order` = its position along the chain and `rotate` in
+  degrees for snaked runs, and an optional `parallel` chain id), and an optional `crop_origin` for pixel-perfect capture. What we keep and
+  what we improve:
+  - **Accept and write that same file.** `wobbly-clock import-matrix-cfg matrix.cfg` reads it (so the layout you already worked out is not
+    typed twice) and `wobbly-clock export-matrix-cfg` writes one, so the same panels still work with `rpi-fb-matrix` and the library's own
+    tools. The native program's own config stays one file with the same keys for the panel part, plus the clock settings (the CLI/web-mirroring
+    entry below).
+  - **Ask in plain questions instead of making people derive `order` and `rotate` by hand.** (1) Panel size: a menu (32 x 16, 32 x 32, 64 x 32,
+    64 x 64, other). (2) How many panels across and down. (3) **Where the cable from the Pi goes in** (a corner) and **how the panels are
+    wired from there**: a short menu of the usual patterns with a picture each ("one row", "one column", "snake across then down", "snake down
+    then across", "every row starts at the same side"), or "custom". From those it **computes the grid of `order` and `rotate` values** (the
+    snake pattern in the sample's comment: start top right, go left, drop down, come back with the lower panels rotated 180) and shows the
+    result. (4) Parallel chains (only offered where the Pi and the wiring allow it).
+  - **Draw it back in the terminal** as the comment in the sample does, with each panel's order number and an arrow for the direction of
+    the chain, and the totals ("64 x 64 pixels, 4 panels, one chain of 4"), and ask "does this match what you built?" before anything is lit.
+    The test pattern then proves it (next item).
+  - **Check the answers** like the file's comments describe: total width a multiple of the panel width; total height a multiple of the
+    panel height; all panels the same height; the HAT allows one chain; parallel chains need the right Pi; `display = panel x grid`
+    consistent. Say what is wrong in words, and suggest the likely fix.
+  - **No scaling step.** `rpi-fb-matrix` copies a screen and scales it (or crops 1:1 with `crop_origin`); the native renderer draws at exactly
+    `display_width x display_height`, so there is nothing to resize or crop. `crop_origin` is only kept in the exported file.
 - **Have a test option**: `wobbly-clock test` lights the output with patterns and stops (a few seconds each, Ctrl-C to quit): colour bars
   and a grey ramp (colour order and gamma), an "identify" pattern that numbers every tile and marks its top-left corner (for chain and
   rotation mistakes), a white-to-black brightness sweep, a border box (is every edge lit?), then a short live render of the real clock.
