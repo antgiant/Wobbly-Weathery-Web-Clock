@@ -2,6 +2,78 @@
 
 Things we know we want, not yet done. Newest first.
 
+## A link to the current setup, for a digital sign
+
+Added 2026-11-02. **Goal:** "Share this setup" produces a link that, opened on a screen nobody can touch (a digital sign, a kiosk
+browser, a wall display), shows the clock exactly as configured. **The link must be as short as possible**: signage players
+often cap URLs (255 characters is common, 2,000 a comfortable limit, some hand the URL to a QR code or a text field).
+
+### What the link must do
+
+- **Apply the whole setup without any interaction**, and **not save it** on that device: it is an override for this load only
+  (like the test deep links `?t=`, `?weather=`, `?lat=` are today), so a shared link never overwrites someone's own settings.
+  Opening it on a normal phone can offer "Use this setup" / "Just look".
+- **Kiosk behaviour** (a flag in the link, or implied by it): nothing that needs a finger. Hide the settings, VR and
+  return-to-default buttons; skip the first-run location question (the link carries a place, or says "estimate from the time
+  zone"); no "Tap to keep the screen on" banner, install prompt, toasts or "new version" banner; never ask for permissions.
+- **Keep itself current without anyone tapping**: when the service worker sees a newer version, a kiosk page reloads by itself,
+  at a quiet moment (say 03:00 local, or when the minute digit has just changed), instead of showing the banner.
+- **Work offline** as now (the saved copy), and survive a reload or a power cut by being the URL it starts from.
+
+### Making it short
+
+Query-per-setting (`?hideSeconds=1&glassFrost=0.55&...`) and JSON in base64 are both long (hundreds of characters). Better:
+
+1. **Send only what differs from a base, never the whole config.** Closest preset plus changes is right, and defaults are just
+   the preset "Standard", so one mechanism covers both. The encoder tries every preset (and Standard), picks the one with the
+   fewest differences, and writes that preset's id plus the differences.
+2. **A fixed table of settings, not names.** Every setting gets a permanent index, a type and a size: a switch is 1 bit, a
+   choice is 2 to 4 bits (an index into its options), a slider is 4 to 7 bits (quantised to the step the control already has).
+   A change is "setting number (6 bits) + value (1 to 7 bits)", about 12 bits, so **two URL characters per change** in
+   base64url (6 bits a character). Rough size: header (version, flags, base preset) 2 characters, plus 2 per change. A preset
+   alone is about 3 characters; a typical share of a preset and five changes is about 12.
+3. **Pack bits, then base64url.** No compression library: at this size it can only make things longer. The whole link is
+   `https://clock.wooleys.us/?c=` and 10 to 25 characters, well under 60 in total.
+4. **Special values cost a little more, still tiny:** a place is two numbers rounded to 0.1 degree (about 4 characters), or one
+   bit for "estimate from the time zone" (which also avoids putting coordinates in a link); a countdown date is minutes since
+   2020 (about 4 characters); the countdown's name is the only free text, sent as plain URL-encoded text (the sign never needs it unless
+   it is a countdown).
+5. **A query parameter, not a `#fragment`.** Fragments are never sent to a server, which is nice, but several signage players,
+   QR scanners and redirect services strip or mangle them. `?c=` is the most widely tolerated.
+6. **Ruled out or later:** a URL shortener (an outside service, and it must stay up for as long as the sign does); named sign
+   files in the repository (`?sign=lobby`, a JSON file committed to the site: shortest of all, but needs a deploy per change; a
+   good extra for fixed installations, not the main route).
+
+### The trap: presets change, links must not
+
+A link that says "preset 3 plus changes" means something different if preset 3 is edited next month. So the **codec is
+versioned and frozen**: the link carries a version, and each version keeps its own copy of the base presets and the settings table
+(new settings are only ever appended; a base preset is never edited, a changed preset gets a new id). Old links keep decoding to
+the setup they were made with. Settings added later fall back to their default in an old link. Unknown newer versions decode
+what they can and ignore the rest.
+
+### Where it lives
+
+- **Settings → Presets → Share this setup**: shows the link, a Copy button, its length (with a note when it is over 255 / 2,000
+  characters), a QR code, and a "Kiosk mode" switch (hides the controls, as above). A "Preview" opens it as the sign will see it.
+- New module `js/share.js` (pure, no DOM: `encode(conf) -> string`, `decode(string) -> conf patch`), read by `app.js` at start.
+
+### Safety
+
+The link only ever sets known settings, each clamped to its own range or option list; it cannot run anything. Text is
+length-limited and always set as text.
+
+### Tests to write
+
+- **Round trip over many random setups** (`decode(encode(x))` gives `x`, for every setting type and every preset as base).
+- **Length**: every preset alone is at most 4 characters; a preset plus five changes at most 16; print the length of every
+  preset so a growth in the table shows up.
+- **Frozen links**: a list of example links with the setups they must always decode to (added to, never edited), so a change that
+  breaks old links fails the build.
+- **Kiosk**: the controls and banners are not on the page; nothing was saved to storage; no question, no permission prompt;
+  a newer version reloads at the quiet moment.
+- **Hostile input**: truncated, over-long, wrong-version, out-of-range and non-base64 links are ignored safely.
+
 ## Raindrops on the digits look wrong
 
 Reported on a real phone (2026-11-02). What is wrong:
