@@ -2,6 +2,22 @@
 
 Things we know we want, not yet done. Newest first.
 
+## CI hygiene: never merge on a red CI
+
+Added 2026-11-02, after finding CI had been red for about eight runs in a row without anyone noticing.
+
+- **What it was:** one check in the `clock` browser suite counted 24 digit curves; adding countdown mode's hundreds-of-days digit made it 28.
+  The `clock` suite's long tail only runs in the full run (CI), not in `npm test` / `npm run test:quick`, so nothing local showed it.
+  Fixed in the commit that adds this note. Every red run since the countdown commit was this one check (shard 3 of 3); lint, unit tests
+  and the other two shards were green throughout.
+- **The lesson:** the fast local check deliberately skips the long tails, so **CI is the only thing that sees them, and it must be read.**
+  Do this after every push: look at the CI result (it takes about 8 minutes) before the next change; do not merge on red.
+- **To do:** (a) protect `main` so a merge needs green CI (branch protection with the three browser shares and "Lint and unit tests" as
+  required checks); (b) make CI failures arrive somewhere visible (GitHub's email, or a README badge for the CI status);
+  (c) run `npm run test:full` before a merge that touches shared markup (`index.html`, `styles.css`, `js/clock.js`), which is
+  exactly where the quick tier is blind; (d) have the impact map (`tests/impact.mjs`) say which deep suites a change can break, and run
+  them in `npm test` when they are cheap enough.
+
 ## A link to the current setup, for a digital sign
 
 Added 2026-11-02. **Goal:** "Share this setup" produces a link that, opened on a screen nobody can touch (a digital sign, a kiosk
