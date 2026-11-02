@@ -27,21 +27,26 @@ export async function run(t) {
   await h.settle(1500);
   t.check('10 minutes before: counting down', /Sunset in\s*(10:0\d|09:5\d)/.test(String(await pill(h.page))), String(await pill(h.page)));
   await h.close();
-  // the pills sit at the bottom: all of one long rain alert on screen, clear of the digits and the corner buttons, upright and in landscape
-  for (const [label, w, hh] of [['upright phone', 393, 852], ['phone in landscape', 852, 393]]) {
-    h = await t.open({ fixedTime: '2026-06-21T12:00:00Z', width: w, height: hh, touch: true, conf: { weatherMode: 'live', rainAlert: true, clockStyle: 'solid', twentyFourHourClock: true, countdown: 'both', hideSeconds: false } });
-    await h.settle(4500);
+  // the pills sit at the bottom, clear of the digits whatever the screen shape and the seconds setting: all of one long rain alert
+  // on screen, not touching the digits or the corner buttons, centred
+  const shapes = [['phone in landscape, seconds hidden', 852, 393, true], ['upright phone, seconds shown', 393, 852, false]];
+  if (!t.quick) shapes.push(['phone in landscape, seconds shown', 852, 393, false], ['upright phone, seconds hidden', 393, 852, true], ['small upright phone', 320, 568, true], ['wide laptop, seconds hidden', 1366, 768, true], ['wide laptop, seconds shown', 1366, 768, false],
+    ['square, seconds hidden', 700, 700, true], ['short and wide, seconds hidden', 900, 500, true], ['ultra wide, seconds hidden', 2000, 800, true], ['tablet upright, seconds hidden', 820, 1180, true]);
+  for (const [label, w, hh, hide] of shapes) {
+    h = await t.open({ fixedTime: '2026-06-21T12:00:00Z', width: w, height: hh, touch: true, conf: { weatherMode: 'live', rainAlert: true, clockStyle: 'solid', twentyFourHourClock: false, countdown: 'both', hideSeconds: hide } });
+    await h.settle(4800);
     const g = await h.page.evaluate(() => {
       const pill = document.getElementById('rainAlertPill'), pr = pill.getBoundingClientRect();
       const ink = [...document.querySelectorAll('#clock svg')].filter((e) => getComputedStyle(e).display !== 'none' && e.querySelector('path[id]')).map((e) => { const r = e.getBoundingClientRect(), pad = r.width * 0.08; const p = [...e.querySelectorAll('path')].map((q) => q.getBoundingClientRect()); return { left: Math.min(...p.map((q) => q.left)) - pad, right: Math.max(...p.map((q) => q.right)) + pad, top: Math.min(...p.map((q) => q.top)) - pad, bottom: Math.max(...p.map((q) => q.bottom)) + pad }; });
       const corner = ['settings', 'vrButton', 'homeButton'].map((id) => document.getElementById(id)).filter((e) => e && !e.hidden && getComputedStyle(e).display !== 'none').map((e) => e.getBoundingClientRect());
       const hit = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
-      return { shown: !pill.hidden, left: pr.left, right: pr.right, top: pr.top, bottom: pr.bottom, vw: innerWidth, vh: innerHeight, text: pill.textContent, lines: Math.round(pr.height / parseFloat(getComputedStyle(pill).lineHeight)), overDigits: ink.some((d) => hit(pr, d)), overButtons: corner.some((c) => hit(pr, c)), centre: Math.abs((pr.left + pr.right) / 2 - innerWidth / 2) };
+      const inkBottom = Math.max(...ink.map((d) => d.bottom)), inkTop = Math.min(...ink.map((d) => d.top)), inkW = Math.max(...ink.map((d) => d.right)) - Math.min(...ink.map((d) => d.left));
+      return { shown: !pill.hidden, left: pr.left, right: pr.right, top: pr.top, bottom: pr.bottom, vw: innerWidth, vh: innerHeight, text: pill.textContent, overDigits: ink.some((d) => hit(pr, d)), clear: pr.top - inkBottom, inkH: inkBottom - inkTop, inkW, inkTop, overButtons: corner.some((c) => hit(pr, c)), centre: Math.abs((pr.left + pr.right) / 2 - innerWidth / 2), room: getComputedStyle(document.documentElement).getPropertyValue('--pill-room') };
     });
-    t.check(`${label}: the rain alert is shown in full on the screen (not cut off at an edge)`, g.shown && g.left >= 0 && g.right <= g.vw && g.text.length > 20, JSON.stringify(g));
-    t.check(`${label}: it is at the bottom, in the lower quarter`, g.top > g.vh * 0.74 && g.bottom <= g.vh, JSON.stringify(g));
-    t.check(`${label}: it does not cover the digits or the corner buttons`, !g.overDigits && !g.overButtons, JSON.stringify(g));
-    t.check(`${label}: it is centred`, g.centre < 40, `${g.centre.toFixed(0)} px off`);
+    t.check(`${label} (${w} x ${hh}): the rain alert is shown in full on the screen (not cut off at an edge)`, g.shown && g.left >= 0 && g.right <= g.vw && g.text.length > 20, JSON.stringify(g));
+    t.check(`${label} (${w} x ${hh}): it is at the bottom, centred, clear of the corner buttons`, g.top > g.vh * 0.6 && g.bottom <= g.vh && g.centre < 60 && !g.overButtons, JSON.stringify(g));
+    t.check(`${label} (${w} x ${hh}): it does not touch the digits (at least 6 px clear)`, !g.overDigits && g.clear >= 6, `clear ${g.clear.toFixed(1)} px, room ${g.room}`);
+    t.check(`${label} (${w} x ${hh}): the digits are still big and on the screen (over 20% of the height or 70% of the width, top not cut off)`, (g.inkH > g.vh * 0.2 || g.inkW > g.vw * 0.7) && g.inkTop >= -8, `ink ${g.inkH.toFixed(0)} x ${g.inkW.toFixed(0)} of ${g.vh} x ${g.vw}, top ${g.inkTop.toFixed(0)}`);
     await h.close();
   }
   if (t.quick) return;                                              // the quick check stops here: the rest is in the full run

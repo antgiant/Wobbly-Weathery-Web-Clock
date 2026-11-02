@@ -34,8 +34,8 @@ body {
   justify-content: center;
   align-items: center;
   width: 93vw;
-  height: 98vh;
-  height: 98dvh;
+  height: calc(98vh - var(--pill-room, 0px));
+  height: calc(98dvh - var(--pill-room, 0px));          /* shorter by just what the pills at the bottom need (pillroom.js) */
 }
 
 #clock svg {
