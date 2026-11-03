@@ -14,6 +14,7 @@ const PRECACHE = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest', 'js/version.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png',
   'data/stars.bin', 'data/milkyway.png', 'data/moon.jpg',
+  'schema/settings.js', 'schema/presets.js',
   'js/vendor/astronomy.browser.min.js',
   'js/index.js', 'js/clock.js', 'js/config.js', 'js/easing.js', 'js/install.js', 'js/offline.js', 'js/location.js', 'js/season.js', 'js/countdown.js', 'js/settings_gear.js', 'js/simtime.js', 'js/share.js', 'js/units.js', 'js/wakelock.js', 'js/wind.js',
   'js/virgo/virgo.js', 'js/virgo/lib/timezone_centroids.js', 'js/virgo/lib/timezone_links.js',

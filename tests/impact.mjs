@@ -14,7 +14,8 @@ export const RULES = [
   [/^js\/(clock|easing)\.js$/, ['clock', 'countdown', 'wind', 'led']],
   [/^js\/countdown\.js$/, ['countdown', 'clock']],
   [/^js\/(location)\.js$/, ['place', 'startup', 'settings']],
-  [/^js\/(config|units|simtime|index)\.js$/, 'ALL'],
+  [/^js\/(config|units|simtime|index)\.js$|^schema\//, 'ALL'],
+  [/^native\/|^docs\//, []],                                              // the native version has its own checks; notes are only notes
   [/^js\/(season)\.js$/, ['options', 'christmas']],
   [/^js\/(install)\.js$/, ['options']],
   [/^js\/(offline|version)\.js$|^sw\.js$|^manifest\.webmanifest$|^icons\//, ['offline', 'smoke']],
