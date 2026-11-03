@@ -47,19 +47,6 @@ the CI machine, so we can see where the 7 minutes go and what to cut or move.
   picture does not matter, rebalancing the shares by measured time instead of file order), and decide what belongs in the fast local
   tier (`tests/impact.mjs`). Show the breakdown in the README, with the date it was measured.
 
-## LED look: make the background of the pixel-art umbrella (and countdown card) transparent, not black
-
-On the LED panel the rain alert's umbrella (and the sunrise / sunset countdown card) is drawn on a solid black plate (`drawLedCard()` in
-`js/sky/ledcard.js` fills a black rectangle behind the icon and the pixel text). Make that plate **transparent** so the sky shows
-through, as the rest of the LED picture does.
-
-- Readability must not drop: replace the plate with a **one-LED dark outline** around every lit pixel (the same idea as the thin outline
-  round the digits), so the icon and the text stay legible on a bright or a dark sky, and for colour-blind readers (luminance, not hue).
-- The clock still makes room for the card (`--led-top`), so nothing covers the time; only the background changes.
-- Tests: the card's overlay has transparent pixels outside the glyphs (alpha 0) and a dark outline pixel next to each lit one; the existing
-  "nothing covers the time" checks in `tests/browser/alerts.test.mjs` stay green; a bright-sky and a dark-sky pixel-contrast check on the icon.
-- Check both the tuned layouts (pixel card) and the other sizes (full-size pills drawn through the LEDs).
-
 ## Brightness: a day level and a night level, with sunset and sunrise as the transition (web and native)
 
 Added 2026-11-02. Today "Dim the screen" is a black veil with three modes (Never, At night, Always) and one "how dark" slider

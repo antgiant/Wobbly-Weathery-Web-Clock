@@ -114,13 +114,15 @@ export function drawLedCard(st, leadMs, off = false, rain = null) {
   ledCard.width = cols; ledCard.height = rows;
   const c = ledCard.getContext('2d');
   c.clearRect(0, 0, cols, rows);
-  const px = (x, y, col) => { c.fillStyle = col; c.fillRect(x, y, 1, 1); };
+  // No plate behind the card: the sky shows through. Every lit LED gets a one-LED dark outline instead (the same idea as the
+  // outline round the digits), so the icon and the text stay readable on a bright or a dark sky, and by brightness alone.
+  const lit = new Map();
+  const px = (x, y, col) => { if (x >= 0 && y >= 0 && x < cols && y < rows) lit.set(y * cols + x, col); };
   const blit = (lines, x, y, col) => lines.forEach((line, j) => [...line].forEach((v, i) => { if (v !== '.') px(x + i, y + j, col); }));
 
   if (P) {
     const { sz, tw, stacked, cardH, cardW } = P, { font, h: fh, iw } = sz;
     const x0 = Math.floor((cols - cardW) / 2), y0 = 1, innerW = cardW - 2;
-    c.fillStyle = '#000'; c.fillRect(x0, y0, cardW, cardH);
     const moon = st.body === 'moon', sun = moon ? '#cfe3ff' : rise ? '#ffd24a' : '#ff7a2e';
     const iconX = stacked ? x0 + 1 + Math.floor((innerW - iw) / 2) : x0 + 2, iconY = y0 + 1;
     const arrow = rise ? sz.arrow.up : sz.arrow.down;
@@ -134,9 +136,17 @@ export function drawLedCard(st, leadMs, off = false, rain = null) {
     for (let i = 0; i < filled; i++) px(x0 + 1 + i, y0 + cardH - 2, sun);
   }
   if (rain) {                                                                    // the umbrella, bottom left
-    c.fillStyle = '#000'; c.fillRect(0, rows - 9, 11, 9);
     blit(RAIN_ICON[rain.level], 1, rows - 8, rain.level === 'slicker' ? '#ffd24a' : '#7fd4ff');
   }
+  c.fillStyle = 'rgba(0,0,0,0.82)';                                              // the outline first: every empty LED next to a lit one
+  for (const k of lit.keys()) {
+    const x = k % cols, y = (k - x) / cols;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const nx = x + dx, ny = y + dy;
+      if ((dx || dy) && nx >= 0 && ny >= 0 && nx < cols && ny < rows && !lit.has(ny * cols + nx)) c.fillRect(nx, ny, 1, 1);
+    }
+  }
+  for (const [k, col] of lit) { const x = k % cols; c.fillStyle = col; c.fillRect(x, (k - x) / cols, 1, 1); }   // then the lit LEDs
   engine.setOverlay(ledCard);
   // the clock gets whatever is below the countdown card
   const top = P ? String((P.cardH + 2) / rows) : '';
