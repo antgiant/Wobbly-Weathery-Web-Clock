@@ -1,6 +1,33 @@
 # To do
 
-Things we know we want, not yet done. Newest first. (Added 2026-11-02, not started: the three items directly below.)
+Things we know we want, not yet done. Newest first. (Items added 2026-11-02 and 2026-11-03 are not started.)
+
+## LED look: make sure stars show up (at least the ones that show in the normal picture)
+
+Added 2026-11-03. On the LED panel the picture is the normal picture **averaged** over each LED's block of pixels (the LED pass in
+`FRAG_LED`, `js/sky/glsl-scene.js`). A star is a point far smaller than one LED, so averaging spreads its light over the whole block
+and it vanishes: at night the LED sky is blank where the normal sky has stars. The same happens, less badly, to the moon and the planets.
+
+- **Goal:** an option, **"Stars on the LED panel"** (Extras, Advanced, beside the LED size): *Off / Automatic / Always*. Automatic = every
+  star (and planet, and the moon) that is **visible in the normal picture** is also visible as a lit LED; Always = the brightest ones even when
+  the normal picture would not show them (a showy panel).
+- **How, in order of preference:**
+  1. **A star layer in LED space.** After the averaging, light the one LED each bright star falls in (position from the same projection
+     the normal renderer uses, so it follows the view and the time), with the star's colour (B-V) and a brightness from its magnitude. This
+     is exact, cheap (a few dozen points) and independent of the panel size. Planets and the moon are drawn the same way.
+  2. **Or keep the peak, not only the mean:** let each LED be `mix(average, brightest pixel in its block, k)` where the sky is dark enough
+     for a star to be seen. Simple, but it also promotes noise (clouds, bright landscape edges), so it needs a threshold and is the fallback.
+- **"Visible in the normal picture" has to be a rule, not a guess:** use the engine's own visibility, that is the same cut-off as the normal
+  render (the limiting magnitude from the sky's brightness, the light pollution setting, the moon, cloud cover and the exposure), so the LED
+  panel shows **no stars by day, under a bright moon or under thick cloud**, and more of them under a dark sky. Cap the density
+  (an LED panel of 2,000 LEDs cannot show 2,000 stars: pick the brightest few dozen, spaced at least one LED apart) so it reads as stars, not noise.
+- Never draw one over the **digits** (the clock wins), and keep to the dimming / brightness setting (a star at night brightness is dim, not
+  full white); a slow twinkle is optional and off by default (it forces redraws; see the power notes).
+- Works on every panel size and layout in the LED size menu (16 x 16 up to 128 x 64, tuned and untuned) and in both orientations.
+- **Tests:** at a dark site on a clear night the LED panel has at least N lit star LEDs (and none in daytime, none under a full moon of the
+  same brightness, none under full cloud); every star the normal render shows above the threshold has a lit LED within one LED of its position
+  (at 90% or more); no star LED lies on a digit; the same count scales sensibly across panel sizes; "Off" gives the old picture exactly;
+  planets and the moon appear as one LED each when visible.
 
 ## CI performance breakdown: what is tested and how long each part takes
 
