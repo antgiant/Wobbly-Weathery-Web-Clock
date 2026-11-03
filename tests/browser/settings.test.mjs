@@ -22,11 +22,10 @@ export async function run(t) {
   await page.click('.preset[data-preset="bedside"]');
   await page.waitForTimeout(500);
   let c = await conf(page);
-  t.check('Bedside saved its settings (no seconds, dimming at night, soft glass)', c.hideSeconds === true && c.nightDim === 'auto' && c.nightDimLevel === 0.75 && c.glassFrost === 0.55, JSON.stringify({ hs: c.hideSeconds, nd: c.nightDim, fr: c.glassFrost }));
+  t.check('Bedside saved its settings (no seconds, a dimmer night, soft glass)', c.hideSeconds === true && c.brightnessNight === 0.25 && c.brightnessDay === 1 && c.glassFrost === 0.55, JSON.stringify({ hs: c.hideSeconds, nb: c.brightnessNight, fr: c.glassFrost }));
   t.check('its card is ticked, no other', await page.evaluate(() => [...document.querySelectorAll('.preset[aria-pressed="true"]')].map((b) => b.dataset.preset).join()) === 'bedside');
   t.check('the other tabs follow: "Hide seconds" is on, and the clock really lost its seconds', await page.evaluate(() => document.getElementById('hideSeconds').checked && getComputedStyle(document.querySelector('#clock .seconds')).display === 'none'));
-  await page.selectOption('#nightDim', 'off', { force: true }).catch(() => {});
-  await page.evaluate(() => { const e = document.getElementById('nightDim'); e.value = 'off'; e.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.evaluate(() => { const e = document.getElementById('brightnessNight'); e.value = '0.6'; e.dispatchEvent(new Event('input', { bubbles: true })); });
   await page.waitForTimeout(300);
   t.check('changing one setting un-ticks the preset', await page.evaluate(() => document.querySelectorAll('.preset[aria-pressed="true"]').length) === 0);
 
@@ -36,7 +35,7 @@ export async function run(t) {
   await page.click('#resetAll');
   await page.waitForTimeout(600);
   c = await conf(page);
-  t.check('Reset puts the settings back (seconds shown, no dimming, automatic style)', c.hideSeconds === false && c.nightDim === 'off' && c.clockStyle === 'auto' && c.glassFrost === 0.35);
+  t.check('Reset puts the settings back (seconds shown, no dimming, automatic style)', c.hideSeconds === false && c.brightnessNight === 1 && c.brightnessDay === 1 && c.clockStyle === 'auto' && c.glassFrost === 0.35);
   t.check('Reset keeps the location and the first-run choice', c.location_latitude === before.location_latitude && c.location_longitude === before.location_longitude && c.locationChoice === 'estimated');
   t.check('after a reset "Standard" is the ticked preset', await page.evaluate(() => [...document.querySelectorAll('.preset[aria-pressed="true"]')].map((b) => b.dataset.preset).join()) === 'standard');
 

@@ -20,25 +20,6 @@ the CI machine, so we can see where the 7 minutes go and what to cut or move.
   picture does not matter, rebalancing the shares by measured time instead of file order), and decide what belongs in the fast local
   tier (`tests/impact.mjs`). Show the breakdown in the README, with the date it was measured.
 
-## Brightness: a day level and a night level, with sunset and sunrise as the transition (web and native)
-
-Added 2026-11-02. Today "Dim the screen" is a black veil with three modes (Never, At night, Always) and one "how dark" slider
-(`js/sky/dim.js`), which only ever darkens, and only around dusk. Replace it, on the **web version too**, with a clearer model that the
-native version (below) also needs, because an LED panel's brightness is a real hardware setting:
-
-- **Two levels:** a **day brightness** and a **night brightness** (percent), each settable on its own (a bright day, a dim day for a bedroom,
-  a very dim night).
-- **The transition follows the sun:** brightness eases from the day level to the night level around **sunset**, and back around
-  **sunrise**, over a set time (default about 45 minutes, centred on the sunset or sunrise, or defined by the sun's altitude, civil
-  twilight to full dark, as the veil does now), on a smooth curve so nothing steps.
-- Replaces "Dim the screen" and "How dark": old settings migrate (Never = both levels 100%; At night = day 100%, night = 1 minus the old level;
-  Always = both at the old dim level). Presets (Bedside, Battery saver, LED panel, Everyday) set sensible pairs.
-- **Web:** applied as the veil/opacity as now, so it costs nothing extra; keep the dimming **time-travel aware** (follows the simulated sun).
-- **Native:** the same numbers drive the panel's hardware brightness (`--led-brightness`) or the output's scaling, with a gamma curve so 20% looks
-  like 20%; with the manual-brightness and a "never below" floor so a sign cannot go black by mistake.
-- Tests: the level at noon, midnight, and at sunset +/- the transition half-width (monotone, smooth, no jump); migration of old settings;
-  the polar day / polar night cases (no sunset: use the day or the night level by the sun's altitude); time travel.
-
 ## Raspberry Pi targets: a range of Pis, full-resolution HDMI and LED panels of any size
 
 (Replaces the earlier "original Pi Zero" entry; updated 2026-11-02.) **Goals:** run the clock on **a range of Raspberry Pis**, from the
@@ -143,8 +124,8 @@ Think of it as a proper small product, not a script. It should:
   and a grey ramp (colour order and gamma), an "identify" pattern that numbers every tile and marks its top-left corner (for chain and
   rotation mistakes), a white-to-black brightness sweep, a border box (is every edge lit?), then a short live render of the real clock.
   The same checks run before the first start and after a config change.
-- **Let the user control brightness**, day and night, with the sunset as the transition: the model in the brightness entry above,
-  shared with the web version.
+- **Let the user control brightness**, day and night, with the sunset as the transition: the same model the web version now has (`js/sky/dim.js`:
+  `brightnessDay`, `brightnessNight`, `brightnessTransition`), driving the panel's hardware brightness.
 - **Update itself** (see "Keep itself current"): checks a release feed on a schedule at a quiet hour, downloads, **verifies a checksum and a
   signature**, swaps the program atomically, restarts, and **rolls back** if the new version fails to start. Can be turned off, and an update
   never happens in the middle of a transition or a countdown's last minute.

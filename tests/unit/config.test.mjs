@@ -19,13 +19,25 @@ installDomStub({ storage: { conf: { confVersion: 0, clockStyle: 'solid' } } });
 m = await importFresh('../../js/config.js');
 check('migration leaves an explicit style choice alone', m.conf.clockStyle === 'solid');
 
+// ---- version 4: Dim the screen became a day and a night brightness ----
+installDomStub({ storage: { conf: { confVersion: 3, nightDim: 'auto', nightDimLevel: 0.75, twentyFourHourClock: true, viewMode: 'fixed' } } });
+m = await importFresh('../../js/config.js');
+check('migration 4: "At night" with "how dark 0.75" becomes night brightness 25%, day 100%', Math.abs(m.conf.brightnessNight - 0.25) < 1e-9 && m.conf.brightnessDay === 1);
+check('migration 4 does not repeat the older default moves (24-hour choice and view mode kept)', m.conf.twentyFourHourClock === true && m.conf.viewMode === 'fixed');
+installDomStub({ storage: { conf: { confVersion: 3, nightDim: 'on', nightDimLevel: 0.5 } } });
+m = await importFresh('../../js/config.js');
+check('migration 4: "Always" dims day and night to the same level', Math.abs(m.conf.brightnessNight - 0.5) < 1e-9 && Math.abs(m.conf.brightnessDay - 0.5) < 1e-9);
+installDomStub({ storage: { conf: { confVersion: 3, nightDim: 'off', nightDimLevel: 0.9 } } });
+m = await importFresh('../../js/config.js');
+check('migration 4: "Never" leaves both at 100%', m.conf.brightnessNight === 1 && m.conf.brightnessDay === 1);
+
 // ---- a fresh visitor ----
 installDomStub({});
 m = await importFresh('../../js/config.js');
 c = m.conf;
 check('fresh: look-around, follow the sun, screen kept on, glow follows the light', c.viewMode === 'drag' && c.followSun === true && c.keepAwake === true && c.glassGlowColor === 'follow');
 check('fresh: automatic clock style, 24h and units not chosen yet', c.clockStyle === 'auto' && c.twentyFourHourClock === null && c.tempUnit === 'auto');
-check('fresh: umbrella alert and night dimming are off', c.rainAlert === false && c.nightDim === 'off');
+check('fresh: umbrella alert is off and the screen is not dimmed (100% day and night, a 45 minute transition)', c.rainAlert === false && c.brightnessDay === 1 && c.brightnessNight === 1 && c.brightnessTransition === 45);
 check('fresh: classic 64 x 32 LED panel, turning on', c.ledCols === 64 && c.ledRows === 32 && c.ledTurn === true);
 check('fresh: not asked about location yet', c.locationChoice === null);
 check('fresh: exact position is not shared (coarse lookups on)', c.coarseLookups === true);

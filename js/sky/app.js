@@ -17,7 +17,7 @@ import { applyView, atDefault, followActive, updateHud, updateVrReadout, updateH
 import { markReady, startFallback, updateClockColor, updateFavicon } from './appearance.js';
 import { updateCountdown, updateRain, countdownPeriod } from './alerts.js';
 import { bindSettings } from './bindings.js';
-import { initDim, updateDim } from './dim.js';
+import { initDim, updateDim, dimmingOn } from './dim.js';
 import { initPresets } from './presets.js';
 import { updateBurnIn, burnInPeriod, toNextMinute } from './burnin.js';
 import { updateWind, windPeriod } from './windsway.js';
@@ -104,7 +104,7 @@ function init() {
   every('rain', updateRain, () => (conf.rainAlert ? 60000 : Infinity), 2500);
   every('wind', updateWind, windPeriod, 700);                                 // the digits lean in the wind (when switched on)
   every('burnin', updateBurnIn, burnInPeriod, toNextMinute());                // anti burn-in: a tiny step once a minute while the screen is kept on
-  every('dim', updateDim, () => (conf.nightDim && conf.nightDim !== 'off' ? (simFast() ? 1000 : 20000) : Infinity), 500);
+  every('dim', updateDim, () => (dimmingOn() ? (simFast() ? 1000 : 20000) : (document.getElementById('dimmer')?.hidden === false ? 2000 : Infinity)), 500);
   window.addEventListener('resize', () => { if (atDefault()) applyView(); });
   void applyPlants;
 }

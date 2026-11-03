@@ -122,8 +122,9 @@ export const DEFAULTS = {
   // settings panel
   settingsTab: 'clock',
   holidayTree: true,          // a lit Christmas tree in the scene from Thanksgiving to Christmas
-  nightDim: 'off',            // off | auto (dim between dusk and dawn) | on
-  nightDimLevel: 0.6,         // how much light the veil takes away at full dimming
+  brightnessDay: 1,           // 0.1 .. 1: how bright the screen is by day (1 = no veil)
+  brightnessNight: 1,         // 0.1 .. 1: how bright it is at night
+  brightnessTransition: 45,   // minutes the change takes, centred on sunset and on sunrise
   rainAlert: false,           // show an umbrella / slicker indicator when enough rain is coming today
   settingsLevel: 'simple',    // simple | advanced
   // first-run choice
@@ -133,13 +134,22 @@ export const DEFAULTS = {
   tempUnit: 'auto',           // auto (by region) | c | f
   confVersion: 0
 };
-const CONF_VERSION = 3;
+const CONF_VERSION = 4;
 export var conf = createPersistentConfig("conf", DEFAULTS);
 
 // Defaults that changed: settings saved by an older version only ever held the old default, so move them once.
 if ((conf.confVersion || 0) < CONF_VERSION) {
-  for (const k of ['twentyFourHourClock', 'keepAwake', 'followSun', 'viewMode', 'glassGlowColor']) conf[k] = DEFAULTS[k];
-  if ((conf.confVersion || 0) < 3 && conf.clockStyle === 'glass') conf.clockStyle = 'auto';   // 'glass' was only ever the default
+  if ((conf.confVersion || 0) < 3) {                       // version 3 moved these defaults
+    for (const k of ['twentyFourHourClock', 'keepAwake', 'followSun', 'viewMode', 'glassGlowColor']) conf[k] = DEFAULTS[k];
+    if (conf.clockStyle === 'glass') conf.clockStyle = 'auto';   // 'glass' was only ever the default
+  }
+  // version 4: "Dim the screen" (off / at night / always) and "How dark" became a day brightness and a night brightness
+  const old = conf;                                        // (the old keys are no longer settings: read through another name)
+  if ((old.confVersion || 0) < 4 && old.nightDim && old.nightDim !== 'off') {
+    const keep = 1 - Math.min(0.9, Math.max(0.1, Number(old.nightDimLevel) || 0.6));
+    conf.brightnessNight = keep;
+    conf.brightnessDay = old.nightDim === 'on' ? keep : 1;
+  }
   conf.confVersion = CONF_VERSION;
 }
 

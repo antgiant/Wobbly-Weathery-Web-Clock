@@ -1,6 +1,6 @@
 // Where settings live (Simple or Advanced), the automatic clock style on battery saver, the iPhone install walkthrough,
 // the other things to count down to, and the Everyday presets.
-import { sunEvents, at } from '../lib/astro.mjs';
+import { sunEvents, at, nextSunset } from '../lib/astro.mjs';
 export const name = 'options';
 export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
@@ -27,11 +27,11 @@ export async function run(t) {
     t.check(`Advanced: ${id} is shown`, await shown(id));
   }
   // where things live: View is part of Scene, Display is Extras, all the weather is on one Weather tab
-  const home = await h.page.evaluate(() => Object.fromEntries(['weatherMode', 'tempUnit', 'cloudMotion', 'rainAlert', 'digitWeather', 'windSway', 'viewMode', 'followSun', 'showLabels', 'viewHeading', 'sensorRotation', 'landscape', 'plants', 'quality', 'countdown', 'nightDim', 'screenMode', 'keepAwake', 'clockStyle', 'hideSeconds', 'simEnabled', 'preciseLocation'].map((id) => [id, document.getElementById(id)?.closest('[data-panel]')?.dataset.panel])));
+  const home = await h.page.evaluate(() => Object.fromEntries(['weatherMode', 'tempUnit', 'cloudMotion', 'rainAlert', 'digitWeather', 'windSway', 'viewMode', 'followSun', 'showLabels', 'viewHeading', 'sensorRotation', 'landscape', 'plants', 'quality', 'countdown', 'brightnessNight', 'screenMode', 'keepAwake', 'clockStyle', 'hideSeconds', 'simEnabled', 'preciseLocation'].map((id) => [id, document.getElementById(id)?.closest('[data-panel]')?.dataset.panel])));
   t.check('the tabs are Presets, Text, Scene, Weather, Extras, Place (no View, no Display)', await h.page.evaluate(() => [...document.querySelectorAll('.tab')].map((b) => b.textContent.trim()).join() === 'Presets,Text,Scene,Weather,Extras,Place' && !document.getElementById('panel-view') && !document.getElementById('panel-display')));
   t.check('all the weather is on the Weather tab: weather, temperature units, cloud and water motion, umbrella alert, rain and snow on the digits, wind sway', ['weatherMode', 'tempUnit', 'cloudMotion', 'rainAlert', 'digitWeather', 'windSway'].every((id) => home[id] === 'weather'), JSON.stringify(home));
   t.check('the View settings are in Scene, with the landscape and the sky', ['viewMode', 'followSun', 'showLabels', 'viewHeading', 'sensorRotation', 'landscape', 'plants', 'quality'].every((id) => home[id] === 'scene'), JSON.stringify(home));
-  t.check('Extras has the sunrise / sunset countdown, night dimming and the screen', ['countdown', 'nightDim', 'screenMode', 'keepAwake'].every((id) => home[id] === 'extras'), JSON.stringify(home));
+  t.check('Extras has the sunrise / sunset countdown, brightness and the screen', ['countdown', 'brightnessNight', 'screenMode', 'keepAwake'].every((id) => home[id] === 'extras'), JSON.stringify(home));
   t.check('the Text tab has only the digits (no weather settings left on it)', ['clockStyle', 'hideSeconds'].every((id) => home[id] === 'clock') && !['digitWeather', 'windSway'].some((id) => home[id] === 'clock'));
   await h.page.click('.seg__btn[data-level="simple"]');
   await h.page.click('.tab[data-tab="presets"]');
@@ -46,7 +46,7 @@ export async function run(t) {
   await h.page.click('.preset[data-preset="everyday"]');
   await h.page.waitForTimeout(500);
   let c = await h.page.evaluate(() => JSON.parse(localStorage.getItem('conf')));
-  t.check('Everyday: no seconds, dims at night, umbrella alert, countdowns, screen on, automatic digits', c.hideSeconds === true && c.nightDim === 'auto' && c.rainAlert === true && c.countdown === 'both' && c.keepAwake === true && c.clockStyle === 'auto' && c.screenMode === 'normal');
+  t.check('Everyday: no seconds, dims at night, umbrella alert, countdowns, screen on, automatic digits', c.hideSeconds === true && c.brightnessNight === 0.25 && c.rainAlert === true && c.countdown === 'both' && c.keepAwake === true && c.clockStyle === 'auto' && c.screenMode === 'normal');
   t.check('and it leaves the labels and the countdown kind as the person chose them', c.showLabels === true && c.countdownKind === 'moon');
   await h.page.click('.preset[data-preset="everyday-saver"]');
   await h.page.waitForTimeout(800);
@@ -78,6 +78,23 @@ export async function run(t) {
   await h.page.evaluate(() => { window.dispatchEvent(new Event('powerchange')); });
   t.check('a power change event is harmless', h.errors.length === 0);
   await h.close();
+  // ---- brightness: the veil follows the sunset (day 100%, night 25%, a 45 minute transition centred on sunset) ----
+  const sunset0 = nextSunset('2026-06-21T12:00:00Z');
+  const veil = async (when, conf = {}) => {
+    const hh = await t.open({ query: `t=${when}&speed=0`, conf: { clockStyle: 'solid', brightnessDay: 1, brightnessNight: 0.25, brightnessTransition: 45, ...conf } });
+    await hh.settle(1500);
+    const v = await hh.page.evaluate(() => { const e = document.getElementById('dimmer'); return { op: e.hidden ? 0 : parseFloat(e.style.opacity) || 0, hidden: e.hidden }; });
+    await hh.close();
+    return v;
+  };
+  const vNoon = await veil('2026-06-21T16:00:00Z'), vBefore = await veil(at(sunset0, -40 * 60e3)), vAt = await veil(at(sunset0, 0)), vAfter = await veil(at(sunset0, 40 * 60e3)), vNight = await veil('2026-06-22T06:00:00Z');
+  t.check('brightness: noon has no veil (day level 100%)', vNoon.op < 0.005 && vNoon.hidden, JSON.stringify(vNoon));
+  t.check('40 minutes before sunset it is still day (the transition is 45 minutes wide, centred on sunset)', vBefore.op < 0.02, JSON.stringify(vBefore));
+  t.check('at the moment of sunset the veil is half way between day and night (75% darkness at night -> 0.375)', Math.abs(vAt.op - 0.375) < 0.03, JSON.stringify(vAt));
+  t.check('40 minutes after sunset it is night (the veil is 0.75: brightness 25%)', vAfter.op > 0.73 && vAfter.op < 0.77, JSON.stringify(vAfter));
+  t.check('deep night: 0.75 exactly', Math.abs(vNight.op - 0.75) < 0.005, JSON.stringify(vNight));
+  const vDay = await veil('2026-06-21T16:00:00Z', { brightnessDay: 0.6 });
+  t.check('a dimmer day works too: day 60% means a veil of 0.4 at noon', Math.abs(vDay.op - 0.4) < 0.005, JSON.stringify(vDay));
   if (t.quick) return;                                              // the quick check stops here: the rest is in the full run
 
   // ---- the iPhone install walkthrough ----

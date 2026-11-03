@@ -573,19 +573,27 @@
           </div>
 
           <div class="group">
-            <h3>Night</h3>
+            <h3>Brightness</h3>
             <div class="field">
-              <label class="field__label" for="nightDim">Dim the screen</label>
-              <select id="nightDim">
-                <option value="off">Never</option>
-                <option value="auto">At night (from dusk to dawn)</option>
-                <option value="on">Always</option>
-              </select>
-              <p class="hint">A veil that eases in as the sun goes down and out again at dawn, so a bedside clock does not light the room.</p>
+              <label class="field__label" for="brightnessDay">By day <output id="brightnessDayOut"></output></label>
+              <input type="range" id="brightnessDay" min="0.1" max="1" step="0.05">
             </div>
             <div class="field">
-              <label class="field__label" for="nightDimLevel">How dark <output id="nightDimLevelOut"></output></label>
-              <input type="range" id="nightDimLevel" min="0.1" max="0.9" step="0.05">
+              <label class="field__label" for="brightnessNight">At night <output id="brightnessNightOut"></output></label>
+              <input type="range" id="brightnessNight" min="0.1" max="1" step="0.05">
+              <p class="hint">A veil that takes light away, so a bedside clock does not light the room. The screen eases from the day brightness to the night brightness around sunset, and back around sunrise. 100% is no veil.</p>
+            </div>
+            <div class="field adv">
+              <label class="field__label" for="brightnessTransition">The change takes</label>
+              <select id="brightnessTransition">
+                <option value="15">15 minutes</option>
+                <option value="30">30 minutes</option>
+                <option value="45">45 minutes</option>
+                <option value="60">1 hour</option>
+                <option value="90">1½ hours</option>
+                <option value="120">2 hours</option>
+              </select>
+              <p class="hint">Centred on the moment of sunset or sunrise: half before, half after.</p>
             </div>
           </div>
 
