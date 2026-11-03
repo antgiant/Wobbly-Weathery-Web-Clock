@@ -28,6 +28,7 @@
   <link rel="modulepreload" href="js/clock.js">
   <link rel="modulepreload" href="js/config.js">
   <link rel="modulepreload" href="js/wind.js">
+  <link rel="modulepreload" href="js/share.js">
   <link rel="modulepreload" href="js/countdown.js">
   <link rel="modulepreload" href="js/easing.js">
   <link rel="modulepreload" href="js/location.js">
@@ -69,6 +70,7 @@
   <link rel="modulepreload" href="js/sky/burnin.js">
   <link rel="modulepreload" href="js/sky/pillroom.js">
   <link rel="modulepreload" href="js/sky/drops.js">
+  <link rel="modulepreload" href="js/sky/sharebox.js">
   <link rel="modulepreload" href="js/sky/windsway.js">
   <link rel="preload" href="data/stars.bin" as="fetch" crossorigin>
   <link rel="preload" href="data/milkyway.png" as="image">
@@ -250,6 +252,24 @@
             <p class="hint">Puts every setting back to how it was the first time, except your location.</p>
             <button id="resetAll" type="button" class="btn btn--danger">Reset all settings</button>
           </div>
+          <div class="group" id="shareGroup">
+            <h3>Share this setup</h3>
+            <p class="hint">A link that opens the clock exactly like this on another screen, for example a digital sign. It is not saved on the screen that opens it.</p>
+            <label class="field toggle"><span class="field__text">Kiosk mode<small>For a screen nobody can touch: no buttons, questions or banners, and it updates itself</small></span><input type="checkbox" id="shareKiosk"><span class="switch" aria-hidden="true"></span></label>
+            <div class="field">
+              <label class="field__label" for="shareShort">Short link <output id="shareShortLen"></output></label>
+              <input type="text" id="shareShort" readonly autocomplete="off" spellcheck="false">
+              <button id="shareCopyShort" type="button" class="btn">Copy the short link</button>
+            </div>
+            <div class="field">
+              <label class="field__label" for="shareReadable">Readable link <output id="shareReadableLen"></output></label>
+              <input type="text" id="shareReadable" readonly autocomplete="off" spellcheck="false">
+              <button id="shareCopyReadable" type="button" class="btn">Copy the readable link</button>
+            </div>
+            <p class="hint" id="shareDescribe" role="status"></p>
+            <p class="hint" id="shareNote"></p>
+          </div>
+
           <div class="group">
             <h3>About</h3>
             <p class="hint" id="versionLine">Version …</p>
@@ -645,6 +665,18 @@
             <h3>Location</h3>
             <label class="field toggle"><span class="field__text">Use precise location<small>Instead of estimating from your time zone</small></span><input type="checkbox" id="preciseLocation"><span class="switch" aria-hidden="true"></span></label>
             <p class="hint coords-line"><span id="coords">&nbsp;</span></p>
+            <label class="field toggle"><span class="field__text">Set the place myself<small>For a clock that shows another city's sky, or a sign with no GPS. Nothing replaces it.</small></span><input type="checkbox" id="manualLocation"><span class="switch" aria-hidden="true"></span></label>
+            <div class="field" id="manualFields" hidden>
+              <label class="field__label" for="placeSearch">Search for a place</label>
+              <input type="search" id="placeSearch" placeholder="Chicago, Reykjavik, Sydney…" autocomplete="off" aria-controls="placeResults">
+              <ul id="placeResults" class="places" hidden></ul>
+              <div class="pair">
+                <label class="field__label">Latitude<input type="text" id="manualLat" inputmode="decimal" autocomplete="off" placeholder="41.8781"></label>
+                <label class="field__label">Longitude<input type="text" id="manualLon" inputmode="decimal" autocomplete="off" placeholder="-87.6298"></label>
+              </div>
+              <p class="hint" id="manualHint" role="status"></p>
+              <p class="hint">Latitude is north (+) or south (−), longitude east (+) or west (−), in decimal degrees. A search sends what you type to the free Open-Meteo place-search service, only when you type; the coordinates are kept on this device and weather lookups still use the position rounded to about 10 km.</p>
+            </div>
             <div class="field adv">
               <label class="field__label" for="gpsFrequency">Location update frequency</label>
               <select id="gpsFrequency">

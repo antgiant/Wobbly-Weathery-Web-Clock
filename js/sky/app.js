@@ -22,6 +22,7 @@ import { initPresets } from './presets.js';
 import { updateBurnIn, burnInPeriod, toNextMinute } from './burnin.js';
 import { updateWind, windPeriod } from './windsway.js';
 import { initPillRoom } from './pillroom.js';
+import { initShare } from './sharebox.js';
 import { every } from './scheduler.js';
 
 const simActive = () => !!getSim();
@@ -73,6 +74,7 @@ function init() {
     initPresets();
     initDim();
     initPillRoom();
+    initShare();
     if (simBase) { simEn.checked = true; simTime.value = toLocalInput(simBase); }
     performance.mark('app:setup-done');
   };

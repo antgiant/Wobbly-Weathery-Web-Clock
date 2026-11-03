@@ -198,115 +198,19 @@ Added 2026-11-02, after finding CI had been red for about eight runs in a row wi
   and the three "Browser tests (share N of 3)" jobs. (d) have the impact map (`tests/impact.mjs`) say which deep suites a change can break, and
   run them in `npm test` when they are cheap enough.
 
-## A link to the current setup, for a digital sign
+## Share links and manual location: what is left
 
-Added 2026-11-02. **Goal:** "Share this setup" produces a link that, opened on a screen nobody can touch (a digital sign, a kiosk
-browser, a wall display), shows the clock exactly as configured. **The link must be as short as possible**: signage players
-often cap URLs (255 characters is common, 2,000 a comfortable limit, some hand the URL to a QR code or a text field).
+Built 2026-11-03 (see the README, "Share links" and "Set the place myself"): the short and readable links (`js/share.js`, frozen
+version-1 table and presets, golden links in `tests/unit/share.test.mjs`), Settings > Presets > Share this setup, kiosk mode, links that are
+applied but never saved, a place by coordinates or search (Settings > Place > Set the place myself), no first-run question for any of it.
+Not done yet:
 
-### What the link must do
+- **A QR code** next to the links (needs a small QR library or a hand-written encoder; the short link is short enough for a small code).
+- **A city list inside the page** so a place can be searched offline and travel as a 2-character index instead of two numbers (about 8
+  characters now); weigh its few hundred KB against the page-size budget (`tests/unit/weight.test.mjs`).
+- **"Show the time at that place"** (the place's own time zone) for a sign in one city showing another's sky.
+- **"Use this setup / Just look"** when a link is opened on a normal phone (today it is applied for that load without saving).
+- **Convert between forms** in the Share box (paste a link, see the other form), and a check for a link that is longer than a given limit.
+- **Kiosk updates at a quiet hour** (today it reloads at the next minute turn after an update is found).
+- Whether `landscape` and `weather...` in the readable form should have friendlier aliases.
 
-- **Apply the whole setup without any interaction**, and **not save it** on that device: it is an override for this load only
-  (like the test deep links `?t=`, `?weather=`, `?lat=` are today), so a shared link never overwrites someone's own settings.
-  Opening it on a normal phone can offer "Use this setup" / "Just look".
-- **A link that sets a location never shows the first-run location question** ("real location or estimated?"), whatever form the link
-  uses (a place by name, coordinates, a city index, or "estimate from the time zone"), and it never asks for geolocation. Today
-  only `?lat=&lon=` skips the question; the new link forms must too, and so must a link that carries no place at all when it is
-  a kiosk link (the sign then estimates from the time zone rather than asking).
-- **Kiosk behaviour** (a flag in the link, or implied by it): nothing that needs a finger. Hide the settings, VR and
-  return-to-default buttons; skip the first-run location question (the link carries a place, or says "estimate from the time
-  zone"); no "Tap to keep the screen on" banner, install prompt, toasts or "new version" banner; never ask for permissions.
-- **Keep itself current without anyone tapping**: when the service worker sees a newer version, a kiosk page reloads by itself,
-  at a quiet moment (say 03:00 local, or when the minute digit has just changed), instead of showing the banner.
-- **Work offline** as now (the saved copy), and survive a reload or a power cut by being the URL it starts from.
-
-### Making it short
-
-Query-per-setting (`?hideSeconds=1&glassFrost=0.55&...`) and JSON in base64 are both long (hundreds of characters). Better:
-
-1. **Send only what differs from a base, never the whole config.** Closest preset plus changes is right, and defaults are just
-   the preset "Standard", so one mechanism covers both. The encoder tries every preset (and Standard), picks the one with the
-   fewest differences, and writes that preset's id plus the differences.
-2. **A fixed table of settings, not names.** Every setting gets a permanent index, a type and a size: a switch is 1 bit, a
-   choice is 2 to 4 bits (an index into its options), a slider is 4 to 7 bits (quantised to the step the control already has).
-   A change is "setting number (6 bits) + value (1 to 7 bits)", about 12 bits, so **two URL characters per change** in
-   base64url (6 bits a character). Rough size: header (version, flags, base preset) 2 characters, plus 2 per change. A preset
-   alone is about 3 characters; a typical share of a preset and five changes is about 12.
-3. **Pack bits, then base64url.** No compression library: at this size it can only make things longer. The whole link is
-   `https://clock.wooleys.us/?c=` and 10 to 25 characters, well under 60 in total.
-4. **Special values cost a little more, still tiny:** a place is two numbers rounded to 0.1 degree (about 4 characters), or one
-   bit for "estimate from the time zone" (which also avoids putting coordinates in a link); a countdown date is minutes since
-   2020 (about 4 characters); the countdown's name is the only free text, sent as plain URL-encoded text (the sign never needs it unless
-   it is a countdown).
-5. **A query parameter, not a `#fragment`.** Fragments are never sent to a server, which is nice, but several signage players,
-   QR scanners and redirect services strip or mangle them. `?c=` is the most widely tolerated.
-6. **Ruled out or later:** a URL shortener (an outside service, and it must stay up for as long as the sign does); named sign
-   files in the repository (`?sign=lobby`, a JSON file committed to the site: shortest of all, but needs a deploy per change; a
-   good extra for fixed installations, not the main route).
-
-### Two kinds of link: short and readable
-
-- **Short** (`?c=...`, the bit-packed form above): for signs with tight limits and for QR codes. Not meant to be read.
-- **Readable** (longer, human friendly): for when length is not the problem and you want to see, edit and explain it:
-  `?preset=bedside&seconds=off&style=glass&place=Chicago&kiosk=1`. Real names for the settings, the presets and their values
-  (`on`/`off`, option names, plain numbers), and a place by name or as `place=41.9,-87.6`. Anyone can change one word by hand,
-  paste it into a ticket, or keep it in a notes file. Rules: the key names are stable and never reused (a renamed setting keeps its
-  old name as an alias), unknown keys are ignored, and values are clamped as for the short form. It decodes to exactly the same
-  setup, and the Share box can convert either to the other.
-- The Share box shows both, with their lengths, and **a one-line description in words** under them ("Bedside preset, seconds hidden,
-  Chicago, kiosk mode"), so you can check a link says what you meant before it goes to a sign.
-- The readable form has no frozen preset table to keep (it names the preset and lists every difference from the preset
-  *as it was*), but then a changed preset would change an old link: write the **full** setup into a readable link by default
-  (the preset name is then only a label), and treat "preset plus changes" as the short form's job.
-
-### A way to set the location by hand
-
-A sign has no GPS, nobody to approve a permission, and a time zone that may be wrong (a server in another place), so the link
-has to carry a place, and the app needs a **manual location** option to match (and it is useful on its own, for a clock that shows
-another city's sky):
-
-- **Settings → Place**: a third way beside "Use my real location" and "Estimate from the time zone": **"Set it myself"**, with
-  latitude and longitude boxes (decimal degrees, with a hint on the format and a check that they are in range) and a name to show.
-- **Search by name** (a text box with suggestions): offline from a built-in list of cities (the time-zone centroids data is a
-  start; a list of about 25,000 larger places is a few hundred KB, to be weighed against the page size budget in
-  `tests/unit/weight.test.mjs`), or the free Open-Meteo geocoding service when online. A built-in list keeps a kiosk working
-  offline and keeps the link short (a city is an index, about 2 characters, not 4 coordinates).
-- Sunrise, the sky, the weather and the time zone all follow the chosen place. The time shown is by default still **the device's
-  own clock**; add "Show the time at that place" (the place's time zone) for a sign in one city showing another.
-- It is stored like the other location choices (privacy as now: weather lookups use the position rounded to 0.1 degree) and is part of
-  the link in both forms: `place=Chicago` or `place=41.9,-87.6` (readable), a city index or two rounded numbers (short).
-- A link that carries a place, in either form, skips the first-run question (add to `tests/browser/startup.test.mjs` next to the
-  existing `?lat=&lon=` check: short link, readable link by name, readable link by coordinates, and "estimate"), and the question
-  does not appear later in the session either.
-- Tests: a typed place moves the sun to the right azimuth at a known time; out-of-range and empty values are rejected; the link
-  round trip keeps it; manual overrides estimated and real, and a link never asks for geolocation.
-
-### The trap: presets change, links must not
-
-A link that says "preset 3 plus changes" means something different if preset 3 is edited next month. So the **codec is
-versioned and frozen**: the link carries a version, and each version keeps its own copy of the base presets and the settings table
-(new settings are only ever appended; a base preset is never edited, a changed preset gets a new id). Old links keep decoding to
-the setup they were made with. Settings added later fall back to their default in an old link. Unknown newer versions decode
-what they can and ignore the rest.
-
-### Where it lives
-
-- **Settings → Presets → Share this setup**: shows the link, a Copy button, its length (with a note when it is over 255 / 2,000
-  characters), a QR code, and a "Kiosk mode" switch (hides the controls, as above). A "Preview" opens it as the sign will see it.
-- New module `js/share.js` (pure, no DOM: `encode(conf) -> string`, `decode(string) -> conf patch`), read by `app.js` at start.
-
-### Safety
-
-The link only ever sets known settings, each clamped to its own range or option list; it cannot run anything. Text is
-length-limited and always set as text.
-
-### Tests to write
-
-- **Round trip over many random setups** (`decode(encode(x))` gives `x`, for every setting type and every preset as base).
-- **Length**: every preset alone is at most 4 characters; a preset plus five changes at most 16; print the length of every
-  preset so a growth in the table shows up.
-- **Frozen links**: a list of example links with the setups they must always decode to (added to, never edited), so a change that
-  breaks old links fails the build.
-- **Kiosk**: the controls and banners are not on the page; nothing was saved to storage; no question, no permission prompt;
-  a newer version reloads at the quiet moment.
-- **Hostile input**: truncated, over-long, wrong-version, out-of-range and non-base64 links are ignored safely.
