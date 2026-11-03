@@ -2,6 +2,7 @@
 // the other things to count down to, and the Everyday presets.
 import { sunEvents, at, nextSunset } from '../lib/astro.mjs';
 export const name = 'options';
+export const covers = 'Where settings live, presets (Everyday), automatic clock style, brightness day/night veil, iPhone install walkthrough, countdown targets, anti burn-in';
 export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 const open = (page) => page.evaluate(() => document.getElementById('settings').dispatchEvent(new MouseEvent('click', { bubbles: true })));

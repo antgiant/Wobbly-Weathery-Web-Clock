@@ -4,6 +4,8 @@ Things we know we want, not yet done. Newest first. (Items added 2026-11-02 and 
 
 ## CI performance breakdown: what is tested and how long each part takes
 
+**Progress (2026-11-03):** the recording is done: every run prints a "where the time went" table per suite (pages, opening, waiting, other), writes `timings*.json` (artifact) and a job summary table; each suite says what it covers (`covers`); `tools/tests-report.mjs` turns timings (or CI logs) into `docs/TESTS.md`. Still to do: generate `docs/TESTS.md` from a full CI run, then use it (fewer page opens, shorter waits, rebalanced shares).
+
 A table of the **full** test run: every suite, what it covers (its checks, grouped), how many pages it opens, and how long it takes on
 the CI machine, so we can see where the 7 minutes go and what to cut or move.
 
@@ -188,11 +190,13 @@ Added 2026-11-02, after finding CI had been red for about eight runs in a row wi
   and the other two shards were green throughout.
 - **The lesson:** the fast local check deliberately skips the long tails, so **CI is the only thing that sees them, and it must be read.**
   Do this after every push: look at the CI result (it takes about 8 minutes) before the next change; do not merge on red.
-- **To do:** (a) protect `main` so a merge needs green CI (branch protection with the three browser shares and "Lint and unit tests" as
-  required checks); (b) make CI failures arrive somewhere visible (GitHub's email, or a README badge for the CI status);
-  (c) run `npm run test:full` before a merge that touches shared markup (`index.html`, `styles.css`, `js/clock.js`), which is
-  exactly where the quick tier is blind; (d) have the impact map (`tests/impact.mjs`) say which deep suites a change can break, and run
-  them in `npm test` when they are cheap enough.
+- **Done:** (b) a CI status badge at the top of the README, and GitHub emails failed runs to whoever pushed; (c) `npm test` now prints a
+  warning when a shared file (`index.html`, `styles.css`, `js/clock.js`, `js/config.js`, `sw.js`, the test harness) changed, telling you to
+  run `npm run test:full` or read CI before merging.
+- **Still to do:** (a) **protect `main`** so a merge needs green CI. This is a repository setting (only the owner can change it): GitHub >
+  Settings > Branches > add a branch protection rule for `main` > "Require status checks to pass before merging" > pick "Lint and unit tests"
+  and the three "Browser tests (share N of 3)" jobs. (d) have the impact map (`tests/impact.mjs`) say which deep suites a change can break, and
+  run them in `npm test` when they are cheap enough.
 
 ## A link to the current setup, for a digital sign
 
@@ -306,23 +310,3 @@ length-limited and always set as text.
 - **Kiosk**: the controls and banners are not on the page; nothing was saved to storage; no question, no permission prompt;
   a newer version reloads at the quiet moment.
 - **Hostile input**: truncated, over-long, wrong-version, out-of-range and non-base64 links are ignored safely.
-
-## Raindrops on the digits look wrong
-
-Reported on a real phone (2026-11-02). What is wrong:
-
-1. **Drops fade out instead of running off.** A bead appears and disappears on a timer (`rainBeads()` in `js/sky/glsl-scene.js`, the `life` fade) rather than growing, running down and leaving the digit.
-2. **They do not slide down properly.** The "slide" is a fixed hop along a screen column, with a faint trail; there is no gravity, no speeding up, no pause-and-jump like a real drop, and drops do not merge.
-3. **Changing the number has no effect on them.** The beads are a pure function of the screen position and the time (a stateless shader), so when a digit morphs into the next one the drops stay put, even where the glass has moved away from under them. Drops on a digit should move with it, and be wiped or shed when the stroke under them goes away.
-
-Why it is hard: the effect has no memory. Doing this properly needs state: a small drop simulation (positions, sizes, speeds) that lives with the digits.
-
-Ideas, roughly in order of effort:
-
-- **Particles on the CPU** (a few dozen drops per digit): each has a position in the digit's own coordinates (so it follows the morph), a size, and a state (sitting, running). Sitting drops grow slowly while it rains; past a size they run down with gravity, in jerky bursts, leaving a trail and swallowing smaller drops; they are shed when the stroke under them thins out or ends. Drawn into the glass mask's spare channels, or as a small instanced layer over the glass.
-- **A drop texture on the GPU** (ping-pong, like a height field): simulate in a fragment shader with the mask as the surface. More realistic, much harder to tune, and costs power every frame (not while saving power).
-- Keep it **cheap and optional**: it is already switchable (Settings → Weather → Rain & snow → Rain and snow on the digits); in power saving it should be still beads or off, as now.
-
-Things to keep: edge-thin and readable (the outline still frames every digit), works in the glass, tube and LED styles, follows the weather being drawn, and the test that the effect shows up (`tests/browser/digitweather.test.mjs`). New tests needed: a drop moves down, not sideways; drops stay on the ink; after a digit change no drop is left where there is no ink.
-
-The same stateless-shader limit applies to **snow caps** (they are drawn from the mask each frame, so they do follow a morphing digit, which is fine), and to the **splashes**.

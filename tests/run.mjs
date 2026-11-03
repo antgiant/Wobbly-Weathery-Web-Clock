@@ -24,6 +24,8 @@ if (kind === 'changed') {
   if (!files.length) { files = git('git diff --name-only HEAD~1 HEAD'); from = 'the last commit'; }
   const pick = suitesFor(files);
   process.env.SUITES = pick.suites.join(',');
+  const shared = files.filter((f) => /^(index\.html|styles\.css|js\/clock\.js|js\/config\.js|sw\.js|tests\/(lib|run|impact))/.test(f));
+  if (shared.length) console.log(`\n!! ${shared.join(', ')} ${shared.length === 1 ? 'is' : 'are'} shared by many suites, and this quick check skips their long tails (CI runs them). Run \`npm run test:full\`, or read the CI result before merging.`);
   process.env.TIER = 'fast';
   console.log(`\n== changed: ${files.length} file${files.length === 1 ? '' : 's'} (${from}) -> browser suites: ${pick.suites.join(', ')}${pick.all ? '  (a core file changed: the whole quick check)' : ''} ==`);
   kind = 'all';
@@ -36,6 +38,7 @@ const WORKERS = Math.max(1, Number(process.env.WORKERS) || 1);
 // rough seconds each suite takes in its tier: the longest start first, so the workers finish together
 const COST = { options: 30, alerts: 20, led: 18, startup: 14, sky: 14, clock: 12, wind: 12, settings: 12, offline: 13, digitweather: 10, smoke: 6 };
 let failed = 0, passed = 0;
+const timings = { when: new Date().toISOString(), node: process.version, kind: '', unit: [], browser: [] };       // where the time goes (written to test-results/timings.json, summarised at the end)
 const started = Date.now();
 
 if (kind === 'unit' || kind === 'all') {
@@ -46,6 +49,7 @@ if (kind === 'unit' || kind === 'all') {
     const out = (r.stdout || '') + (r.stderr || '');
     const bad = out.split('\n').filter((l) => l.startsWith('FAIL'));
     const n = out.split('\n').filter((l) => l.startsWith('PASS')).length;
+    timings.unit.push({ name: f.replace('.test.mjs', ''), checks: n, ms: Date.now() - t0 });
     if (r.status === 0) { passed++; console.log(`  ok    ${f.replace('.test.mjs', '').padEnd(14)} ${String(n).padStart(3)} checks  ${Date.now() - t0} ms`); }
     else { failed++; console.log(`  FAIL  ${f}\n${bad.map((l) => '        ' + l).join('\n') || out.split('\n').slice(-12).map((l) => '        ' + l).join('\n')}`); }
   }
@@ -80,12 +84,13 @@ if (kind === 'browser' || kind === 'all') {
       console.log(out.split('\n').filter((l) => /^ {2}(ok|FAIL) |^ {8}[-!.] /.test(l) || (code !== 0 && /^ {8}/.test(l))).join('\n') || `  FAIL  ${f}\n${out.split('\n').slice(-8).map((l) => '        ' + l).join('\n')}`);
     }
   } else {
-  const { startHarness } = await import('./lib/harness.mjs');
+  const { startHarness, stats } = await import('./lib/harness.mjs');
   let h;
   try { h = await startHarness(); } catch (e) { console.log('  FAIL  could not start the browser: ' + e.message); process.exit(1); }
   for (const f of files) {
     const mod = await import(path.join(here, 'browser', f));
     const t0 = Date.now(), results = [];
+    stats.opens = 0; stats.openMs = 0; stats.waitMs = 0;
     const t = {
       ...h,
       quick: TIER === 'fast',                                      // a suite does only its core when this is true
@@ -95,6 +100,8 @@ if (kind === 'browser' || kind === 'all') {
     let crashed = null;
     try { await Promise.race([mod.run(t), new Promise((_, rej) => setTimeout(() => rej(new Error('test timed out after 240 s')), 240000))]); }
     catch (e) { crashed = e; }
+    const total = Date.now() - t0;
+    timings.browser.push({ name: mod.name, covers: mod.covers || '', tier: mod.tier || 'deep', checks: results.length, failed: results.filter((r) => !r.ok).length, ms: total, opens: stats.opens, openMs: stats.openMs, waitMs: stats.waitMs, otherMs: Math.max(0, total - stats.openMs - stats.waitMs) });
     const bad = results.filter((r) => !r.ok);
     if (!bad.length && !crashed) { passed++; console.log(`  ok    ${mod.name.padEnd(14)} ${String(results.length).padStart(3)} checks  ${((Date.now() - t0) / 1000).toFixed(1)} s${results.some((r) => r.warn) ? '  (with warnings)' : ''}`); }
     else {
@@ -107,6 +114,26 @@ if (kind === 'browser' || kind === 'all') {
     if (process.env.VERBOSE) for (const r of results.filter((x) => x.ok && !x.warn)) console.log(`        . ${r.n}`);
   }
   await h.close();
+  }
+}
+
+// ---- where the time went ----
+{
+  const sec = (ms) => (ms / 1000).toFixed(1).padStart(6);
+  timings.kind = process.env.TIER === 'fast' ? 'quick' : 'full';
+  timings.totalMs = Date.now() - started;
+  if (timings.browser.length) {
+    console.log('\n== where the time went (browser suites, seconds) ==');
+    console.log('  suite           checks  total  pages  opening  waiting   other  (opening = to ready; waiting = deliberate waits; other = checks, screenshots, mocks)');
+    for (const b of [...timings.browser].sort((a, c) => c.ms - a.ms)) console.log(`  ${b.name.padEnd(14)} ${String(b.checks).padStart(6)} ${sec(b.ms)} ${String(b.opens).padStart(6)} ${sec(b.openMs)} ${sec(b.waitMs)} ${sec(b.otherMs)}`);
+    const sum = (k) => timings.browser.reduce((a, b) => a + b[k], 0);
+    console.log(`  ${'all'.padEnd(14)} ${String(sum('checks')).padStart(6)} ${sec(sum('ms'))} ${String(sum('opens')).padStart(6)} ${sec(sum('openMs'))} ${sec(sum('waitMs'))} ${sec(sum('otherMs'))}`);
+  }
+  const dir = process.env.TEST_ARTIFACTS;
+  if (dir) { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(path.join(dir, `timings${process.env.SHARD ? '-' + process.env.SHARD.replace('/', 'of') : ''}.json`), JSON.stringify(timings, null, 2)); }
+  if (process.env.GITHUB_STEP_SUMMARY && timings.browser.length) {
+    const rows = [...timings.browser].sort((a, c) => c.ms - a.ms).map((b) => `| ${b.name} | ${b.checks} | ${(b.ms / 1000).toFixed(1)} | ${b.opens} | ${(b.openMs / 1000).toFixed(1)} | ${(b.waitMs / 1000).toFixed(1)} | ${(b.otherMs / 1000).toFixed(1)} | ${b.covers} |`);
+    fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Browser test timings${process.env.SHARD ? ' (share ' + process.env.SHARD + ')' : ''}\n\n| suite | checks | total s | pages | opening s | waiting s | other s | covers |\n|---|---:|---:|---:|---:|---:|---:|---|\n${rows.join('\n')}\n`);
   }
 }
 

@@ -1,5 +1,6 @@
 // The settings panel: opens on the presets, presets and reset work through the real controls, tabs and Simple / Advanced.
 export const name = 'settings';
+export const covers = 'Settings panel: tabs, presets, reset, Simple/Advanced, side drawer on wide screens';
 export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 const open = (page) => page.evaluate(() => document.getElementById('settings').dispatchEvent(new MouseEvent('click', { bubbles: true })));

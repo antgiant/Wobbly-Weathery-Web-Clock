@@ -1,5 +1,6 @@
 // First visit and upgrades: the one location question, and settings saved by an older version.
 export const name = 'startup';
+export const covers = 'First-run location question, upgrade of old saved settings, return-to-default-view button';
 export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 export async function run(t) {

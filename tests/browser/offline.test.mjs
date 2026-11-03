@@ -1,6 +1,7 @@
 // The installed / offline app: the service worker stores everything, the page opens with no network, saved weather is
 // used and labelled, and everything catches up by itself when the connection returns.
 export const name = 'offline';
+export const covers = 'Installed/offline app: saved copy, offline reload, stale weather, catching up, update banner, version, Update and reload';
 export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 const st = (page) => page.evaluate(() => ({ weather: document.getElementById('weatherStatus').textContent, offline: document.getElementById('offlineStatus').textContent }));

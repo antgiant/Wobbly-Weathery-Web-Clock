@@ -1,5 +1,6 @@
 // From Thanksgiving to Christmas: a lit tree in the scene (floating at sea) and, left on Automatic, the coloured-lights clock.
 export const name = 'christmas';
+export const covers = 'Thanksgiving-to-Christmas season by date: lit tree on land and at sea, coloured-lights clock, user choice wins';
 
 const state = (page) => page.evaluate(() => ({ tree: window.__sky.s.tree.on, ocean: window.__sky.s.landscape.ocean, style: document.body.dataset.clockstyle, mode: window.__sky.glass.mode, glow: window.__sky.glass.glow }));
 

@@ -1,5 +1,6 @@
 // The clock: 12 / 24 hour by locale until chosen, seconds, and the digits themselves.
 export const name = 'clock';
+export const covers = '12/24-hour by locale, seconds hidden, digit curves, upright-phone layout, time really runs';
 export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 export async function run(t) {

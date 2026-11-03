@@ -258,6 +258,8 @@ uniform sampler2D uFull;       // full-size overlay (the pills on panels the tun
 uniform float uFullOn;
 uniform float uContrast;   // strength of the readability outline and tone, 0 off .. 1
 uniform vec4 uWx;          // weather on the digits: x snow settled on them 0..1, y rain on the glass 0..1, w time in seconds
+uniform sampler2D uDrops;  // raindrops from drops.js, in the mask's place: r dark rim, g glint, b water
+uniform float uDropsOn;
 in vec2 vUv;
 out vec4 oColor;
 
@@ -406,7 +408,10 @@ void body() {
     float stk = uGlass.z;
     if (cv > 0.02 && uWx.x > 0.01) ink = snowOn(ink, snowCap(stk, uWx.x), base);
     if (uWx.y > 0.01 && stk > 0.0) {
-      if (cv > 0.02) ink = rainOn(ink, rainBeads(stk, uWx.y) * vec4(0.7, 0.8, 0.0, 0.8), uLightCol, base);
+      if (cv > 0.02) {
+        if (uDropsOn > 0.5) { vec4 dr = texture(uDrops, (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw); ink = rainOn(ink, vec4(dr.r * 0.7, dr.g * 0.8, dr.b, 0.0), uLightCol, base); }
+        else ink = rainOn(ink, rainBeads(stk, uWx.y) * vec4(0.7, 0.8, 0.0, 0.8), uLightCol, base);
+      }
       bs += splash(stk, uWx.y) * vec3(0.8, 0.9, 1.0) * 0.55;
     }
     oColor = vec4(withOutline(bs, mix(bs, ink, cv), cv), 1.0);
@@ -494,7 +499,12 @@ void body() {
   vec3 glass = min(c, vec3(1.6));
   if (cover > 0.02) {                                                  // snow and rain on the digits
     if (uWx.x > 0.01) glass = snowOn(glass, snowCap(stroke, uWx.x), base);
-    if (uWx.y > 0.01) glass = rainOn(glass, rainBeads(stroke, uWx.y), uLightCol, sceneAt(vUv - (gl_FragCoord.xy / (stroke * 0.42) - floor(gl_FragCoord.xy / (stroke * 0.42)) - 0.5) * (stroke * 0.42) * px * 1.4, 1.0));
+    if (uWx.y > 0.01) {
+      if (uDropsOn > 0.5) {                                              // drops that run, merge and are shed with the digit (drops.js)
+        vec4 dr = texture(uDrops, (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw);
+        glass = rainOn(glass, vec4(dr.r, dr.g, dr.b, 0.0), uLightCol, sceneAt(vUv + vec2(0.0, stroke * 0.3) * px, 1.0));       // (a drop shows the sky upside down and shifted)
+      } else glass = rainOn(glass, rainBeads(stroke, uWx.y), uLightCol, sceneAt(vUv - (gl_FragCoord.xy / (stroke * 0.42) - floor(gl_FragCoord.xy / (stroke * 0.42)) - 0.5) * (stroke * 0.42) * px * 1.4, 1.0));
+    }
   }
 
   // halo on the sky around lit glass

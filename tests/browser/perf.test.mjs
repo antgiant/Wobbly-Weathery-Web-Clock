@@ -3,6 +3,7 @@
 // main thread, a leak, a render that no longer sleeps).
 // Set PERF=print to list every measurement as well.
 export const name = 'perf';
+export const covers = 'Performance standards: first-load size and requests, startup stages, long tasks, render cadence, sea saver, heap growth';
 
 const BUDGET = {
   firstLoadKB: 900,          // everything the page downloads on a first visit (the astronomy library alone is 116 KB)

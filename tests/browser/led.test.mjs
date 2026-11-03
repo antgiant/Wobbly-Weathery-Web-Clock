@@ -1,6 +1,7 @@
 // The LED panel: the grid you choose, turning, the tuned layouts and the "normal page made of LEDs" fallback,
 // checked on the page's geometry and on the pixels of what is drawn.
 export const name = 'led';
+export const covers = 'LED panel: eight panel sizes (grid, layout, nothing cropped, centred, lines, bezel), size controls, stars lit when the normal picture shows them';
 export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 const NOON = 't=2026-06-21T17:00:00Z&speed=0';

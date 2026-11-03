@@ -1,6 +1,7 @@
 // The countdown to sunset / sunrise and the optional umbrella alert, as page pills and as pixel art on the LED panel.
 import { nextSunset, nextSunrise, at } from '../lib/astro.mjs';
 export const name = 'alerts';
+export const covers = 'Sunrise / sunset countdown and umbrella alert (pills and LED pixel card, no black plate), pills at the bottom clear of the digits on ten screen shapes';
 export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 const pill = (page) => page.evaluate(() => { const e = document.getElementById('sunCountdown'); return e.hidden ? null : e.textContent.replace(/\s+/g, ' ').trim(); });

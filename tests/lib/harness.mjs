@@ -55,6 +55,9 @@ async function installMocks(ctx, net) {
   await ctx.route(/tiles\.maps\.eox\.at|elevation-api|archive-api\.open-meteo/, (r) => r.abort('blockedbyclient'));      // land cover and terrain: the page falls back
 }
 
+/** Where the time goes: pages opened, time to get each ready, time spent in deliberate waits. The runner reads and resets it per suite. */
+export const stats = { opens: 0, openMs: 0, waitMs: 0 };
+
 export async function startHarness({ headless = true } = {}) {
   const pw = await loadPlaywright();
   const { chromium } = pw.chromium ? pw : pw.default;
@@ -96,6 +99,8 @@ export async function startHarness({ headless = true } = {}) {
     if (o.init) await page.addInitScript(o.init);
     const q = o.query || '';
     const url = `${srv.url}/?${/\blat=/.test(q) ? '' : 'lat=40.7&lon=-74&'}${o.sw ? 'sw=1&' : ''}${q}`;
+    const origWait = page.waitForTimeout.bind(page);
+    page.waitForTimeout = (ms) => { stats.waitMs += ms; return origWait(ms); };          // every deliberate wait is counted
     const h = {
       page, ctx, net, errors, failed, url,
       ready: (timeout = 90000) => page.waitForFunction(() => document.body.classList.contains('ready') && window.__frames >= 1, null, { timeout }),
@@ -106,7 +111,8 @@ export async function startHarness({ headless = true } = {}) {
       close: async () => { await ctx.close(); },
     };
     opened.push(h);
-    if (o.load !== false) { await page.goto(url); if (o.wait !== false) await h.ready(); }
+    stats.opens++;
+    if (o.load !== false) { const t0 = Date.now(); await page.goto(url); if (o.wait !== false) await h.ready(); stats.openMs += Date.now() - t0; }
     return h;
   }
 

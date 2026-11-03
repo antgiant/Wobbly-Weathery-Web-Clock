@@ -233,7 +233,7 @@ export class SkyEngine {
     gl.bindVertexArray(null);
 
     this.sceneTarget = null;
-    this.glass = { mode: 0, frost: 0.35, contrast: 3, glow: 0, glowCol: [1, 0.85, 0.6], led: { on: false, cols: 64, rows: 32, gap: 0.16, brightness: 1, stars: 1 }, overlay: false, overlayFull: false, ink: [0.96, 0.97, 1], stroke: 30, light: [-0.5, 0.8, 0.6], lightCol: [1, 1, 1], rect: [0, 0, 1, 1], maskW: 1, maskH: 1, hasMask: false };
+    this.glass = { mode: 0, frost: 0.35, contrast: 3, glow: 0, glowCol: [1, 0.85, 0.6], led: { on: false, cols: 64, rows: 32, gap: 0.16, brightness: 1, stars: 1 }, overlay: false, overlayFull: false, dropsOn: false, ink: [0.96, 0.97, 1], stroke: 30, light: [-0.5, 0.8, 0.6], lightCol: [1, 1, 1], rect: [0, 0, 1, 1], maskW: 1, maskH: 1, hasMask: false };
     this.overlayTex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.overlayTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
@@ -248,6 +248,11 @@ export class SkyEngine {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this.dropsTex = gl.createTexture();                                   // raindrops on the digits (drops.js), same shape and place as the mask
+    gl.bindTexture(gl.TEXTURE_2D, this.dropsTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     this.maskTex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.maskTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
@@ -689,6 +694,8 @@ export class SkyEngine {
       this.wx = { snow: on ? Math.min(1, snowRate * 1.4) : 0, rain: on ? Math.min(1, rainRate * 1.3) : 0 };       // (read by the tests)
       this._4f('uWx', this.wx.snow, this.wx.rain, 0, (performance.now() / 1000) % 3600);
     }
+    this._1i('uDrops', 4); this._bind(4, this.dropsTex);
+    this._1f('uDropsOn', g.dropsOn ? 1 : 0);
     this._1i('uFull', 3); this._bind(3, this.overlayFullTex);
     this._1f('uFullOn', led && g.overlayFull ? 1 : 0);
     gl.bindVertexArray(this.vaoEmpty);
@@ -787,6 +794,16 @@ export class SkyEngine {
     g.rect = rect; g.maskW = canvas.width; g.maskH = canvas.height; g.stroke = strokeCssPx; g.hasMask = true;
     this.redrawGlass();
   }
+
+  /** The raindrops (a canvas the size of the glass mask, drawn by drops.js). Picked up by the next draw; does not redraw by itself. */
+  setGlassDrops(canvas) {
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, this.dropsTex);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    this.glass.dropsOn = true;
+  }
+  clearGlassDrops() { if (this.glass.dropsOn) { this.glass.dropsOn = false; this.redrawGlass(); } }
 
   /** Updates glass settings ({mode, frost, light, lightCol}) and redraws without re-rendering the sky. */
   setGlass(patch) {
