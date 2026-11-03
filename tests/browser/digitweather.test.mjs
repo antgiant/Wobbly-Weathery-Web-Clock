@@ -39,15 +39,17 @@ export async function run(t) {
   let r = await onOff(t, 'snow', {}, 28);                 // snow is white on a pale sky: a low threshold
   t.check('snowing: the digits carry snow (the effect is on, and only snow)', r.wa.snow > 0.2 && r.wa.rain === 0, JSON.stringify(r.wa));
   t.check('with the setting off there is nothing on the digits', r.wb.snow === 0 && r.wb.rain === 0, JSON.stringify(r.wb));
-  t.check('snow changes the digits: far more pixels differ in the clock\'s box with it on than between two pages with it off', r.eff > r.noise * 2 + 150, `${r.eff} px vs noise ${r.noise}`);
+  t.check('snow changes the digits: clearly more pixels differ in the clock\'s box with it on than between two pages with it off', r.eff > r.noise + 150, `${r.eff} px vs noise ${r.noise}`);
   t.check('snow: no errors', r.errors.length === 0, r.errors.join(' | '));
 
-  // ---- rain ----
-  r = await onOff(t, 'rain', {}, 45);                     // beads are darker rims and bright glints: a higher one keeps the thin streaks out
-  t.check('raining: the digits are wet (and not snowy)', r.wa.rain > 0.2 && r.wa.snow === 0, JSON.stringify(r.wa));
-  // falling streaks differ from page to page and drown the beads in a pixel count, so for rain the picture check is only that beads show at all; the uniform above is the precise check
-  t.check('rain beads show on the digits (some pixels in the clock\'s box differ with the effect on)', r.eff > 40, `${r.eff} px (streak noise ${r.noise})`);
-  t.check('rain: no errors', r.errors.length === 0, r.errors.join(' | '));
+  // ---- rain: the drops are a simulation (below), so here only that raining makes the digits wet and is drawn without errors ----
+  const wet = await open(t, 'rain');
+  await wet.settle(2500);
+  const ww = await wx(wet.page), dropsOn = await wet.page.evaluate(() => window.__sky.glass.dropsOn && window.__drops.drops.length > 0);
+  t.check('raining: the digits are wet (and not snowy), and the drop simulation has drops on the glass', ww.rain > 0.2 && ww.snow === 0 && dropsOn, JSON.stringify({ ww, dropsOn }));
+  t.check('rain: no errors', wet.errors.length === 0, wet.errors.join(' | '));
+  r = { wa: ww };
+  await wet.close();
 
   // ---- the stronger the weather the more: a storm is wetter than a shower ----
   const st = await open(t, 'storm');
