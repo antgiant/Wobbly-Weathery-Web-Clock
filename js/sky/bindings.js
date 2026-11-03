@@ -24,18 +24,19 @@ export function bindSettings() {
     el.value = String(conf[key]);
     el.addEventListener('change', () => { conf[key] = parse ? parse(el.value) : el.value; after?.(); });
   };
-  const bindRange = (id, key, after, outId) => {
+  const bindRange = (id, key, after, outId, fmt) => {
     const el = $(id); if (!el) return;
     el.value = conf[key];
     const out = outId && $(outId);
-    const sync = () => { if (out) out.textContent = el.value; };
+    const sync = () => { if (out) out.textContent = fmt ? fmt(parseFloat(el.value)) : el.value; };
     sync();
     el.addEventListener('input', () => { conf[key] = parseFloat(el.value); sync(); after?.(); });
   };
 
   bindSelect('quality', 'quality', applyQuality);
-  bindSelect('nightDim', 'nightDim', updateDim);
-  bindRange('nightDimLevel', 'nightDimLevel', updateDim, 'nightDimLevelOut');
+  bindRange('brightnessDay', 'brightnessDay', () => { updateDim(); poke('dim'); }, 'brightnessDayOut', (v) => `${Math.round(v * 100)}%`);
+  bindRange('brightnessNight', 'brightnessNight', () => { updateDim(); poke('dim'); }, 'brightnessNightOut', (v) => `${Math.round(v * 100)}%`);
+  bindSelect('brightnessTransition', 'brightnessTransition', () => { updateDim(); poke('dim'); }, parseFloat);
   bindSelect('landscape', 'landscape', () => { scheduleLiveData(); applyLandscape(); });
   bindSelect('weatherMode', 'weatherMode', () => { applyWeather(); scheduleLiveData(); });
   bindSelect('lightPollution', 'lightPollution', () => { applyQuality(); });
@@ -77,6 +78,7 @@ export function bindSettings() {
   bindSelect('digitWeather', 'digitWeather', applyQuality);
   bindSelect('windSway', 'windSway', () => { updateWind(); poke('wind'); });
   bindSelect('antiBurnIn', 'antiBurnIn', updateBurnIn);
+  bindSelect('ledStars', 'ledStars', () => glass?.apply());
   bindSelect('countdownKind', 'countdownKind', updateCountdown);
   bindSelect('countdownLead', 'countdownLead', updateCountdown, parseFloat);
   bindSelect('sensorRotation', 'sensorRotation', applySensorFixes);

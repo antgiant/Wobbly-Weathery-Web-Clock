@@ -1,6 +1,7 @@
 import { hour24, unitFor, formatTempIn } from './units.js'
 import { isChristmasSeason } from './season.js'
 import { now as simNow } from './simtime.js'
+import { fromSearch } from './share.js'
 
 export function adjustTimeSize() {
   if (conf.hideSeconds) {
@@ -16,9 +17,17 @@ export function adjustTimeSize() {
   }
 }
 
-function createPersistentConfig(key, initialValue = {}) {
+function createPersistentConfig(key, initialValue = {}, shared = null) {
   // Load existing data from localStorage
   let data = initialValue;
+  if (shared) {
+    // A shared link (share.js): this setup for this load only. Nothing is read from or written to storage, so it never overwrites
+    // anyone's own settings, and a sign that has nothing stored comes up exactly as the link says.
+    data = { ...initialValue, ...shared.settings, kiosk: shared.kiosk, confVersion: 99, locationChoice: shared.place ? 'manual' : 'estimated', manualLocation: !!shared.place, preciseLocation: false };
+    if (shared.place) { data.location_latitude = shared.place.lat; data.location_longitude = shared.place.lon; }
+    if (shared.kiosk) data.viewMode = 'fixed';                      // nobody can drag a sign
+    return new Proxy(data, { set(target, property, value) { target[property] = value; return true; }, deleteProperty(target, property) { delete target[property]; return true; } });
+  }
   try {
     const stored = localStorage.getItem(key);
     if (stored) {
@@ -89,6 +98,7 @@ export const DEFAULTS = {
   viewFov: 80,
   showLabels: false,
   plants: true,               // grass, trees, cacti ... swaying in the wind
+  ledStars: 'auto',           // off | auto | always: stars, planets and the moon that show in the normal picture also light an LED on the LED panel
   clockMode: 'time',          // time | countdown: the digits show the time, or the time left to timerTarget
   timerTarget: '',            // countdown: a datetime-local value ("2026-12-25T08:00"), in the viewer's own time zone
   timerLabel: '',             // countdown: a name shown with it
@@ -121,24 +131,40 @@ export const DEFAULTS = {
   // settings panel
   settingsTab: 'clock',
   holidayTree: true,          // a lit Christmas tree in the scene from Thanksgiving to Christmas
-  nightDim: 'off',            // off | auto (dim between dusk and dawn) | on
-  nightDimLevel: 0.6,         // how much light the veil takes away at full dimming
+  brightnessDay: 1,           // 0.1 .. 1: how bright the screen is by day (1 = no veil)
+  brightnessNight: 1,         // 0.1 .. 1: how bright it is at night
+  brightnessTransition: 45,   // minutes the change takes, centred on sunset and on sunrise
   rainAlert: false,           // show an umbrella / slicker indicator when enough rain is coming today
   settingsLevel: 'simple',    // simple | advanced
   // first-run choice
+  kiosk: false,               // set by a shared link made with the kiosk switch: no controls, no questions, updates itself
+  manualLocation: false,      // the place was typed or searched for (Settings -> Place): never replaced by GPS or the time-zone estimate
+  location_name: '',          // the name of the place when it was searched for
   locationChoice: null,       // null (not asked yet) | real | estimated
   coarseLookups: true,        // weather / terrain lookups use a rounded position, never the exact one
   // weather & units
   tempUnit: 'auto',           // auto (by region) | c | f
   confVersion: 0
 };
-const CONF_VERSION = 3;
-export var conf = createPersistentConfig("conf", DEFAULTS);
+const CONF_VERSION = 4;
+// A link made by "Share this setup" (?c=... or ?preset=...&...): applied for this load only, not saved (see share.js)
+export const shared = (typeof location !== 'undefined' && location.search) ? fromSearch(location.search) : null;
+export var conf = createPersistentConfig("conf", DEFAULTS, shared);
+if (shared?.kiosk && typeof document !== 'undefined') document.documentElement.dataset.kiosk = '1';        // styles.css hides every control
 
 // Defaults that changed: settings saved by an older version only ever held the old default, so move them once.
-if ((conf.confVersion || 0) < CONF_VERSION) {
-  for (const k of ['twentyFourHourClock', 'keepAwake', 'followSun', 'viewMode', 'glassGlowColor']) conf[k] = DEFAULTS[k];
-  if ((conf.confVersion || 0) < 3 && conf.clockStyle === 'glass') conf.clockStyle = 'auto';   // 'glass' was only ever the default
+if (!shared && (conf.confVersion || 0) < CONF_VERSION) {
+  if ((conf.confVersion || 0) < 3) {                       // version 3 moved these defaults
+    for (const k of ['twentyFourHourClock', 'keepAwake', 'followSun', 'viewMode', 'glassGlowColor']) conf[k] = DEFAULTS[k];
+    if (conf.clockStyle === 'glass') conf.clockStyle = 'auto';   // 'glass' was only ever the default
+  }
+  // version 4: "Dim the screen" (off / at night / always) and "How dark" became a day brightness and a night brightness
+  const old = conf;                                        // (the old keys are no longer settings: read through another name)
+  if ((old.confVersion || 0) < 4 && old.nightDim && old.nightDim !== 'off') {
+    const keep = 1 - Math.min(0.9, Math.max(0.1, Number(old.nightDimLevel) || 0.6));
+    conf.brightnessNight = keep;
+    conf.brightnessDay = old.nightDim === 'on' ? keep : 1;
+  }
   conf.confVersion = CONF_VERSION;
 }
 

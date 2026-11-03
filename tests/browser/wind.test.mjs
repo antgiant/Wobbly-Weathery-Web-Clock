@@ -1,6 +1,7 @@
 // Wind sway: the digits lean downwind (bottom fixed, top moved), off by default, no gusts while saving power, readable.
 import { MAX_LEAN, MAX_GUST } from '../../js/wind.js';
 export const name = 'wind';
+export const covers = 'Wind sway: lean direction and size, readable cap, gusts, power saving, live switching';
 export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 // the control points of every visible digit path, as [[x, y], ...] per digit id

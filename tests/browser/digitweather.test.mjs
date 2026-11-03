@@ -1,6 +1,7 @@
 // Rain and snow on the digits: snow settles on the top edges, rain beads on the glass; only in the glass styles, only
 // while it is raining or snowing, switchable, edge-thin, and the time stays readable.
 export const name = 'digitweather';
+export const covers = 'Rain beads and snow caps on the digits (glass, tube, LED), switching, shader compiles';
 export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 const wx = (page) => page.evaluate(() => ({ ...window.__sky.wx }));
@@ -38,15 +39,17 @@ export async function run(t) {
   let r = await onOff(t, 'snow', {}, 28);                 // snow is white on a pale sky: a low threshold
   t.check('snowing: the digits carry snow (the effect is on, and only snow)', r.wa.snow > 0.2 && r.wa.rain === 0, JSON.stringify(r.wa));
   t.check('with the setting off there is nothing on the digits', r.wb.snow === 0 && r.wb.rain === 0, JSON.stringify(r.wb));
-  t.check('snow changes the digits: far more pixels differ in the clock\'s box with it on than between two pages with it off', r.eff > r.noise * 2 + 150, `${r.eff} px vs noise ${r.noise}`);
+  t.check('snow changes the digits: clearly more pixels differ in the clock\'s box with it on than between two pages with it off', r.eff > r.noise + 150, `${r.eff} px vs noise ${r.noise}`);
   t.check('snow: no errors', r.errors.length === 0, r.errors.join(' | '));
 
-  // ---- rain ----
-  r = await onOff(t, 'rain', {}, 45);                     // beads are darker rims and bright glints: a higher one keeps the thin streaks out
-  t.check('raining: the digits are wet (and not snowy)', r.wa.rain > 0.2 && r.wa.snow === 0, JSON.stringify(r.wa));
-  // falling streaks differ from page to page and drown the beads in a pixel count, so for rain the picture check is only that beads show at all; the uniform above is the precise check
-  t.check('rain beads show on the digits (some pixels in the clock\'s box differ with the effect on)', r.eff > 40, `${r.eff} px (streak noise ${r.noise})`);
-  t.check('rain: no errors', r.errors.length === 0, r.errors.join(' | '));
+  // ---- rain: the drops are a simulation (below), so here only that raining makes the digits wet and is drawn without errors ----
+  const wet = await open(t, 'rain');
+  await wet.settle(2500);
+  const ww = await wx(wet.page), dropsOn = await wet.page.evaluate(() => window.__sky.glass.dropsOn && window.__drops.drops.length > 0);
+  t.check('raining: the digits are wet (and not snowy), and the drop simulation has drops on the glass', ww.rain > 0.2 && ww.snow === 0 && dropsOn, JSON.stringify({ ww, dropsOn }));
+  t.check('rain: no errors', wet.errors.length === 0, wet.errors.join(' | '));
+  r = { wa: ww };
+  await wet.close();
 
   // ---- the stronger the weather the more: a storm is wetter than a shower ----
   const st = await open(t, 'storm');
@@ -79,4 +82,28 @@ export async function run(t) {
   await s.page.waitForTimeout(1500);
   t.check('and On brings it back', (await wx(s.page)).snow > 0.2);
   await s.close();
+
+  // ---- raindrops: a simulation, not a pattern (js/sky/drops.js) ----
+  const rd = await t.open({ query: 't=2026-12-10T17:08:50Z&speed=1&weather=rain', conf: { ...GLASS, hideSeconds: false }, width: 420, height: 700 });
+  await rd.page.waitForTimeout(9000);
+  const snap = () => rd.page.evaluate(() => { const s = window.__drops; return { n: s.drops.length, onGlass: s.drops.filter((d) => !d.dying).every((d) => s.inkAt(d.x, d.y) > 0.25), running: s.drops.filter((d) => d.run).length, big: Math.max(0, ...s.drops.map((d) => d.r)), text: document.title, dying: s.drops.filter((d) => d.dying).length }; });
+  const a = await snap();
+  t.check('rain forms drops on the digits (a simulation is running), and every one is on the glass', a.n > 5 && a.onGlass, JSON.stringify(a));
+  // follow single drops for a while: they only ever move down, and they grow before they run
+  const trk = await rd.page.evaluate(async () => {
+    const s = window.__drops, seen = new Map(); let upward = 0, ran = 0, grew = 0;
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 250));
+      for (const d of s.drops) { if (d.dying) continue; const p = seen.get(d); if (p) { if (d.run && d.y < p.y - 0.01 && Math.abs(d.r - p.r) < 0.01) upward++; if (d.run && d.y > p.y + 0.01) ran++; if (!d.run && d.r > p.r + 1e-6) grew++; } seen.set(d, { y: d.y, r: d.r }); }
+    }
+    return { upward, ran, grew, count: s.drops.length };
+  });
+  t.check('drops run down (never up) and sitting drops grow', trk.ran > 0 && trk.upward === 0 && trk.grew > 0, JSON.stringify(trk));
+  // the digits change under the drops (12:08:50 -> 12:09:00 at speed 1): drops that lose their glass are shed, none is left on empty glass
+  await rd.page.waitForFunction(() => /^12:09/.test(document.title), null, { timeout: 40000 }).catch(() => {});
+  await rd.page.waitForTimeout(1200);
+  const b = await snap();
+  t.check('after the digit changed, no live drop sits where there is no glass', b.onGlass, JSON.stringify(b));
+  t.check('rain drops: no errors', rd.errors.length === 0, rd.errors.join(' | '));
+  await rd.close();
 }

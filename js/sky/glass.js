@@ -15,6 +15,7 @@
 import { conf, clockStyleNow } from '../config.js';
 import { getSim } from '../simtime.js';
 import { every } from './scheduler.js';
+import { DropSim, drawDrops } from './drops.js';
 import { applyLedPanel } from './ledpanel.js';
 
 const VB_W = 100, VB_H = 116, VB_Y0 = -8;      // viewBox of each digit svg: "0 -8 100 116"
@@ -49,6 +50,34 @@ export function initGlass(engine, getBasis) {
   const canvasEl = engine.canvas;
   const mask = document.createElement('canvas');
   const ctx = mask.getContext('2d');
+
+  // ---- raindrops (drops.js): a simulation on the digits' ink, drawn into a canvas the size of the mask ----
+  const sim = window.__drops = new DropSim((Date.now() & 0xffff) + 1);        // (window.__drops: for the tests)
+  const dropCanvas = document.createElement('canvas'), dropCtx = dropCanvas.getContext('2d');
+  const inkCanvas = document.createElement('canvas'), inkCtx = inkCanvas.getContext('2d', { willReadFrequently: true });
+  let inkStale = true, inkStroke = 30, lastDropT = 0;
+  function refreshInk() {                                          // the digits' alpha, as a small grid for the simulation
+    inkStale = false;
+    const gw = Math.min(96, mask.width), gh = Math.max(2, Math.round(gw * mask.height / mask.width));
+    if (inkCanvas.width !== gw || inkCanvas.height !== gh) { inkCanvas.width = gw; inkCanvas.height = gh; }
+    inkCtx.clearRect(0, 0, gw, gh); inkCtx.drawImage(mask, 0, 0, gw, gh);
+    const px = inkCtx.getImageData(0, 0, gw, gh).data, grid = new Uint8Array(gw * gh);
+    for (let i = 0; i < grid.length; i++) grid[i] = px[i * 4 + 3];
+    sim.setInk(grid, gw, gh, mask.width, mask.height, inkStroke);
+  }
+  function stepDrops() {                                           // once per rendered frame while it rains
+    const rain = engine.wx ? engine.wx.rain : 0;
+    if (!active() || !engine.glass.hasMask || (rain <= 0.01 && !sim.drops.length)) { sim.drops.length = 0; engine.clearGlassDrops(); lastDropT = 0; return; }
+    const t = performance.now(), dt = lastDropT ? (t - lastDropT) / 1000 : 0.016;
+    lastDropT = t;
+    if (inkStale) refreshInk();
+    sim.step(dt, rain);
+    if (dropCanvas.width !== mask.width || dropCanvas.height !== mask.height) { dropCanvas.width = mask.width; dropCanvas.height = mask.height; }
+    const L = engine.glass.light || [-0.5, 0.8, 0.6];
+    drawDrops(dropCtx, sim, [L[0], L[1]]);
+    engine.setGlassDrops(dropCanvas);
+  }
+
   let raf = 0;
 
   // The LED panel is the normal picture, glass and all, averaged into pixels. With the solid style the
@@ -148,6 +177,7 @@ export function initGlass(engine, getBasis) {
       });
       if (stained) paintLights(s, lines);
     }
+    inkStroke = L.strokePx * L.scale; inkStale = true;               // the digits changed: the drops look at the new glass at the next step
     engine.setGlassMask(mask, L.rect, L.strokePx);
   }
   const schedule = () => { if (!raf) raf = requestAnimationFrame(draw); };
@@ -208,6 +238,7 @@ export function initGlass(engine, getBasis) {
     document.body.dataset.clockstyle = on && st === 'solid' ? 'led' : st;
     document.body.dataset.screen = led() ? 'led' : 'normal';
     engine.glass.led.on = led();
+    engine.glass.led.stars = conf.ledStars === 'off' ? 0 : conf.ledStars === 'always' ? 2 : 1;      // the LED panel keeps the stars the averaging would lose
     applyLedPanel();                                   // size and layout of the LED panel (or clear them when it is off)
     engine.setGlass({
       mode: st === 'glass' ? 1 : st === 'stained' ? 2 : led() ? 3 : 0,
@@ -236,6 +267,7 @@ export function initGlass(engine, getBasis) {
   every('glass-style', () => { if (style() !== lastStyle) { lastStyle = style(); apply(); } }, () => (getSim() ? 4000 : 60000));   // the season (or time travel) changed the automatic style
   every('glass-light', () => { updateLight(); if (active()) schedule(); }, () => (active() ? 1000 : Infinity));   // the light moves with the sun; also re-measures the digits
   engine.onFrame(() => { if (active() && !engine._lightInit) { engine._lightInit = true; updateLight(); } });
+  engine.onFrame(stepDrops);
   apply();
   return { apply, updateLight, setInk };
 }

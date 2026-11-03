@@ -4,12 +4,27 @@ const notifyLocation = () => window.dispatchEvent(new Event('locationchange'));
 
 let locationRefresh;
 
+const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
 function coordsHtml() {
   const la = Number(conf.location_latitude).toFixed(3), lo = Number(conf.location_longitude).toFixed(3);
-  return "Current Location: <a href='https://www.google.com/maps/place/" + la + "," + lo + "' target='_blank' rel='noopener'>(" + la + ", " + lo + ")</a>";
+  const name = conf.manualLocation && conf.location_name ? esc(conf.location_name) + ' ' : '';
+  return (conf.manualLocation ? 'Place (set by you): ' : 'Current Location: ') + name + "<a href='https://www.google.com/maps/place/" + la + "," + lo + "' target='_blank' rel='noopener'>(" + la + ", " + lo + ")</a>";
+}
+
+/** A latitude or longitude typed by a person: a number within range, or null. */
+export function parseCoord(text, limit) {
+  const n = Number(String(text).trim().replace(',', '.'));
+  return String(text).trim() !== '' && Number.isFinite(n) && Math.abs(n) <= limit ? n : null;
 }
 
 function refreshLocation() {
+  if (conf.manualLocation) {                                   // the place was set by hand: nothing replaces it
+    clearInterval(locationRefresh);
+    const c = document.getElementById('coords'); if (c) c.innerHTML = coordsHtml();
+    notifyLocation();
+    return;
+  }
   if (conf.gpsFrequency >= -1) {
     if (conf.preciseLocation && ('geolocation' in navigator)) {
       navigator.geolocation.getCurrentPosition(
@@ -116,6 +131,7 @@ function initalize() {
 // First visit: one question. Anyone who has been here before (they have a saved location) is not asked.
 function askLocationOnce(known) {
   const q = new URLSearchParams(location.search);
+  if (conf.manualLocation) { conf.locationChoice = 'manual'; return; }          // a place that was set by hand: never asked
   if (conf.locationChoice == null && (known || q.has('lat'))) { conf.locationChoice = conf.preciseLocation ? 'real' : 'estimated'; return; }
   if (conf.locationChoice != null) return;
   if (!('geolocation' in navigator)) { conf.locationChoice = 'estimated'; return; }
@@ -136,5 +152,66 @@ function askLocationOnce(known) {
   box.hidden = false;
   document.getElementById('welcomeReal').focus();
 }
+
+// ---- "Set the place myself": coordinates, or a search by name (the free Open-Meteo geocoding service, only when asked) ----
+function initManual() {
+  const $ = (id) => document.getElementById(id);
+  const box = $('manualLocation'), fields = $('manualFields'), lat = $('manualLat'), lon = $('manualLon'), hint = $('manualHint'), search = $('placeSearch'), list = $('placeResults');
+  if (!box || !fields) return;
+  const show = () => {
+    fields.hidden = !conf.manualLocation;
+    box.checked = !!conf.manualLocation;
+    for (const id of ['preciseLocation', 'gpsFrequency', 'refreshLocation']) { const e = $(id); if (e) e.disabled = !!conf.manualLocation; }
+    if (conf.manualLocation) { lat.value = Number(conf.location_latitude).toFixed(4); lon.value = Number(conf.location_longitude).toFixed(4); }
+    const c = $('coords'); if (c) c.innerHTML = coordsHtml();
+  };
+  const apply = (la, lo, name) => {
+    conf.location_latitude = la; conf.location_longitude = lo; conf.location_name = name || '';
+    conf.manualLocation = true; conf.locationChoice = 'manual';
+    show(); notifyLocation();
+  };
+  box.addEventListener('change', () => {
+    conf.manualLocation = box.checked;
+    if (box.checked) conf.locationChoice = 'manual';
+    else { conf.location_name = ''; conf.locationChoice = conf.preciseLocation ? 'real' : 'estimated'; refreshLocation(); }
+    hint.textContent = '';
+    show(); if (box.checked) notifyLocation();
+  });
+  const fromBoxes = () => {
+    const la = parseCoord(lat.value, 90), lo = parseCoord(lon.value, 180);
+    lat.setAttribute('aria-invalid', String(la === null)); lon.setAttribute('aria-invalid', String(lo === null));
+    if (la === null || lo === null) { hint.textContent = la === null ? 'The latitude must be a number from -90 (south) to 90 (north).' : 'The longitude must be a number from -180 (west) to 180 (east).'; return; }
+    hint.textContent = '';
+    apply(Math.round(la * 1e4) / 1e4, Math.round(lo * 1e4) / 1e4, '');
+  };
+  lat.addEventListener('change', fromBoxes); lon.addEventListener('change', fromBoxes);
+  let timer = 0, seq = 0;
+  search.addEventListener('input', () => {
+    clearTimeout(timer);
+    const q = search.value.trim();
+    if (q.length < 2) { list.hidden = true; list.textContent = ''; return; }
+    timer = setTimeout(async () => {
+      if (navigator.onLine === false) { hint.textContent = 'Searching needs a connection: type the coordinates instead.'; return; }
+      const mine = ++seq;
+      try {
+        const r = await fetch('https://geocoding-api.open-meteo.com/v1/search?count=6&language=en&format=json&name=' + encodeURIComponent(q));
+        const j = await r.json();
+        if (mine !== seq) return;
+        const found = (j.results || []).filter((x) => Number.isFinite(x.latitude) && Number.isFinite(x.longitude));
+        list.textContent = '';
+        for (const x of found) {
+          const li = document.createElement('li'), b = document.createElement('button');
+          b.type = 'button'; b.textContent = [x.name, x.admin1, x.country].filter(Boolean).join(', ');
+          b.addEventListener('click', () => { apply(Math.round(x.latitude * 1e4) / 1e4, Math.round(x.longitude * 1e4) / 1e4, [x.name, x.country].filter(Boolean).join(', ')); search.value = ''; list.hidden = true; hint.textContent = ''; });
+          li.appendChild(b); list.appendChild(li);
+        }
+        list.hidden = !found.length;
+        hint.textContent = found.length ? '' : 'No place found: try another spelling, or type the coordinates.';
+      } catch (_) { hint.textContent = 'Could not reach the search service: type the coordinates instead.'; }
+    }, 400);
+  });
+  show();
+}
+document.addEventListener('DOMContentLoaded', initManual);
 
 initalize();

@@ -6,14 +6,15 @@
 // Every file under js/ must match a rule (tests/unit/impact.test.mjs fails otherwise), so a new file cannot silently be
 // left untested.
 
-export const ALL_FAST = ['smoke', 'clock', 'countdown', 'settings', 'sky', 'options', 'led', 'alerts', 'wind', 'digitweather', 'offline', 'startup'];
+export const ALL_FAST = ['smoke', 'clock', 'countdown', 'place', 'share', 'settings', 'sky', 'options', 'led', 'alerts', 'wind', 'digitweather', 'offline', 'startup'];
 
 // [pattern on the path, suites to run]. The first matching rules all apply.
 export const RULES = [
   [/^js\/(wind\.js|sky\/windsway\.js)$/, ['wind', 'clock']],
   [/^js\/(clock|easing)\.js$/, ['clock', 'countdown', 'wind', 'led']],
   [/^js\/countdown\.js$/, ['countdown', 'clock']],
-  [/^js\/(config|units|simtime|location|index)\.js$/, 'ALL'],
+  [/^js\/(location)\.js$/, ['place', 'startup', 'settings']],
+  [/^js\/(config|units|simtime|index)\.js$/, 'ALL'],
   [/^js\/(season)\.js$/, ['options', 'christmas']],
   [/^js\/(install)\.js$/, ['options']],
   [/^js\/(offline|version)\.js$|^sw\.js$|^manifest\.webmanifest$|^icons\//, ['offline', 'smoke']],
@@ -28,6 +29,8 @@ export const RULES = [
   [/^js\/sky\/(presets|bindings|dim)\.js$/, ['settings', 'options']],
   [/^js\/sky\/(burnin)\.js$/, ['options']],
   [/^js\/sky\/(pillroom)\.js$/, ['alerts', 'countdown']],
+  [/^js\/sky\/(drops)\.js$/, ['digitweather']],
+  [/^js\/(share)\.js$|^js\/sky\/sharebox\.js$/, ['share', 'offline', 'settings']],
   [/^js\/sky\/(weather|data)\.js$/, ['sky', 'alerts', 'digitweather']],
   [/^js\/sky\/(view|controls|orientation)\.js$/, ['startup', 'sky', 'wind']],
   [/^js\/sky\/(engine|scheduler|app|core|appearance)\.js$/, 'ALL'],

@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { nextSunset, at } from '../lib/astro.mjs';
 export const name = 'visual';
+export const covers = 'Seven fixed scenes compared with saved baseline pictures';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 const BASE = path.join(here, '..', 'visual', 'baseline');

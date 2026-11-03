@@ -28,19 +28,19 @@ const current = { ...DEFAULTS };
 check('matches(): the defaults match "Standard"', matches(standard.patch, current));
 const bedside = PRESETS.find((p) => p.id === 'bedside');
 check('matches(): the defaults do not match "Bedside"', !matches(bedside.patch, current));
-check('matches(): numbers compare as numbers (0.75 vs "0.75")', matches({ nightDimLevel: 0.75 }, { nightDimLevel: '0.75' }));
+check('matches(): numbers compare as numbers (0.25 vs "0.25")', matches({ brightnessNight: 0.25 }, { brightnessNight: '0.25' }));
 check('matches(): changing one setting un-ticks the card', !matches(standard.patch, { ...current, glassGlow: 0.5 }));
 
 // applying with no controls on the page only saves the settings (the stub has no elements)
-applyConfPatch({ hideSeconds: true, nightDim: 'auto' });
-check('applyConfPatch saves settings that have no control on the page', conf.hideSeconds === true && conf.nightDim === 'auto');
+applyConfPatch({ hideSeconds: true, brightnessNight: 0.4 });
+check('applyConfPatch saves settings that have no control on the page', conf.hideSeconds === true && conf.brightnessNight === 0.4);
 
 // labels on the sun, moon and planets are a debugging aid: in no preset, and not in a reset to "Standard"
 check('no preset sets the sun / moon / planet labels, and the reset list leaves them to the reset itself', PRESETS.every((p) => !('showLabels' in p.patch)) && !APPEARANCE_KEYS.includes('showLabels'));
 check('no preset changes what the countdown counts down to (an advanced choice)', PRESETS.every((p) => !('countdownKind' in p.patch)));
 const everyday = PRESETS.find((p) => p.id === 'everyday'), saver2 = PRESETS.find((p) => p.id === 'everyday-saver'), bat = PRESETS.find((p) => p.id === 'saver');
-check('Everyday = bedside calm + weather watch', everyday && everyday.patch.hideSeconds === true && everyday.patch.nightDim === 'auto' && everyday.patch.keepAwake === true && everyday.patch.rainAlert === true && everyday.patch.countdown === 'both' && everyday.patch.clockStyle === 'auto');
+check('Everyday = bedside calm + weather watch', everyday && everyday.patch.hideSeconds === true && everyday.patch.brightnessNight === 0.25 && everyday.patch.keepAwake === true && everyday.patch.rainAlert === true && everyday.patch.countdown === 'both' && everyday.patch.clockStyle === 'auto');
 check('Everyday, power saver: Everyday as an LED panel with the battery-saver settings', saver2 && saver2.patch.screenMode === 'led' && saver2.patch.rainAlert === true && saver2.patch.countdown === 'both' && saver2.patch.hideSeconds === true
-  && saver2.patch.quality === bat.patch.quality && saver2.patch.cloudMotion === bat.patch.cloudMotion && saver2.patch.plants === bat.patch.plants && saver2.patch.glassGlow === bat.patch.glassGlow && saver2.patch.nightDimLevel === bat.patch.nightDimLevel && saver2.patch.nightDim === bat.patch.nightDim);
+  && saver2.patch.quality === bat.patch.quality && saver2.patch.cloudMotion === bat.patch.cloudMotion && saver2.patch.plants === bat.patch.plants && saver2.patch.glassGlow === bat.patch.glassGlow && saver2.patch.brightnessNight === bat.patch.brightnessNight && saver2.patch.brightnessNight < 1 && saver2.patch.brightnessDay === bat.patch.brightnessDay);
 check('Everyday, power saver keeps the screen on (it is a clock)', saver2.patch.keepAwake === true);
 done();

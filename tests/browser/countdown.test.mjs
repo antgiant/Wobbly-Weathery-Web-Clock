@@ -1,6 +1,7 @@
 // Countdown mode: the digits show days:hours:minutes:seconds to a date, never more than 6 digits on screen with the seconds
 // shown or 4 with them hidden; everything else (sky, settings) works as before.
 export const name = 'countdown';
+export const covers = 'Countdown mode: days:hours:minutes:seconds, 6/4 digit caps, 00:00 on the day then back to the clock, settings';
 export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 const NOW = 't=2026-06-21T12:00:00Z&speed=0';

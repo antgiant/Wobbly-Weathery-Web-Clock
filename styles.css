@@ -1419,3 +1419,49 @@ body[data-screen="led"] .ledsize {
 #timerPill[hidden] {
   display: none;
 }
+
+/* place search results (Settings -> Place -> Set the place myself) */
+.places {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.places button {
+  width: 100%;
+  text-align: left;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--field);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.places[hidden] {
+  display: none;
+}
+
+input[aria-invalid="true"] {
+  outline: 2px solid #ff6b6b;
+}
+
+/* kiosk mode (a shared link with the kiosk switch): nothing a finger could use, nothing that asks a question */
+html[data-kiosk] #settings,
+html[data-kiosk] .fab,
+html[data-kiosk] #wakeBanner,
+html[data-kiosk] #updateBanner,
+html[data-kiosk] #welcome,
+html[data-kiosk] #toast,
+html[data-kiosk] #installModal,
+html[data-kiosk] #settingsModal,
+html[data-kiosk] #hud {
+  display: none !important;
+}
+
+html[data-kiosk] body {
+  cursor: none;
+}

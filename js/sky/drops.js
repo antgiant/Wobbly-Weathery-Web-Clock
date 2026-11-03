@@ -1,0 +1,157 @@
+// Raindrops on the digits: a small simulation, so drops behave like drops. They form on the glass, grow while it rains, and past a
+// size they run down in jerky bursts, leaving a wet trail, swallowing the smaller drops they meet. A drop that runs off the bottom of a
+// stroke hangs there for a moment and falls. When the digit moves or changes and the glass is no longer under a drop, the drop is shed.
+// Pure maths (no DOM, no GL): glass.js gives it the digits' ink and draws the result.
+//
+// Units are the pixels of the digit mask (the canvas the digits are drawn into), y down. `stroke` is how thick a digit's stroke is.
+
+export function rng(seed) {                                   // small seeded generator: the same seed gives the same rain (tests)
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6D2B79F5) >>> 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+export const GRAVITY = 5;                                     // stroke widths per second per second
+export const MAX_DROPS = 160;
+
+export class DropSim {
+  constructor(seed = 1) {
+    this.rand = rng(seed);
+    this.drops = [];
+    this.gw = 0; this.gh = 0; this.grid = null; this.w = 1; this.h = 1; this.inkCells = 0;
+    this.stroke = 30;
+  }
+
+  /** The digits' ink as a grid of alpha 0..255 (gw x gh, row by row) covering w x h mask pixels. Drops that lost their glass are shed. */
+  setInk(grid, gw, gh, w, h, stroke) {
+    this.grid = grid; this.gw = gw; this.gh = gh; this.w = w; this.h = h; this.stroke = Math.max(4, stroke);
+    let n = 0; for (let i = 0; i < grid.length; i++) if (grid[i] > 200) n++;
+    this.inkCells = n;
+    for (const d of this.drops) if (!d.dying && this.inkAt(d.x, d.y) < 0.3) { d.dying = true; d.fall = 0; }       // the glass moved away from under it
+  }
+
+  /** Ink (alpha 0..1) under a point of the mask. */
+  inkAt(x, y) {
+    if (!this.grid) return 0;
+    const i = Math.floor(x / this.w * this.gw), j = Math.floor(y / this.h * this.gh);
+    if (i < 0 || j < 0 || i >= this.gw || j >= this.gh) return 0;
+    return this.grid[j * this.gw + i] / 255;
+  }
+
+  /** A random point on the ink, or null. */
+  _spot() {
+    if (!this.inkCells) return null;
+    for (let k = 0; k < 20; k++) {
+      const x = this.rand() * this.w, y = this.rand() * this.h;
+      const m = this.stroke * 0.12;
+      if (this.inkAt(x, y) > 0.9 && this.inkAt(x, y - m) > 0.8 && this.inkAt(x, y + m) > 0.8 && this.inkAt(x - m, y) > 0.8 && this.inkAt(x + m, y) > 0.8) return [x, y];       // not right on an edge
+    }
+    return null;
+  }
+
+  /** How many drops the glass should carry for this rain: more rain, more drops, in proportion to the area of glass. */
+  target(rain) {
+    const cellArea = (this.w / this.gw) * (this.h / this.gh), ink = this.inkCells * cellArea;
+    const r = this.stroke * 0.09;
+    return Math.min(MAX_DROPS, Math.round(rain * ink / (Math.PI * r * r) * 0.06));
+  }
+
+  /**
+   * Advance by dt seconds (at most 0.15 is taken at once: a slow frame must not teleport the drops).
+   * @param {number} dt  seconds
+   * @param {number} rain  0 (dry) .. 1 (downpour)
+   */
+  step(dt, rain) {
+    dt = Math.min(0.15, Math.max(0, dt));
+    const S = this.stroke, rRun = S * 0.15, drops = this.drops;
+    // new drops where there are fewer than the rain calls for
+    const want = this.target(rain);
+    let alive = 0; for (const d of drops) if (!d.dying) alive++;
+    if (rain > 0.01 && alive < want && this.inkCells) {
+      const spawn = Math.min(want - alive, Math.ceil(rain * 6 * dt * (1 + this.rand())));
+      for (let k = 0; k < spawn; k++) { const p = this._spot(); if (p) drops.push({ x: p[0], y: p[1], r: S * (0.025 + 0.03 * this.rand()), vy: 0, run: false, y0: p[1], hang: 0, wait: 0, dying: false, fall: 0, age: 0, trail: [] }); }
+    }
+    for (const d of drops) {
+      d.age += dt;
+      if (d.dying) { d.fall += dt; d.vy += GRAVITY * S * dt * 1.5; d.y += d.vy * dt; continue; }
+      if (!d.run && !d.hang) {                                       // sitting: grows while it rains, until it is heavy enough to run
+        d.r += dt * S * (0.004 + 0.03 * rain);
+        if (d.r >= rRun * (0.85 + 0.3 * ((d.age * 7.13) % 1))) { d.run = true; d.vy = S * 0.15; d.y0 = d.y; d.wait = 0; d.trail.length = 0; }
+        continue;
+      }
+      if (d.hang) {                                                  // hanging off the bottom edge of a stroke: swells, then falls
+        d.hang += dt; d.r += dt * S * 0.05;
+        if (d.hang > 0.7 + 0.5 * ((d.age * 3.7) % 1)) { d.dying = true; d.fall = 0; d.vy = S * 0.4; }
+        continue;
+      }
+      // running: jerky, like a real drop (it sticks, then slips), faster the bigger it is
+      if (d.wait > 0) { d.wait -= dt; }
+      else {
+        d.vy = Math.min(S * 4.5, d.vy + GRAVITY * S * dt * (d.r / rRun));
+        const ny = d.y + d.vy * dt;
+        if (this.inkAt(d.x, ny + d.r) < 0.35) { d.hang = 0.001; d.vy = 0; }       // the stroke ends: hang there
+        else {
+          d.trail.push([d.x, d.y, d.age]); if (d.trail.length > 40) d.trail.shift();
+          d.y = ny;
+          d.r = Math.max(S * 0.045, d.r - dt * S * 0.012);                 // it leaves water behind
+          if (this.rand() < dt * 3) { d.wait = 0.05 + 0.25 * this.rand(); d.vy *= 0.3; }   // sticks
+          if (d.vy < S * 0.05 && d.r < S * 0.07) { d.run = false; d.trail.length = 0; }   // too small to keep going: it sits again
+        }
+      }
+    }
+    // a drop that meets another swallows it
+    for (let i = 0; i < drops.length; i++) {
+      const a = drops[i]; if (!a || a.dying) continue;
+      for (let j = i + 1; j < drops.length; j++) {
+        const b = drops[j]; if (!b || b.dying) continue;
+        const dx = a.x - b.x, dy = a.y - b.y, rr = (a.r + b.r) * 0.8;
+        if (dx * dx + dy * dy < rr * rr) {
+          const big = a.r >= b.r ? a : b, small = big === a ? b : a, ma = big.r * big.r, mb = small.r * small.r;
+          big.x = (big.x * ma + small.x * mb) / (ma + mb); big.y = (big.y * ma + small.y * mb) / (ma + mb);
+          big.r = Math.sqrt(ma + mb);
+          if (small.run && !big.run) { big.run = true; big.vy = Math.max(big.vy, small.vy); big.y0 = Math.min(big.y0, small.y0); }
+          small.dying = true; small.gone = true;                    // absorbed (removed below, not shown falling)
+        }
+      }
+    }
+    // drops that have fallen away
+    this.drops = drops.filter((d) => !d.gone && !(d.dying && (d.fall > 0.35 || d.y > this.h + S)));
+  }
+}
+
+/**
+ * Draws the drops into a canvas 2D context the size of the mask, as three channels the glass shader reads:
+ * red = the dark rim of a drop, green = its glint, blue = water (the sky seen through it, bent). Black elsewhere.
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {DropSim} sim
+ * @param {[number, number]} light  screen direction towards the light (y up), unit-ish
+ */
+export function drawDrops(ctx, sim, light = [-0.5, 0.8]) {
+  const { width: w, height: h } = ctx.canvas;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
+  ctx.globalCompositeOperation = 'lighter';                          // channels add up where drops and trails overlap
+  const S = sim.stroke;
+  for (const d of sim.drops) {
+    const fade = d.dying ? Math.max(0, 1 - d.fall / 0.35) : 1;
+    if (fade <= 0) continue;
+    if (d.run && d.trail.length > 1) {                               // the wet line it leaves: thin, brightest by the drop, gone with age
+      for (let i = 1; i < d.trail.length; i++) {
+        const a = d.trail[i - 1], b = d.trail[i], age = Math.max(0, 1 - (d.age - b[2]) / 1.6);
+        if (age <= 0) continue;
+        ctx.strokeStyle = `rgba(0,0,${Math.round(255 * 0.45 * age * fade)},1)`; ctx.lineWidth = Math.max(1, d.r * 0.5);
+        ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+      }
+    }
+    const x = d.x, y = d.y, r = Math.max(1, d.r) * (d.dying ? 1 : 1);
+    ctx.fillStyle = `rgba(0,0,${Math.round(255 * fade)},1)`; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832); ctx.fill();          // the water
+    const rim = ctx.createRadialGradient(x, y, r * 0.55, x, y, r * 1.08);
+    rim.addColorStop(0, 'rgba(0,0,0,0)'); rim.addColorStop(0.75, `rgba(${Math.round(255 * 0.9 * fade)},0,0,1)`); rim.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = rim; ctx.beginPath(); ctx.arc(x, y, r * 1.1, 0, 6.2832); ctx.fill();                                      // the dark edge
+    const gx = x + light[0] * r * 0.42, gy = y - light[1] * r * 0.42;                                                        // (y is down on the canvas)
+    const hi = ctx.createRadialGradient(gx, gy, 0, gx, gy, r * 0.5);
+    hi.addColorStop(0, `rgba(0,${Math.round(255 * fade)},0,1)`); hi.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = hi; ctx.beginPath(); ctx.arc(gx, gy, r * 0.5, 0, 6.2832); ctx.fill();                                      // the glint
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  void S;
+}

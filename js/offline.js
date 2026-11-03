@@ -61,6 +61,10 @@ document.addEventListener('DOMContentLoaded', () => document.getElementById('ref
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('message', (e) => {
     if (!e.data || e.data.type !== 'updated') return;
+    if (document.documentElement.dataset.kiosk) {                      // a sign nobody can tap: update by itself, when the minute turns
+      setTimeout(() => location.reload(), 61000 - (Date.now() % 60000));
+      return;
+    }
     const b = document.getElementById('updateBanner');
     if (b) b.hidden = false;
   });

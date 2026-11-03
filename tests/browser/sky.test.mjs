@@ -1,5 +1,6 @@
 // The sky is physically sensible: day is bright and blue, night is dark, twilight is warm at the horizon, weather changes it.
 export const name = 'sky';
+export const covers = 'Sky is physically sensible: day blue, night dark, dusk warm, storm grey, sun/moon labels match the almanac';
 export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 async function sky(t, query, conf = {}) {

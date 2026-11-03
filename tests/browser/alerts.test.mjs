@@ -1,6 +1,7 @@
 // The countdown to sunset / sunrise and the optional umbrella alert, as page pills and as pixel art on the LED panel.
 import { nextSunset, nextSunrise, at } from '../lib/astro.mjs';
 export const name = 'alerts';
+export const covers = 'Sunrise / sunset countdown and umbrella alert (pills and LED pixel card, no black plate), pills at the bottom clear of the digits on ten screen shapes';
 export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 const pill = (page) => page.evaluate(() => { const e = document.getElementById('sunCountdown'); return e.hidden ? null : e.textContent.replace(/\s+/g, ' ').trim(); });
@@ -115,9 +116,30 @@ export async function run(t) {
   t.check('LED panel: the card is one pixel per LED (a 64 x 32 canvas)', card && card.w === 64 && card.h === 32, card && `${card.w}x${card.h}`);
   const lit = await h.page.evaluate(async (url) => { const i = new Image(); i.src = url; await i.decode(); const c = document.createElement('canvas'); c.width = i.width; c.height = i.height; const x = c.getContext('2d'); x.drawImage(i, 0, 0); const d = x.getImageData(0, 0, c.width, c.height).data; let white = 0, orange = 0; for (let k = 0; k < d.length; k += 4) { if (d[k + 3] > 200 && d[k] > 230 && d[k + 1] > 230 && d[k + 2] > 230) white++; if (d[k + 3] > 200 && d[k] > 230 && d[k + 1] > 90 && d[k + 1] < 150 && d[k + 2] < 90) orange++; } return { white, orange }; }, card.url);
   t.check('LED panel: the card has white digits and an orange (sunset) sun', lit.white > 20 && lit.orange > 8, JSON.stringify(lit));
+  // no black plate: the sky shows through; every lit LED has a dark outline instead
+  const plate = (page) => page.evaluate(() => {
+    const c = window.__ledCard, x = c.getContext('2d'), d = x.getImageData(0, 0, c.width, c.height).data, W = c.width, H = c.height;
+    const a = (i, j) => d[(j * W + i) * 4 + 3], rgb = (i, j) => [d[(j * W + i) * 4], d[(j * W + i) * 4 + 1], d[(j * W + i) * 4 + 2]];
+    const isLit = (i, j) => a(i, j) > 250 && Math.max(...rgb(i, j)) > 60;
+    let x0 = W, y0 = H, x1 = -1, y1 = -1, opaque = 0, lit = 0, outline = 0, litNoOutline = 0;
+    for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) if (a(i, j) > 0) { x0 = Math.min(x0, i); x1 = Math.max(x1, i); y0 = Math.min(y0, j); y1 = Math.max(y1, j); opaque++; if (isLit(i, j)) lit++; else outline++; }
+    for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) if (isLit(i, j)) for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) { const ni = i + dx, nj = j + dy; if (ni >= 0 && nj >= 0 && ni < W && nj < H && a(ni, nj) === 0) litNoOutline++; }
+    const box = (x1 - x0 + 1) * (y1 - y0 + 1);
+    return { box, opaque, lit, outline, litNoOutline, transparentInBox: box - opaque, W, H };
+  });
+  const pl = await plate(h.page);
+  t.check('LED panel: the card has no solid plate (more than 15% of the LEDs inside the card are see-through; a black plate has none)', pl.transparentInBox > pl.box * 0.15, JSON.stringify(pl));
+  t.check('LED panel: every lit LED has a dark outline on each side (none touches a transparent LED)', pl.litNoOutline === 0 && pl.lit > 20 && pl.outline > pl.lit * 0.5, JSON.stringify(pl));
   const cardBottomPx = await h.page.evaluate(() => ((parseFloat(document.body.style.getPropertyValue('--led-top')) * Math.min(innerHeight, innerWidth / 2)) + (innerHeight - Math.min(innerHeight, innerWidth / 2)) / 2));
   const digitTop = await h.page.evaluate(() => Math.min(...[...document.querySelectorAll('#clock svg')].filter((e) => getComputedStyle(e).display !== 'none' && e.querySelector('path[id]')).map((e) => e.getBoundingClientRect().top)));
   t.check('LED panel: the digits start below the card (it never covers the time)', digitTop >= cardBottomPx - 2, `digits ${Math.round(digitTop)} card ends ${Math.round(cardBottomPx)}`);
+  await h.close();
+
+  // the umbrella on the LED panel: see-through too, with the outline
+  h = await t.open({ query: 't=2026-06-21T12:00:00Z&speed=0', width: 1000, height: 560, conf: { weatherMode: 'rain', rainAlert: true, screenMode: 'led', clockStyle: 'solid', countdown: 'off' } });
+  await h.settle(3200);
+  const um = await plate(h.page);
+  t.check('LED panel: the umbrella is see-through with an outline (no black plate behind it)', um.lit > 15 && um.litNoOutline === 0 && um.transparentInBox > um.box * 0.2, JSON.stringify(um));
   await h.close();
 
   h = await t.open({ query: `t=${at(sunset, -270e3)}&speed=0`, width: 800, height: 500, conf: { countdown: 'both', screenMode: 'led', ledCols: 16, ledRows: 16, clockStyle: 'solid' } });

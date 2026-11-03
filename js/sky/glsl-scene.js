@@ -258,6 +258,8 @@ uniform sampler2D uFull;       // full-size overlay (the pills on panels the tun
 uniform float uFullOn;
 uniform float uContrast;   // strength of the readability outline and tone, 0 off .. 1
 uniform vec4 uWx;          // weather on the digits: x snow settled on them 0..1, y rain on the glass 0..1, w time in seconds
+uniform sampler2D uDrops;  // raindrops from drops.js, in the mask's place: r dark rim, g glint, b water
+uniform float uDropsOn;
 in vec2 vUv;
 out vec4 oColor;
 
@@ -406,7 +408,10 @@ void body() {
     float stk = uGlass.z;
     if (cv > 0.02 && uWx.x > 0.01) ink = snowOn(ink, snowCap(stk, uWx.x), base);
     if (uWx.y > 0.01 && stk > 0.0) {
-      if (cv > 0.02) ink = rainOn(ink, rainBeads(stk, uWx.y) * vec4(0.7, 0.8, 0.0, 0.8), uLightCol, base);
+      if (cv > 0.02) {
+        if (uDropsOn > 0.5) { vec4 dr = texture(uDrops, (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw); ink = rainOn(ink, vec4(dr.r * 0.7, dr.g * 0.8, dr.b, 0.0), uLightCol, base); }
+        else ink = rainOn(ink, rainBeads(stk, uWx.y) * vec4(0.7, 0.8, 0.0, 0.8), uLightCol, base);
+      }
       bs += splash(stk, uWx.y) * vec3(0.8, 0.9, 1.0) * 0.55;
     }
     oColor = vec4(withOutline(bs, mix(bs, ink, cv), cv), 1.0);
@@ -494,7 +499,12 @@ void body() {
   vec3 glass = min(c, vec3(1.6));
   if (cover > 0.02) {                                                  // snow and rain on the digits
     if (uWx.x > 0.01) glass = snowOn(glass, snowCap(stroke, uWx.x), base);
-    if (uWx.y > 0.01) glass = rainOn(glass, rainBeads(stroke, uWx.y), uLightCol, sceneAt(vUv - (gl_FragCoord.xy / (stroke * 0.42) - floor(gl_FragCoord.xy / (stroke * 0.42)) - 0.5) * (stroke * 0.42) * px * 1.4, 1.0));
+    if (uWx.y > 0.01) {
+      if (uDropsOn > 0.5) {                                              // drops that run, merge and are shed with the digit (drops.js)
+        vec4 dr = texture(uDrops, (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw);
+        glass = rainOn(glass, vec4(dr.r, dr.g, dr.b, 0.0), uLightCol, sceneAt(vUv + vec2(0.0, stroke * 0.3) * px, 1.0));       // (a drop shows the sky upside down and shifted)
+      } else glass = rainOn(glass, rainBeads(stroke, uWx.y), uLightCol, sceneAt(vUv - (gl_FragCoord.xy / (stroke * 0.42) - floor(gl_FragCoord.xy / (stroke * 0.42)) - 0.5) * (stroke * 0.42) * px * 1.4, 1.0));
+    }
   }
 
   // halo on the sky around lit glass
@@ -519,6 +529,49 @@ void main() {
   }
 }`;
 
+
+// ---- LED panel: stars. A star is far smaller than an LED, so averaging a block of pixels loses it. This pass finds, for every LED,
+// the brightest pixel in its block and how far it stands above the block's average (a star, the moon, a planet, a tree light),
+// skipping the blocks the digits are on. It is derived from the normal picture, so a star shows here exactly when it shows there.
+export const FRAG_LED_PEAK = `#version 300 es
+precision highp float;
+uniform sampler2D uComp;   // the normal picture, with mip levels
+uniform sampler2D uMask;   // the digits
+uniform vec2 uRes;         // canvas size in px
+uniform vec4 uLed;         // x columns, y rows
+uniform vec4 uMaskRect;
+uniform vec2 uMaskPx;
+uniform float uMaskOn;
+out vec4 oColor;
+float lumaOf(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+void main() {
+  float cell = max(floor(min(uRes.x / uLed.x, uRes.y / uLed.y)), 2.0);
+  vec2 panel = vec2(uLed.x, uLed.y) * cell;
+  vec2 org = floor((uRes - panel) * 0.5);
+  vec2 id = floor(gl_FragCoord.xy);
+  vec2 base = org + id * cell;
+  vec2 cuv = (base + 0.5 * cell) / uRes;
+  if (uMaskOn > 0.5) {                                                      // the clock wins: no star on a digit
+    vec2 m = (vec2(cuv.x, 1.0 - cuv.y) - uMaskRect.xy) / uMaskRect.zw;
+    float lod = max(log2(cell * uMaskPx.x / (uMaskRect.z * uRes.x)), 0.0);
+    if (textureLod(uMask, m, lod).a > 0.004) { oColor = vec4(0.0); return; }
+  }
+  float avg = lumaOf(textureLod(uComp, cuv, max(log2(cell), 0.0)).rgb);
+  vec3 best = vec3(0.0);
+  float top = 0.0;
+  int n = int(cell);
+  for (int j = 0; j < 40; j++) {
+    if (j >= n) break;
+    for (int i = 0; i < 40; i++) {
+      if (i >= n) break;
+      vec3 c = texelFetch(uComp, ivec2(base) + ivec2(i, j), 0).rgb;
+      float l = lumaOf(c);
+      if (l > top) { top = l; best = c; }
+    }
+  }
+  oColor = vec4(best, clamp(top - avg, 0.0, 1.0));
+}`;
+
 // ---- LED panel: the finished picture (glass and all) averaged into a grid of square pixels ----
 export const FRAG_LED = `#version 300 es
 precision highp float;
@@ -527,6 +580,8 @@ uniform vec2 uRes;         // canvas size in px
 uniform vec4 uLed;         // x columns, y rows, z gap as a fraction of a cell, w brightness
 uniform sampler2D uOverlay;   // countdown card: one texel per LED, straight alpha
 uniform float uOverlayOn;
+uniform sampler2D uPeak;      // per LED: the brightest pixel of its block and how far it stands above the average (stars)
+uniform float uStars;         // 0 off, 1 stars the normal picture shows, 2 as many as the sky allows, brighter
 in vec2 vUv;
 out vec4 oColor;
 void main() {
@@ -545,6 +600,21 @@ void main() {
   // LED panels are punchy: more saturation and contrast than the soft picture
   float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
   c = pow(max(mix(vec3(l), c, 1.2), 0.0), vec3(1.08));
+  if (uStars > 0.5) {                                                       // a star, the moon or a planet in this LED's block: light the LED
+    vec4 pk = texelFetch(uPeak, ivec2(id), 0);
+    float thr = uStars > 1.5 ? 0.06 : 0.14;
+    float dark = 1.0 - smoothstep(0.12, 0.32, l);                           // not in daylight, not on a bright cloud
+    float k = smoothstep(thr, thr * 2.0, pk.a) * dark;
+    ivec2 sz = textureSize(uPeak, 0);
+    for (int dj = -1; dj <= 1; dj++) for (int di = -1; di <= 1; di++) {     // one star per neighbourhood: the brightest wins, so they read as stars and not as noise
+      ivec2 q = ivec2(id) + ivec2(di, dj);
+      if ((di != 0 || dj != 0) && q.x >= 0 && q.y >= 0 && q.x < sz.x && q.y < sz.y) {
+        float a = texelFetch(uPeak, q, 0).a;
+        if (a > pk.a || (a == pk.a && (dj < 0 || (dj == 0 && di < 0)))) k = 0.0;
+      }
+    }
+    c = mix(c, max(c, pk.rgb * (uStars > 1.5 ? 1.5 : 1.2) + vec3(0.04) * k), k);
+  }
   if (uOverlayOn > 0.5) {                                                   // drawn per LED, after averaging, so its pixels stay whole LEDs
     vec4 o = texelFetch(uOverlay, ivec2(int(id.x), int(uLed.y - 1.0 - id.y)), 0);
     c = mix(c, o.rgb, o.a);

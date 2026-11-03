@@ -1,5 +1,6 @@
 // Power: a still sky should leave the phone alone. Counts timer callbacks and animation frames while nothing happens.
 export const name = 'idle';
+export const covers = 'Power: wake-ups per second with a still sky, seconds hidden/shown, hidden tab';
 
 const count = () => {
   window.__w = { t: 0, i: 0, r: 0 };

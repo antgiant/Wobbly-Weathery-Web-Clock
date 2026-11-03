@@ -1,5 +1,6 @@
 // The page starts, draws the sky and the clock, and says nothing is wrong.
 export const name = 'smoke';
+export const covers = 'Page starts, draws the sky and the clock, no errors';
 export const tier = 'fast';          // part of the quick check (npm test); the suite does only its core when t.quick is set
 
 export async function run(t) {
