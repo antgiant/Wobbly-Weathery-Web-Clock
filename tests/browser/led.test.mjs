@@ -93,4 +93,37 @@ export async function run(t) {
   await h.page.evaluate(() => { const e = document.getElementById('ledTurn'); e.checked = false; e.dispatchEvent(new Event('change', { bubbles: true })); });
   t.check('"Turn to match the screen" can be switched off and is saved', await h.page.evaluate(() => JSON.parse(localStorage.getItem('conf')).ledTurn) === false);
   await h.close();
+
+  // ---- stars: the LED averaging used to lose them ----
+  const countStars = async (query, conf) => {
+    const hh = await t.open({ query: `${query}&speed=0&landscape=hills&az=200&pitch=35`, width: 900, height: 500, conf: { screenMode: 'led', ledCols: 64, ledRows: 32, clockStyle: 'solid', hideSeconds: true, followSun: false, plants: false, countdown: 'off', cloudMotion: 0, weatherMode: 'clear', ...conf } });
+    await hh.settle(2800);
+    const shot = await hh.shot();
+    const n = await t.analyze(hh.page, shot, ({ w, h: H, lum }) => {
+      const cols = 64, rows = 32, cell = Math.floor(Math.min(w / cols, H / rows)), ox = Math.floor((w - cols * cell) / 2), oy = Math.floor((H - rows * cell) / 2);
+      const L = []; for (let j = 0; j < rows; j++) { L.push([]); for (let i = 0; i < cols; i++) L[j].push(lum(ox + (i + 0.5) * cell, oy + (j + 0.5) * cell)); }
+      const dig = document.getElementById('clock').getBoundingClientRect();
+      let stars = 0;
+      for (let j = 1; j < rows - 1; j++) for (let i = 1; i < cols - 1; i++) {
+        const x = ox + (i + 0.5) * cell, y = oy + (j + 0.5) * cell;
+        if (x > dig.left + dig.width * 0.04 && x < dig.right - dig.width * 0.04 && y > dig.top + dig.height * 0.2 && y < dig.bottom - dig.height * 0.2) continue;      // the digits and their glow
+        let top = 0; for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) if (di || dj) top = Math.max(top, L[j + dj][i + di]);
+        if (L[j][i] > 0.22 && L[j][i] - top > 0.12) stars++;                                  // a lone bright LED in dark surroundings
+      }
+      return stars;
+    });
+    const errs = hh.errors.join(' | ');
+    await hh.close();
+    return { n, errs };
+  };
+  const dark = 't=2026-06-22T05:30:00Z&weather=clear&lp=1';
+  const off = await countStars(dark, { ledStars: 'off' }), auto = await countStars(dark, { ledStars: 'auto' }), always = await countStars(dark, { ledStars: 'always' });
+  t.check('LED panel, dark sky at night: with Stars off there are (almost) no lone bright LEDs in the sky', off.n <= 3, `${off.n}`);
+  t.check('Automatic: the stars the normal picture shows are lit (at least 12 lone bright LEDs, not a flood)', auto.n >= 12 && auto.n <= 200, `${auto.n}`);
+  t.check('Always shows at least as many as Automatic', always.n >= auto.n, `${always.n} vs ${auto.n}`);
+  const day = await countStars('t=2026-06-21T16:00:00Z&weather=clear&lp=1', { ledStars: 'always' });
+  t.check('by day there are none, even with "Always" (no stars in a blue sky)', day.n <= 2, `${day.n}`);
+  const city = await countStars('t=2026-06-22T05:30:00Z&weather=clear&lp=9', { ledStars: 'auto' });
+  t.check('a bright city sky shows fewer stars than a dark one (the rule is the normal picture\'s own visibility)', city.n < auto.n * 0.7, `${city.n} vs ${auto.n}`);
+  t.check('stars: no errors', !off.errs && !auto.errs && !always.errs && !day.errs && !city.errs, [off.errs, auto.errs].join(' '));
 }

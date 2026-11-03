@@ -519,6 +519,49 @@ void main() {
   }
 }`;
 
+
+// ---- LED panel: stars. A star is far smaller than an LED, so averaging a block of pixels loses it. This pass finds, for every LED,
+// the brightest pixel in its block and how far it stands above the block's average (a star, the moon, a planet, a tree light),
+// skipping the blocks the digits are on. It is derived from the normal picture, so a star shows here exactly when it shows there.
+export const FRAG_LED_PEAK = `#version 300 es
+precision highp float;
+uniform sampler2D uComp;   // the normal picture, with mip levels
+uniform sampler2D uMask;   // the digits
+uniform vec2 uRes;         // canvas size in px
+uniform vec4 uLed;         // x columns, y rows
+uniform vec4 uMaskRect;
+uniform vec2 uMaskPx;
+uniform float uMaskOn;
+out vec4 oColor;
+float lumaOf(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+void main() {
+  float cell = max(floor(min(uRes.x / uLed.x, uRes.y / uLed.y)), 2.0);
+  vec2 panel = vec2(uLed.x, uLed.y) * cell;
+  vec2 org = floor((uRes - panel) * 0.5);
+  vec2 id = floor(gl_FragCoord.xy);
+  vec2 base = org + id * cell;
+  vec2 cuv = (base + 0.5 * cell) / uRes;
+  if (uMaskOn > 0.5) {                                                      // the clock wins: no star on a digit
+    vec2 m = (vec2(cuv.x, 1.0 - cuv.y) - uMaskRect.xy) / uMaskRect.zw;
+    float lod = max(log2(cell * uMaskPx.x / (uMaskRect.z * uRes.x)), 0.0);
+    if (textureLod(uMask, m, lod).a > 0.004) { oColor = vec4(0.0); return; }
+  }
+  float avg = lumaOf(textureLod(uComp, cuv, max(log2(cell), 0.0)).rgb);
+  vec3 best = vec3(0.0);
+  float top = 0.0;
+  int n = int(cell);
+  for (int j = 0; j < 40; j++) {
+    if (j >= n) break;
+    for (int i = 0; i < 40; i++) {
+      if (i >= n) break;
+      vec3 c = texelFetch(uComp, ivec2(base) + ivec2(i, j), 0).rgb;
+      float l = lumaOf(c);
+      if (l > top) { top = l; best = c; }
+    }
+  }
+  oColor = vec4(best, clamp(top - avg, 0.0, 1.0));
+}`;
+
 // ---- LED panel: the finished picture (glass and all) averaged into a grid of square pixels ----
 export const FRAG_LED = `#version 300 es
 precision highp float;
@@ -527,6 +570,8 @@ uniform vec2 uRes;         // canvas size in px
 uniform vec4 uLed;         // x columns, y rows, z gap as a fraction of a cell, w brightness
 uniform sampler2D uOverlay;   // countdown card: one texel per LED, straight alpha
 uniform float uOverlayOn;
+uniform sampler2D uPeak;      // per LED: the brightest pixel of its block and how far it stands above the average (stars)
+uniform float uStars;         // 0 off, 1 stars the normal picture shows, 2 as many as the sky allows, brighter
 in vec2 vUv;
 out vec4 oColor;
 void main() {
@@ -545,6 +590,21 @@ void main() {
   // LED panels are punchy: more saturation and contrast than the soft picture
   float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
   c = pow(max(mix(vec3(l), c, 1.2), 0.0), vec3(1.08));
+  if (uStars > 0.5) {                                                       // a star, the moon or a planet in this LED's block: light the LED
+    vec4 pk = texelFetch(uPeak, ivec2(id), 0);
+    float thr = uStars > 1.5 ? 0.06 : 0.14;
+    float dark = 1.0 - smoothstep(0.12, 0.32, l);                           // not in daylight, not on a bright cloud
+    float k = smoothstep(thr, thr * 2.0, pk.a) * dark;
+    ivec2 sz = textureSize(uPeak, 0);
+    for (int dj = -1; dj <= 1; dj++) for (int di = -1; di <= 1; di++) {     // one star per neighbourhood: the brightest wins, so they read as stars and not as noise
+      ivec2 q = ivec2(id) + ivec2(di, dj);
+      if ((di != 0 || dj != 0) && q.x >= 0 && q.y >= 0 && q.x < sz.x && q.y < sz.y) {
+        float a = texelFetch(uPeak, q, 0).a;
+        if (a > pk.a || (a == pk.a && (dj < 0 || (dj == 0 && di < 0)))) k = 0.0;
+      }
+    }
+    c = mix(c, max(c, pk.rgb * (uStars > 1.5 ? 1.5 : 1.2) + vec3(0.04) * k), k);
+  }
   if (uOverlayOn > 0.5) {                                                   // drawn per LED, after averaging, so its pixels stay whole LEDs
     vec4 o = texelFetch(uOverlay, ivec2(int(id.x), int(uLed.y - 1.0 - id.y)), 0);
     c = mix(c, o.rgb, o.a);

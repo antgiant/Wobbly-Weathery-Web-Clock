@@ -606,6 +606,13 @@
                   <label class="field__label">LEDs across<input type="number" id="ledCols" min="8" max="256" step="1" inputmode="numeric"></label>
                   <label class="field__label">LEDs down<input type="number" id="ledRows" min="8" max="256" step="1" inputmode="numeric"></label>
                 </div>
+                <label class="field__label" for="ledStars">Stars on the LED panel</label>
+                <select id="ledStars">
+                  <option value="auto">Automatic (the stars the normal picture shows)</option>
+                  <option value="always">Always, as many as the sky has</option>
+                  <option value="off">Off</option>
+                </select>
+                <p class="hint">A star is far smaller than one LED, so averaging a block of the picture into an LED loses it. This lights the LED a star (or planet, or the moon) falls in, so the night sky is not blank. Never over the digits.</p>
                 <label class="field toggle"><span class="field__text">Turn to match the screen<small>A 64 × 32 panel becomes 32 × 64 on an upright screen, and back</small></span><input type="checkbox" id="ledTurn"><span class="switch" aria-hidden="true"></span></label>
                 <p class="hint" id="ledInfo"></p>
               </div>

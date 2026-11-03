@@ -89,6 +89,7 @@ export const DEFAULTS = {
   viewFov: 80,
   showLabels: false,
   plants: true,               // grass, trees, cacti ... swaying in the wind
+  ledStars: 'auto',           // off | auto | always: stars, planets and the moon that show in the normal picture also light an LED on the LED panel
   clockMode: 'time',          // time | countdown: the digits show the time, or the time left to timerTarget
   timerTarget: '',            // countdown: a datetime-local value ("2026-12-25T08:00"), in the viewer's own time zone
   timerLabel: '',             // countdown: a name shown with it

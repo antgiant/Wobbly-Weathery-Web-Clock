@@ -15,7 +15,7 @@ import {
   VERT_FULLSCREEN, FRAG_TRANSMITTANCE, FRAG_MULTISCATTER, FRAG_SKYVIEW,
 } from './glsl-atmosphere.js';
 import {
-  FRAG_NOISE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, FRAG_BLIT, FRAG_LED, FRAG_SCENE,
+  FRAG_NOISE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, FRAG_BLIT, FRAG_LED, FRAG_LED_PEAK, FRAG_SCENE,
 } from './glsl-scene.js';
 import { VERT_PLANTS, FRAG_PLANTS } from './glsl-plants.js';
 import { computeSky, DEG } from './astro.js';
@@ -155,6 +155,7 @@ export class SkyEngine {
     this.pBlit = this._program(VERT_FULLSCREEN, FRAG_BLIT);
     performance.mark('sky:programs-compiled');
     this.pLed = this._program(VERT_FULLSCREEN, FRAG_LED);
+    this.pLedPeak = this._program(VERT_FULLSCREEN, FRAG_LED_PEAK);
     this.pStars = this._program(VERT_STARS, FRAG_STARS, { aStar: 0, aBV: 1 });
     this.pPlants = this._program(VERT_PLANTS, FRAG_PLANTS, { aInst: 0, aSeed: 1 });
 
@@ -232,7 +233,7 @@ export class SkyEngine {
     gl.bindVertexArray(null);
 
     this.sceneTarget = null;
-    this.glass = { mode: 0, frost: 0.35, contrast: 3, glow: 0, glowCol: [1, 0.85, 0.6], led: { on: false, cols: 64, rows: 32, gap: 0.16, brightness: 1 }, overlay: false, overlayFull: false, ink: [0.96, 0.97, 1], stroke: 30, light: [-0.5, 0.8, 0.6], lightCol: [1, 1, 1], rect: [0, 0, 1, 1], maskW: 1, maskH: 1, hasMask: false };
+    this.glass = { mode: 0, frost: 0.35, contrast: 3, glow: 0, glowCol: [1, 0.85, 0.6], led: { on: false, cols: 64, rows: 32, gap: 0.16, brightness: 1, stars: 1 }, overlay: false, overlayFull: false, ink: [0.96, 0.97, 1], stroke: 30, light: [-0.5, 0.8, 0.6], lightCol: [1, 1, 1], rect: [0, 0, 1, 1], maskW: 1, maskH: 1, hasMask: false };
     this.overlayTex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.overlayTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
@@ -702,16 +703,42 @@ export class SkyEngine {
     this.compTarget = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);
   }
 
+  _ensurePeak(w, h) {
+    const gl = this.gl;
+    if (this.peakTarget && this.peakTarget.w === w && this.peakTarget.h === h) return;
+    if (this.peakTarget) { gl.deleteTexture(this.peakTarget.tex); gl.deleteFramebuffer(this.peakTarget.fbo); }
+    this.peakTarget = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.NEAREST);       // one texel per LED: read back exactly
+  }
+
   /** The finished picture -> a grid of square pixels with black lines between them (64x32, or 32x64 when upright). */
   _ledPass(cw, ch) {
     const gl = this.gl, L = this.glass.led, C = this.compTarget;
     gl.bindTexture(gl.TEXTURE_2D, C.tex);
     gl.generateMipmap(gl.TEXTURE_2D);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    // stars: the brightest pixel of each LED's block, in a tiny cols x rows picture the LED shader then reads
+    const g = this.glass;
+    if (L.stars) {
+      this._ensurePeak(L.cols, L.rows);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.peakTarget.fbo);
+      gl.viewport(0, 0, L.cols, L.rows);
+      this._use(this.pLedPeak);
+      this._1i('uComp', 0); this._bind(0, C.tex);
+      this._1i('uMask', 2); this._bind(2, this.maskTex);
+      this._2f('uRes', cw, ch);
+      this._4f('uLed', L.cols, L.rows, 0, 0);
+      this._4f('uMaskRect', g.rect[0], g.rect[1], g.rect[2], g.rect[3]);
+      this._2f('uMaskPx', g.maskW, g.maskH);
+      this._1f('uMaskOn', g.hasMask && g.mode > 0 ? 1 : 0);
+      gl.bindVertexArray(this.vaoEmpty);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, cw, ch);
     this._use(this.pLed);
     this._1i('uComp', 0); this._bind(0, C.tex);
+    this._1i('uPeak', 3); this._bind(3, L.stars ? this.peakTarget.tex : C.tex);
+    this._1f('uStars', L.stars || 0);
     this._2f('uRes', cw, ch);
     this._4f('uLed', L.cols, L.rows, L.gap, L.brightness);       // the grid already turned to match the screen (ledpanel.js)
     this._1i('uOverlay', 1); this._bind(1, this.overlayTex);

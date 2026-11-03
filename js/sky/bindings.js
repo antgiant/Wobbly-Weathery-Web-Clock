@@ -77,6 +77,7 @@ export function bindSettings() {
   bindSelect('digitWeather', 'digitWeather', applyQuality);
   bindSelect('windSway', 'windSway', () => { updateWind(); poke('wind'); });
   bindSelect('antiBurnIn', 'antiBurnIn', updateBurnIn);
+  bindSelect('ledStars', 'ledStars', () => glass?.apply());
   bindSelect('countdownKind', 'countdownKind', updateCountdown);
   bindSelect('countdownLead', 'countdownLead', updateCountdown, parseFloat);
   bindSelect('sensorRotation', 'sensorRotation', applySensorFixes);

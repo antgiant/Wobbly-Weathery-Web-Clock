@@ -208,6 +208,7 @@ export function initGlass(engine, getBasis) {
     document.body.dataset.clockstyle = on && st === 'solid' ? 'led' : st;
     document.body.dataset.screen = led() ? 'led' : 'normal';
     engine.glass.led.on = led();
+    engine.glass.led.stars = conf.ledStars === 'off' ? 0 : conf.ledStars === 'always' ? 2 : 1;      // the LED panel keeps the stars the averaging would lose
     applyLedPanel();                                   // size and layout of the LED panel (or clear them when it is off)
     engine.setGlass({
       mode: st === 'glass' ? 1 : st === 'stained' ? 2 : led() ? 3 : 0,
