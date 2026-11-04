@@ -128,6 +128,13 @@ if (A.present) {
     if (A.profile && G.__profDump) G.__profDump();
   };
   await until(() => !!G.__sky, 30000);
+  if (A.profile && G.__sky) {      // time the engine's own CPU-side parts (the drawing inside them is counted by the GL profile)
+    const e = G.__sky;
+    for (const [k, label] of [['render', 'engine.render, everything inside it'], ['_updateAstro', 'astronomy (sun, moon, planets)'], ['_updateLuts', 'sky tables, incl. their drawing'], ['setGlassMask', 'glass mask upload'], ['_autoScale', 'automatic scale']]) {
+      if (typeof e[k] !== 'function') continue; const f = e[k].bind(e);
+      e[k] = (...a) => { const t = performance.now(); const r = f(...a); G.__pt[label] = (G.__pt[label] || 0) + performance.now() - t; return r; };
+    }
+  }
   if (A.ledCols && G.__sky) G.__sky.glass.led.gap = 0;                 // the panel needs the cells' own colours, with no dark lines between
   if (G.__sky) G.__sky.onFrame(send);
 }

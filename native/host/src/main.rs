@@ -18,6 +18,7 @@ use std::time::Instant;
 const EMBED: &[(&str, &str)] = &[
     ("host/host.js", include_str!("../js/host.js")), ("host/dom.js", include_str!("../js/dom.js")),
     ("host/polyfills.js", include_str!("../js/polyfills.js")), ("host/boot.js", include_str!("../js/boot.js")),
+    ("host/gputest.js", include_str!("../js/gputest.js")), ("host/es2translate.js", include_str!("../js/es2translate.js")),
 ];
 fn embedded(name: &str) -> Option<String> {
     let (n, _) = EMBED.iter().find(|(k, _)| *k == name)?.clone();
@@ -152,6 +153,7 @@ usage: wobbly-clock-run [--config FILE] [--web DIR] [--sink fb[:DEV]|ppm:DIR|mat
   --config FILE   the settings file (default /etc/wobbly-clock/wobbly-clock.conf)\n\
   --web DIR       use the page's files from this folder instead of the copy inside the program (for working on the page)\n\
   --sink          where frames go (default: the config's output: hdmi = fb, matrix = the LED panel)\n\
+  --gpu-test      probe this GPU on the OpenGL ES 2 path and print what it can do (for the Pi Zero, 1 and 3)\n\
   --software      draw on the CPU (Mesa llvmpipe), as a Pi 3 or Zero must; chosen automatically when the GPU has no OpenGL ES 3\n\
   --size WxH      the picture size for the ppm sink; --frames N stop after N frames; --at EPOCH_MS pretend it is this moment\n\
 tests: wobbly-clock-run <repo-root> <out.ppm> [--app] [--w=N --h=N --search=... --conf=JSON ...]");
@@ -177,10 +179,11 @@ fn main() {
         i += 1;
     }
     let fl = |k: &str| flags.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
-    let run_mode = !legacy;
+    let gpu_test = argv.iter().any(|x| x == "--gpu-test");
+    let run_mode = !legacy && !gpu_test;
     let a: Vec<String> = std::iter::once("wobbly".to_string()).chain(pos.into_iter()).collect();
     if legacy && a.len() < 3 { usage(2); }
-    let (root, out_path): (PathBuf, String) = if legacy {
+    let (root, out_path): (PathBuf, String) = if gpu_test { WEB_ON_DISK.with(|d| d.set(false)); (PathBuf::from("/web"), String::new()) } else if legacy {
         (std::fs::canonicalize(&a[1]).expect("repo root"), a[2].clone())
     } else {
         match fl("web").or_else(|| std::env::var("WOBBLY_WEB").ok()) {
@@ -210,7 +213,7 @@ fn main() {
     // Mesa's software renderer (llvmpipe) provides ES 3 on the CPU: slower, but the same picture. Software rendering is also chosen with --software.
     let force_software = flags.iter().any(|(k, _)| k == "software");
     if force_software && std::env::var("WOBBLY_SOFTWARE").is_err() { reexec_software(); }
-    let opened = if std::env::var("WOBBLY_FAKE_NO_ES3").is_ok() && std::env::var("WOBBLY_SOFTWARE").is_err() { Err("simulated: no EGL configuration for OpenGL ES 3".to_string()) } else { egl::Egl::open(3) };   // (the variable is for the test of the fallback)
+    let opened = if gpu_test { egl::Egl::open(2) } else if std::env::var("WOBBLY_FAKE_NO_ES3").is_ok() && std::env::var("WOBBLY_SOFTWARE").is_err() { Err("simulated: no EGL configuration for OpenGL ES 3".to_string()) } else { egl::Egl::open(3) };   // (the variable is for the test of the fallback)
     let egl = match opened {
         Ok(e) => e,
         Err(e) => {
@@ -262,7 +265,7 @@ fn main() {
 
         let host = embedded("host/host.js").expect("host.js");
         if let Err(e) = ctx.eval::<(), _>(host) { eprintln!("host.js: {}", describe(&ctx, e)); std::process::exit(1); }
-        let (mod_name, spike) = if run_mode || fl("app").is_some() { ("host/boot.js".to_string(), embedded("host/boot.js").unwrap()) } else {
+        let (mod_name, spike) = if gpu_test { ("host/gputest.js".to_string(), embedded("host/gputest.js").unwrap()) } else if run_mode || fl("app").is_some() { ("host/boot.js".to_string(), embedded("host/boot.js").unwrap()) } else {
             let script_path = std::env::var("WOBBLY_SCRIPT").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("native/host/js/spike.js"));
             let full = if script_path.is_absolute() { script_path.clone() } else if root.join(&script_path).exists() { root.join(&script_path) } else { std::env::current_dir().unwrap().join(&script_path) };
             let src = std::fs::read_to_string(&full).unwrap_or_else(|e| { eprintln!("{}: {e}", full.display()); std::process::exit(1) });

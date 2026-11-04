@@ -5,7 +5,7 @@ const canvas = document.createElement('canvas');
 canvas.clientWidth = W; canvas.clientHeight = H;
 const e = new SkyEngine(canvas, { baseUrl: __root });
 while (!e.assetsDone) await new Promise(r => setTimeout(r, 5));
-e.set(JSON.parse(__args.state));
+e.set({ sim: { base: new Date(__args.time), startPerf: performance.now(), scale: 0 }, ...JSON.parse(__args.state) });      // the moment is fixed (the engine otherwise shows the real time of day, and the picture would depend on when the test runs)
 e.render(Date.parse(__args.time));
 e.render(Date.parse(__args.time));
 const gl = canvas.getContext('webgl2');
