@@ -4,6 +4,7 @@
 //   node tools/native-golden.mjs            write it        node tools/native-golden.mjs --check   fail if out of date
 import fs from 'fs';
 import path from 'path';
+import '../tests/lib/astronomy.mjs';
 import { installDomStub } from '../tests/lib/dom-stub.mjs';
 installDomStub({});
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
@@ -51,6 +52,20 @@ for (let step = 0; step <= 15; step++) lines.push(['ease', step, 15, num(easing.
 for (const [a, b] of [[0, 1], [1, 2], [2, 3], [5, 6], [9, 0], [7, 4]]) for (const step of [0, 1, 4, 8, 11, 14, 15]) {
   const e = easing.easeInOutBack(null, step, 0, 1, 15), m = dd[a].map((v, i) => v + e * (dd[b][i] - v));
   lines.push(['morph', a, b, step, m.map((v) => v.toFixed(9)).join(',')].join('\t'));
+}
+
+// ---- the sun: height and direction (geometric, no refraction) and the events around a moment, from the astronomy library the page uses ----
+const { sunEvents } = await import('../js/sky/sunpath.js');
+const PLACES = [[40.7, -74], [-33.9, 151.2], [64.15, -21.94], [1.35, 103.8], [-0.18, -78.47], [51.5, -0.13], [69.65, 18.96], [35.7, 139.7]];
+const MOMENTS = ['2026-03-20T12:00:00Z', '2026-06-21T03:30:00Z', '2026-06-21T18:10:00Z', '2026-09-23T06:45:00Z', '2026-12-21T00:20:00Z', '2026-12-21T15:55:00Z', '2026-05-05T22:00:00Z'];
+for (const [lat, lon] of PLACES) {
+  const obs = new Astronomy.Observer(lat, lon, 0);
+  for (const iso of MOMENTS) {
+    const d = new Date(iso), t = Astronomy.MakeTime(d), eq = Astronomy.Equator('Sun', t, obs, true, true), hz = Astronomy.Horizon(t, obs, eq.ra, eq.dec, null);
+    lines.push(['sunpos', lat, lon, +d, hz.altitude.toFixed(5), hz.azimuth.toFixed(5)].join('\t'));
+    const ev = sunEvents(d, lat, lon, 0);
+    lines.push(['sunevents', lat, lon, +d, ...['prevRise', 'prevSet', 'nextRise', 'nextSet'].map((k) => num(ev[k] ? +ev[k] : null))].join('\t'));
+  }
 }
 
 const text = lines.join('\n') + '\n';
