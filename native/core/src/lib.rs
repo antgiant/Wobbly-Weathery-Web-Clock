@@ -3,4 +3,7 @@
 //! `tools/native-golden.mjs`), so a change on either side that breaks the agreement fails a test.
 
 pub mod countdown;
+pub mod digits;
 pub mod dim;
+pub mod morph;
+pub mod raster;

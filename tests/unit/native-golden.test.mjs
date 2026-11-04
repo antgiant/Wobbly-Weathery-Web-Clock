@@ -6,5 +6,8 @@ import { check, done } from '../lib/check.mjs';
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
 let ok = true, msg = '';
 try { execFileSync(process.execPath, [path.join(root, 'tools/native-golden.mjs'), '--check'], { stdio: 'pipe' }); } catch (e) { ok = false; msg = String(e.stderr || e.message).trim(); }
+let digitsOk = true, digitsMsg = '';
+try { execFileSync(process.execPath, [path.join(root, 'tools/native-digits.mjs'), '--check'], { stdio: 'pipe' }); } catch (e) { digitsOk = false; digitsMsg = String(e.stderr || e.message).trim(); }
+check('the native digit shapes (native/core/src/digits.rs) are the web page\'s', digitsOk, digitsMsg);
 check('the golden vectors for the native core are the web code\'s current answers', ok, msg);
 done();
