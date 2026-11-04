@@ -55,7 +55,8 @@ function parseColor(c) {
 const c01 = (c) => [c[0] / 255, c[1] / 255, c[2] / 255, c[3]];
 class Gradient { constructor(o) { Object.assign(this, o); this.stops = []; } addColorStop(off, col) { this.stops.push([off, c01(parseColor(col))]); } }
 G.Path2D = class { constructor(d) { this.d = typeof d === 'string' ? d : null; this.cmds = []; } };
-const srcPixels = (im) => im instanceof Canvas ? (im._ensure(), { w: im.width, h: im.height, data: __c2d_read(im._id, 0, 0, im.width, im.height) }) : { w: im.width, h: im.height, data: im._rgba };
+const isCanvas = (o) => !!o && typeof o._ensure === 'function';
+const srcPixels = (im) => isCanvas(im) ? (im._ensure(), { w: im.width, h: im.height, data: __c2d_read(im._id, 0, 0, im.width, im.height) }) : { w: im.width, h: im.height, data: im._rgba };
 class Ctx2D {
   constructor(canvas) {
     this.canvas = canvas; this.fillStyle = '#000'; this.strokeStyle = '#000'; this.lineWidth = 1; this.lineCap = 'butt'; this.lineJoin = 'miter'; this.miterLimit = 10;
@@ -149,7 +150,7 @@ function makeGL(canvas) {
     uniformMatrix3fv: (l, t, m) => l && call('uniformMatrix3fv', l.loc, t, buf(m instanceof Float32Array ? m : new Float32Array(m))),
     texImage2D(target, level, internal, a, b, c, d, e, f) {
       if (f === undefined) {                       // (target, level, internal, format, type, source)
-        const src = c; if (src instanceof Canvas) { const p = srcPixels(src); return call('texImage2D', target, level, internal, p.w, p.h, 0, a, b, p.data); }
+        const src = c; if (isCanvas(src)) { const p = srcPixels(src); return call('texImage2D', target, level, internal, p.w, p.h, 0, a, b, p.data); }
         if (src && src._rgba) return call('texImage2D', target, level, internal, src.width, src.height, 0, a, b, src._rgba);
         return call('texImage2D', target, level, internal, 1, 1, 0, a, b, new Uint8Array(4).buffer);   // a canvas with no 2D pixels yet
       }

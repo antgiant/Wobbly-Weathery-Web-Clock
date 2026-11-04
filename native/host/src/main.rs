@@ -13,6 +13,7 @@ use std::rc::Rc;
 use std::time::Instant;
 
 thread_local! {
+    static MAIN_PROMISE: std::cell::RefCell<Option<rquickjs::Persistent<rquickjs::Promise<'static>>>> = std::cell::RefCell::new(None);
     static GL: std::cell::RefCell<Option<Rc<gl::Gl>>> = std::cell::RefCell::new(None);
     static ROOT: std::cell::RefCell<PathBuf> = std::cell::RefCell::new(PathBuf::new());
     static DONE: std::cell::Cell<bool> = std::cell::Cell::new(false);
@@ -39,6 +40,42 @@ fn n_writeppm<'js>(ctx: Ctx<'js>, p: String, w: u32, h: u32, ab: ArrayBuffer<'js
     let mut o = format!("P6\n{w} {h}\n255\n").into_bytes();
     for y in (0..h as usize).rev() { for x in 0..w as usize { let i = (y * w as usize + x) * 4; o.extend_from_slice(&px[i..i + 3]); } }   // GL rows run bottom to top
     std::fs::write(&p, o).map_err(|e| throw(&ctx, e.to_string()))
+}
+
+// ---- time zones (the engine's Intl is not in QuickJS): offsets from the embedded tz database --------------------------------------
+fn n_tzoffset(zone: String, ms: f64) -> f64 {
+    use chrono::{Offset, TimeZone};
+    match zone.parse::<chrono_tz::Tz>() {
+        Ok(tz) => match chrono::Utc.timestamp_millis_opt(ms as i64).single() { Some(t) => tz.offset_from_utc_datetime(&t.naive_utc()).fix().local_minus_utc() as f64 / 60.0, None => f64::NAN },
+        Err(_) => f64::NAN,
+    }
+}
+fn n_tzlist() -> Vec<String> { chrono_tz::TZ_VARIANTS.iter().map(|t| t.name().to_string()).collect() }
+
+// ---- storage: the page's localStorage, kept in one JSON file -----------------------------------------------------------------
+thread_local! { static STORE: std::cell::RefCell<Option<PathBuf>> = std::cell::RefCell::new(None); }
+fn n_store_read() -> String { STORE.with(|p| p.borrow().as_ref().and_then(|p| std::fs::read_to_string(p).ok()).unwrap_or_else(|| "{}".into())) }
+fn n_store_write(json: String) { STORE.with(|p| { if let Some(p) = p.borrow().as_ref() { let tmp = p.with_extension("tmp"); if std::fs::write(&tmp, json).is_ok() { let _ = std::fs::rename(&tmp, p); } } }) }
+
+// ---- network: curl in a thread, polled from the loop (the page's fetch) --------------------------------------------------------
+type Reply = Option<(i32, Vec<u8>)>;
+thread_local! { static HTTP: std::cell::RefCell<Vec<std::sync::mpsc::Receiver<Reply>>> = std::cell::RefCell::new(Vec::new()); }
+fn n_http_start(url: String) -> usize {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let out = std::process::Command::new("curl").args(["-sS", "-L", "--max-time", "20", "-w", "\n%{http_code}", &url]).output();
+        let r = out.ok().filter(|o| o.status.success()).and_then(|o| { let b = o.stdout; let i = b.iter().rposition(|&c| c == b'\n')?; let code = std::str::from_utf8(&b[i + 1..]).ok()?.trim().parse::<i32>().ok()?; Some((code, b[..i].to_vec())) });
+        let _ = tx.send(r);
+    });
+    HTTP.with(|h| { let mut h = h.borrow_mut(); h.push(rx); h.len() - 1 })
+}
+/// undefined while pending; { status, data } (status 0 = could not connect) when done
+fn n_http_poll<'js>(ctx: Ctx<'js>, id: usize) -> Result<Value<'js>> {
+    let r = HTTP.with(|h| h.borrow().get(id).and_then(|rx| rx.try_recv().ok()));
+    match r {
+        None => Ok(Value::new_undefined(ctx.clone())),
+        Some(rep) => { let o = Object::new(ctx.clone())?; match rep { Some((c, b)) => { o.set("status", c)?; o.set("data", ArrayBuffer::new_copy(ctx.clone(), b)?)?; } None => { o.set("status", 0)?; o.set("data", ArrayBuffer::new_copy(ctx.clone(), Vec::<u8>::new())?)?; } } Ok(o.into_value()) }
+    }
 }
 
 fn n_c2d_new(w: u32, h: u32) -> usize { canvas2d::create(w, h) }
@@ -74,12 +111,14 @@ impl Loader for Load {
 }
 
 fn main() {
-    let a: Vec<String> = std::env::args().collect();
+    let mut flags: Vec<(String, String)> = vec![];
+    let a: Vec<String> = std::env::args().filter(|x| { if let Some(f) = x.strip_prefix("--") { if let Some((k, v)) = f.split_once('=') { flags.push((k.to_string(), v.to_string())); return false; } } true }).collect();
     if a.len() < 3 { eprintln!("usage: wobbly-host <repo-root> <out.ppm> [w h] [time] [state-json]"); std::process::exit(2); }
     let root = std::fs::canonicalize(&a[1]).expect("repo root");
     let out = a[2].clone();
-    let w: u32 = a.get(3).and_then(|s| s.parse().ok()).unwrap_or(480);
-    let h: u32 = a.get(4).and_then(|s| s.parse().ok()).unwrap_or(270);
+    let fl = |k: &str| flags.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
+    let w: u32 = a.get(3).and_then(|s| s.parse().ok()).or(fl("w").and_then(|v| v.parse().ok())).unwrap_or(480);
+    let h: u32 = a.get(4).and_then(|s| s.parse().ok()).or(fl("h").and_then(|v| v.parse().ok())).unwrap_or(270);
     let time = a.get(5).cloned().unwrap_or("2026-06-21T20:30:00Z".into());
     let state = a.get(6).cloned().unwrap_or("{}".into());
 
@@ -91,6 +130,7 @@ fn main() {
     rt.set_loader(Res { root: root.clone() }, Load { root: root.clone() });
     let ctx = Context::full(&rt).unwrap();
     T0.with(|t| t.set(Some(Instant::now())));
+    if let Ok(p) = std::env::var("WOBBLY_STORE") { STORE.with(|s| *s.borrow_mut() = Some(PathBuf::from(p))); }
     GL.with(|g| *g.borrow_mut() = Some(gl.clone()));
     ROOT.with(|r| *r.borrow_mut() = root.clone());
 
@@ -107,17 +147,28 @@ fn main() {
         g.set("__c2d_resize", Function::new(ctx.clone(), n_c2d_resize)).unwrap();
         g.set("__c2d_call", Function::new(ctx.clone(), n_c2d_call)).unwrap();
         g.set("__c2d_read", Function::new(ctx.clone(), n_c2d_read)).unwrap();
+        g.set("__tzoffset", Function::new(ctx.clone(), n_tzoffset)).unwrap();
+        g.set("__tzlist", Function::new(ctx.clone(), n_tzlist)).unwrap();
+        g.set("__store_read", Function::new(ctx.clone(), n_store_read)).unwrap();
+        g.set("__store_write", Function::new(ctx.clone(), n_store_write)).unwrap();
+        g.set("__http_start", Function::new(ctx.clone(), n_http_start)).unwrap();
+        g.set("__http_poll", Function::new(ctx.clone(), n_http_poll)).unwrap();
         g.set("__done", Function::new(ctx.clone(), || DONE.with(|d| d.set(true)))).unwrap();
         g.set("__root", root.to_string_lossy().to_string()).unwrap();
         let args = Object::new(ctx.clone()).unwrap();
         args.set("w", w).unwrap(); args.set("h", h).unwrap(); args.set("out", out.clone()).unwrap(); args.set("time", time.clone()).unwrap(); args.set("state", state.clone()).unwrap();
+        for (k, v) in &flags { match v.parse::<f64>() { Ok(n) if !v.is_empty() && !k.ends_with("search") && k != "time" && k != "state" && k != "tz" => { args.set(k.as_str(), n).unwrap(); } _ => { args.set(k.as_str(), v.as_str()).unwrap(); } } }
         g.set("__args", args).unwrap();
         eprintln!("GL: {} / {}", gl.version(), (|| { let v = gl.call(&ctx, "getString", &[Value::new_int(ctx.clone(), 0x1F01)]).ok().and_then(|v| v.as_string().and_then(|s| s.to_string().ok())); v.unwrap_or_default() })());
 
         let host = std::fs::read_to_string(root.join("native/host/js/host.js")).expect("host.js");
         if let Err(e) = ctx.eval::<(), _>(host) { eprintln!("host.js: {}", describe(&ctx, e)); std::process::exit(1); }
-        let spike = std::fs::read_to_string(std::env::var("WOBBLY_SCRIPT").map(PathBuf::from).unwrap_or_else(|_| root.join("native/host/js/spike.js"))).expect("spike.js");
-        match Module::evaluate(ctx.clone(), "spike", spike) { Ok(p) => { let _ = p; } Err(e) => { eprintln!("spike: {}", describe(&ctx, e)); std::process::exit(1); } }
+        let script_path = std::env::var("WOBBLY_SCRIPT").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("native/host/js/spike.js"));
+        let full = if script_path.is_absolute() { script_path.clone() } else if root.join(&script_path).exists() { root.join(&script_path) } else { std::env::current_dir().unwrap().join(&script_path) };
+        let spike = std::fs::read_to_string(&full).unwrap_or_else(|e| { eprintln!("{}: {e}", full.display()); std::process::exit(1) });
+        let full = std::fs::canonicalize(&full).unwrap_or(full);
+        let mod_name = full.strip_prefix(&root).map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| "script.js".into());
+        match Module::evaluate(ctx.clone(), mod_name, spike) { Ok(p) => { MAIN_PROMISE.with(|m| *m.borrow_mut() = Some(rquickjs::Persistent::save(&ctx, p))); } Err(e) => { eprintln!("script: {}", describe(&ctx, e)); std::process::exit(1); } }
     });
 
     // run promise jobs and timers until the script says it is done
@@ -125,10 +176,13 @@ fn main() {
     while !DONE.with(|d| d.get()) {
         loop { match rt.execute_pending_job() { Ok(true) => {}, Ok(false) => break, Err(e) => { ctx.with(|c| eprintln!("job error: {}", describe(&c, rquickjs::Error::Exception)));  let _ = e; std::process::exit(1) } } }
         ctx.with(|c| { let _ = c.globals().get::<_, Function>("__pump").and_then(|f| f.call::<_, ()>(())); });
+        let failed = ctx.with(|c| MAIN_PROMISE.with(|m| { let p = m.borrow().clone()?; let p = p.restore(&c).ok()?; match p.result::<Value>() { Some(Err(e)) => Some(describe(&c, e)), _ => None } }));
+        if let Some(e) = failed { eprintln!("script failed: {e}"); std::process::exit(1); }
         if started.elapsed().as_secs() > 120 { eprintln!("timeout"); std::process::exit(1); }
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
     eprintln!("rendered {w}x{h} to {out} in {:.1}s", started.elapsed().as_secs_f64());
+    std::process::exit(0);   // (skips freeing the JS heap: the page's objects reference each other)
 }
 
 fn describe(ctx: &Ctx<'_>, e: rquickjs::Error) -> String {
