@@ -41,8 +41,13 @@ fn dist_to_segment(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
 /// Add the digit to `cov`: digit space is scaled by `scale` and moved by (`x0`, `y0`) pixels; the stroke is `STROKE * scale` wide.
 /// Edges are anti-aliased over one pixel. Coverage of overlapping strokes is the larger of the two, never more than 1.
 pub fn draw_digit(cov: &mut Coverage, d: &[f64; POINTS], x0: f64, y0: f64, scale: f64) {
+    draw_digit_stroked(cov, d, x0, y0, scale, STROKE);
+}
+
+/// The same with a chosen stroke width in digit space (a halo is the digit drawn wider).
+pub fn draw_digit_stroked(cov: &mut Coverage, d: &[f64; POINTS], x0: f64, y0: f64, scale: f64, stroke: f64) {
     let pts: Vec<(f64, f64)> = flatten(d, 24).into_iter().map(|(x, y)| (x0 + x * scale, y0 + y * scale)).collect();
-    let half = STROKE * scale / 2.0;
+    let half = stroke * scale / 2.0;
     // Each short segment only touches the pixels near it, so loop over its own box, not the whole digit's: the coverage at a pixel is the
     // largest over the segments, which is the same as using the nearest one.
     for w in pts.windows(2) {

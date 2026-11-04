@@ -3,7 +3,7 @@
 
 use crate::digits::STROKE;
 use crate::morph::digit;
-use crate::raster::{draw_digit, Coverage};
+use crate::raster::{draw_digit_stroked, Coverage};
 
 pub type Rgb = [u8; 3];
 
@@ -27,17 +27,20 @@ pub fn fit(text: &str, w: usize, h: usize, fill: f64) -> (f64, f64, f64) {
 }
 
 /// Draw the time into a coverage buffer.
-pub fn draw_text(text: &str, w: usize, h: usize, fill: f64) -> Coverage {
+pub fn draw_text(text: &str, w: usize, h: usize, fill: f64) -> Coverage { draw_text_stroked(text, w, h, fill, STROKE) }
+
+/// The same with a wider (or narrower) stroke, in digit space: a halo behind the time is the time drawn wider.
+pub fn draw_text_stroked(text: &str, w: usize, h: usize, fill: f64, stroke: f64) -> Coverage {
     let mut cov = Coverage::new(w, h);
     let (scale, left, top) = fit(text, w, h, fill);
     let mut x = left;
     for p in pieces(text) {
         match p {
-            Some(d) => { draw_digit(&mut cov, digit(d), x - 20.0 * scale + 10.0 * scale, top, scale); x += DIGIT_W * scale; }
+            Some(d) => { draw_digit_stroked(&mut cov, digit(d), x - 20.0 * scale + 10.0 * scale, top, scale, stroke); x += DIGIT_W * scale; }
             None => {
                 // two round dots, STROKE wide, level with the upper and lower thirds of the digits
                 for cy in [190.0, 350.0] {
-                    let (cx, r) = (x + COLON_W * scale / 2.0, STROKE * scale / 2.0);
+                    let (cx, r) = (x + COLON_W * scale / 2.0, stroke * scale / 2.0);
                     let (px, py) = (cx, top + cy * scale);
                     for yy in (py - r - 1.0).floor().max(0.0) as usize..((py + r + 1.0).ceil() as usize).min(h) {
                         for xx in (px - r - 1.0).floor().max(0.0) as usize..((px + r + 1.0).ceil() as usize).min(w) {
