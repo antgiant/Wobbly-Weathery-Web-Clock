@@ -106,6 +106,12 @@ class Ctx2D {
   fillText() {} strokeText() {} clip() {} setLineDash() {}
 }
 
+// ---- --profile: where the CPU time goes besides drawing (the 2D canvas natives are timed here; the engine's calls in boot.js) ----
+G.__pt = {};
+if (G.__args && G.__args.profile) {
+  for (const k of ['__c2d_call', '__c2d_read']) { const f = G[k]; G[k] = (...a) => { const t = __now(); const r = f(...a); G.__pt['2D canvas (tiny-skia)'] = (G.__pt['2D canvas (tiny-skia)'] || 0) + __now() - t; return r; }; }
+}
+
 // ---- WebGL2 over the native dispatcher -----------------------------------------------------------------------------
 const C = { DEPTH_BUFFER_BIT: 0x100, COLOR_BUFFER_BIT: 0x4000, POINTS: 0, TRIANGLES: 4, ZERO: 0, ONE: 1, SRC_ALPHA: 0x302, ONE_MINUS_SRC_ALPHA: 0x303, DST_ALPHA: 0x304, BLEND: 0xBE2,
   TEXTURE_2D: 0xDE1, UNSIGNED_BYTE: 0x1401, FLOAT: 0x1406, HALF_FLOAT: 0x140B, RGBA: 0x1908, RGBA8: 0x8058, RGBA16F: 0x881A,
@@ -183,7 +189,7 @@ function makeGL(canvas) {
     for (const k of ['drawArrays', 'drawArraysInstanced', 'generateMipmap', 'texImage2D', 'readPixels', 'blitFramebuffer']) {
       const f = gl[k]; gl[k] = (...a) => { const t = __now(); const r = f(...a); call('finish'); const d = __now() - t; const key = k + (k.startsWith('draw') ? ' prog' + cur + ' (' + (names[cur] || []).join('+') + ' chars)' : ''); const e = (prof[key] ||= { n: 0, ms: 0 }); e.n++; e.ms += d; return r; };
     }
-    G.__profDump = () => { const rows = Object.entries(prof).sort((a, b) => b[1].ms - a[1].ms).slice(0, 14); __print('--- GL time by call (ms, count) ---'); rows.forEach(([k, v]) => __print(String(Math.round(v.ms)).padStart(8) + '  x' + String(v.n).padEnd(5) + k)); for (const k in prof) delete prof[k]; };
+    G.__profDump = () => { const pt = G.__pt; __print('--- CPU time besides drawing, this frame ---'); for (const k in pt) { __print(String(Math.round(pt[k])).padStart(8) + '  ' + k); delete pt[k]; }; const rows = Object.entries(prof).sort((a, b) => b[1].ms - a[1].ms).slice(0, 14); __print('--- GL time by call (ms, count) ---'); rows.forEach(([k, v]) => __print(String(Math.round(v.ms)).padStart(8) + '  x' + String(v.n).padEnd(5) + k)); for (const k in prof) delete prof[k]; };
   }
   return gl;
 }

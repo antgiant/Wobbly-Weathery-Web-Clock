@@ -140,7 +140,8 @@ for (const [name, src] of Object.entries(sources).filter(([k, v]) => k.startsWit
 
 out('');
 out('--- instancing and vertex arrays (the plants, and the engine\'s vertex-array use) ---');
-for (const n of ['glDrawArraysInstancedEXT', 'glDrawArraysInstancedANGLE', 'glVertexAttribDivisorEXT', 'glVertexAttribDivisorANGLE', 'glGenVertexArraysOES', 'glBindVertexArrayOES']) out(n.padEnd(34) + (g('hasProc', n) ? 'available' : 'NO'));
+out('EXT_instanced_arrays / ANGLE_instanced_arrays: ' + (has('EXT_instanced_arrays') || has('ANGLE_instanced_arrays') ? 'yes' : 'NO (the driver lists no such extension; its function names exist but are empty stubs)'));
+out('OES_vertex_array_object: ' + (has('OES_vertex_array_object') ? 'yes' : 'NO'));
 
 out('');
 out('=== summary (copy everything above, plus these lines) ===');
