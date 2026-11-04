@@ -211,3 +211,13 @@ Not done:
 - (Done 2026-11-04) the city index: a place from the built-in list travels as its number in a version 3 link, with its time zone.
 - A QR code for links over about 210 characters (version 10 is the largest the encoder makes; use the short link).
 
+
+## Native: one engine, two hosts (in progress)
+
+Decision: the web page and the Pi share ONE renderer, the JavaScript + GLSL under `js/sky/`. The browser is one host; `native/host` (Rust, QuickJS, EGL/OpenGL ES) is the other. The Rust re-implementation in `native/core` is to be retired once the host covers everything it does.
+
+- [x] Spike: the host runs the unmodified `SkyEngine` and renders a frame. Compared with Chromium at the same moment (`native/host/tests/chromium-frame.mjs`, `ppm-diff.mjs`): sky, sun, horizon and haze match; the ground differs because the ground texture comes from a 2D canvas the host does not draw yet.
+- [ ] 2D canvas subset (Cairo) for `biome.js`, `appearance.js`, `glass.js`, `ledcard.js`; a DOM-free layout for the digits shared by both hosts.
+- [ ] Outputs: KMS/GBM direct display; LED panel via readback into `wobbly-matrix`.
+- [ ] OpenGL ES 2.0 shader profile (Pi 3); Pi Zero after that.
+- [ ] Retire `native/core`; keep matrix mapping, packaging, update script, CLI and man pages.
