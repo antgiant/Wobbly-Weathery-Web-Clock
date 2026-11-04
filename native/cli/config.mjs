@@ -65,6 +65,7 @@ export function applyLink(config, link) {
   const setup = fromSearch(q);
   if (!setup) throw new Error('that is not a link this version understands');
   const out = { ...config, ...setup.settings, kiosk: !!setup.kiosk };
+  if (setup.timeZone) out.timeZone = setup.timeZone;                 // a link made for a sign in another city carries that city's time zone
   if (setup.place) { out.manualLocation = true; out.location_latitude = setup.place.lat; out.location_longitude = setup.place.lon; }
   return out;
 }

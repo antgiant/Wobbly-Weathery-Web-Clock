@@ -55,6 +55,7 @@ function sharedBanner() {
     const keep = { ...stored, ...shared.settings, confVersion: Math.max(stored.confVersion || 0, CONF_VERSION) };
     if (shared.place) Object.assign(keep, { manualLocation: true, locationChoice: 'manual', location_latitude: shared.place.lat, location_longitude: shared.place.lon });
     if (shared.timeZone) keep.timeZone = shared.timeZone;
+    if (shared.placeName) keep.location_name = shared.placeName;
     try { localStorage.setItem('conf', JSON.stringify(keep)); } catch (_) { toast('Could not save here'); return; }
     location.replace(location.pathname);                      // the plain address: now it is this device's own setup
   });

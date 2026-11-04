@@ -42,7 +42,7 @@ share="$pkg/usr/share/wobbly-clock"
 install -d "$share/native/cli" "$share/schema" "$share/js"
 cp "$root"/native/cli/*.mjs "$share/native/cli/"
 cp "$root/schema/settings.js" "$root/schema/presets.js" "$root/schema/settings.json" "$share/schema/"
-cp "$root/js/share.js" "$share/js/"
+cp "$root/js/share.js" "$root/js/cities.js" "$share/js/"
 printf '{ "type": "module" }\n' > "$share/package.json"
 cat > "$pkg/usr/bin/wobbly-clock" <<'WRAP'
 #!/bin/sh

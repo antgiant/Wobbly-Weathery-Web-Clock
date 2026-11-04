@@ -208,7 +208,6 @@ the built-in city list (`js/cities.js`, works offline), a QR code (`js/qr.js`), 
 readable links, "Use this setup / Just look", the time at another place (`timeZone`), and kiosk updates in the quiet hour (`js/quiet.js`).
 Not done:
 
-- **A city index inside the link** (2 characters instead of two numbers): needs a frozen city list and a new link version; the built-in list
-  exists now, but its order is not frozen. Only worth it if links must be shorter than about 25 characters with a place.
+- (Done 2026-11-04) the city index: a place from the built-in list travels as its number in a version 3 link, with its time zone.
 - A QR code for links over about 210 characters (version 10 is the largest the encoder makes; use the short link).
 

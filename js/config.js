@@ -26,6 +26,7 @@ function createPersistentConfig(key, initialValue = {}, shared = null) {
     // anyone's own settings, and a sign that has nothing stored comes up exactly as the link says.
     data = { ...initialValue, ...shared.settings, kiosk: shared.kiosk, confVersion: 99, locationChoice: shared.place ? 'manual' : 'estimated', manualLocation: !!shared.place, preciseLocation: false, timeZone: shared.timeZone || '' };
     if (shared.place) { data.location_latitude = shared.place.lat; data.location_longitude = shared.place.lon; }
+    if (shared.placeName) data.location_name = shared.placeName;
     if (shared.kiosk) data.viewMode = 'fixed';                      // nobody can drag a sign
     return new Proxy(data, { set(target, property, value) { target[property] = value; return true; }, deleteProperty(target, property) { delete target[property]; return true; } });
   }
