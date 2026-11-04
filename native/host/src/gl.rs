@@ -135,6 +135,26 @@ impl Gl {
                 gl!(self, "glGetBufferSubData", (u32, isize, isize, *mut c_void), u(0), n(1) as isize, len as isize, out.as_mut_ptr() as *mut c_void);
                 Ok(ArrayBuffer::new_copy(ctx.clone(), out)?.into_value())
             }
+            "getIntegerv" => {   // (pname, count) -> "a,b,..."
+                let mut v = [0i32; 4]; gl!(self, "glGetIntegerv", (u32, *mut i32), u(0), v.as_mut_ptr());
+                let n = (a.get(1).map(num).unwrap_or(1.0) as usize).clamp(1, 4);
+                let t = v[..n].iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",");
+                Ok(rquickjs::String::from_str(ctx.clone(), &t)?.into_value())
+            }
+            "getShaderPrecisionFormat" => {
+                let (mut r, mut p) = ([0i32; 2], 0i32);
+                gl!(self, "glGetShaderPrecisionFormat", (u32, u32, *mut i32, *mut i32), u(0), u(1), r.as_mut_ptr(), &mut p);
+                Ok(rquickjs::String::from_str(ctx.clone(), &format!("{},{},{}", r[0], r[1], p))?.into_value())
+            }
+            "getAttribLocation" => {
+                let nm = a.get(1).and_then(|v| v.as_string()).and_then(|s| s.to_string().ok()).unwrap_or_default();
+                let c = CString::new(nm).unwrap_or_default(); ret(gl!(self, "glGetAttribLocation", (u32, *const c_char) -> i32, u(0), c.as_ptr()) as f64)
+            }
+            "deleteProgram" => { gl!(self, "glDeleteProgram", (u32), u(0)); undef() }
+            "deleteShader" => { gl!(self, "glDeleteShader", (u32), u(0)); undef() }
+            "clearColor" => { gl!(self, "glClearColor", (f32, f32, f32, f32), f(0), f(1), f(2), f(3)); undef() }
+            "clear" => { gl!(self, "glClear", (u32), u(0)); undef() }
+            "hasProc" => { let nm = a.get(0).and_then(|v| v.as_string()).and_then(|s| s.to_string().ok()).unwrap_or_default(); ret(if self.egl.proc_address(&nm).is_null() { 0.0 } else { 1.0 }) }
             "getError" => ret(gl!(self, "glGetError", () -> u32,) as f64),
             "getString" => {
                 let p = gl!(self, "glGetString", (u32) -> *const c_char, u(0));

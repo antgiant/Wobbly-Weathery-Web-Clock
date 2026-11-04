@@ -67,3 +67,16 @@ from `native/matrix-sink/` against hzeller's library (instructions in that folde
 ## What to send back
 For each Pi: the model and OS (`cat /proc/device-tree/model; dpkg --print-architecture`), the `GL:` line, the seconds per frame from step 3, and anything that went wrong
 (the exact message). That tells me whether the CPU path is good enough or the GPU (OpenGL ES 2) version of the shaders is worth writing.
+
+## The GPU test (Pi Zero, 1, 3: the OpenGL ES 2 GPUs)
+`wobbly-clock-run --gpu-test` probes the Pi's GPU on the OpenGL ES 2 path and prints what it can do: the driver, its limits and extensions, which render targets work
+(8-bit, half float, float), how big a shader it will compile (loops of 8 to 512 steps, 4 to 128 texture reads), how fast it draws (milliseconds per pass at two sizes),
+how precisely brightness survives being packed into 8 bits, whether the engine's real shaders translate to ES 2 and which ES 3-only features block them, and whether
+instancing and vertex arrays exist. Run it with the output kept in a file:
+
+```
+wobbly-clock-run --gpu-test 2>&1 | tee ~/gputest.txt
+```
+
+If the output starts with `!!! THIS IS THE CPU RENDERER`, the GPU driver is not in use: add `dtoverlay=vc4-kms-v3d` to `/boot/config.txt` (or `/boot/firmware/config.txt`),
+reboot, check `ls -l /dev/dri`, and try again (also with `sudo`). Send back `~/gputest.txt` whole.
