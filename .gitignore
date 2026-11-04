@@ -2,3 +2,4 @@ node_modules/
 test-results/
 tests/visual/__actual__/
 .DS_Store
+*.whl
