@@ -4,6 +4,7 @@
 mod canvas2d;
 mod egl;
 mod gl;
+mod out;
 
 use rquickjs::loader::{Loader, Resolver};
 use rquickjs::{ArrayBuffer, Context, Ctx, Function, Module, Object, Result, Runtime, Value};
@@ -12,7 +13,19 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Instant;
 
+/// The host's own JavaScript is part of the program (WOBBLY_HOST_JS=dir uses files from a folder instead, for working on them).
+const EMBED: &[(&str, &str)] = &[
+    ("host/host.js", include_str!("../js/host.js")), ("host/dom.js", include_str!("../js/dom.js")),
+    ("host/polyfills.js", include_str!("../js/polyfills.js")), ("host/boot.js", include_str!("../js/boot.js")),
+];
+fn embedded(name: &str) -> Option<String> {
+    let (n, _) = EMBED.iter().find(|(k, _)| *k == name)?.clone();
+    if let Ok(d) = std::env::var("WOBBLY_HOST_JS") { if let Ok(t) = std::fs::read_to_string(Path::new(&d).join(n.trim_start_matches("host/"))) { return Some(t); } }
+    EMBED.iter().find(|(k, _)| *k == name).map(|(_, v)| v.to_string())
+}
+
 thread_local! {
+    static OUT: std::cell::RefCell<Option<out::Out>> = std::cell::RefCell::new(None);
     static MAIN_PROMISE: std::cell::RefCell<Option<rquickjs::Persistent<rquickjs::Promise<'static>>>> = std::cell::RefCell::new(None);
     static GL: std::cell::RefCell<Option<Rc<gl::Gl>>> = std::cell::RefCell::new(None);
     static ROOT: std::cell::RefCell<PathBuf> = std::cell::RefCell::new(PathBuf::new());
@@ -78,6 +91,12 @@ fn n_http_poll<'js>(ctx: Ctx<'js>, id: usize) -> Result<Value<'js>> {
     }
 }
 
+/// The page hands over a finished frame: RGBA from glReadPixels (bottom row first) and the brightness level.
+fn n_present<'js>(ctx: Ctx<'js>, w: usize, h: usize, ab: ArrayBuffer<'js>, level: f64) -> Result<()> {
+    let px = ab.as_bytes().ok_or_else(|| throw(&ctx, "no bytes".into()))?;
+    OUT.with(|o| match o.borrow_mut().as_mut() { Some(out) => out.present(w, h, px, level).map_err(|e| throw(&ctx, e)), None => Ok(()) })
+}
+
 fn n_c2d_new(w: u32, h: u32) -> usize { canvas2d::create(w, h) }
 fn n_c2d_resize(id: usize, w: u32, h: u32) { canvas2d::resize(id, w, h) }
 fn n_c2d_call<'js>(id: usize, op: String, arg: String, buf: Option<ArrayBuffer<'js>>) -> Result<()> {
@@ -99,28 +118,72 @@ impl Resolver for Res {
             match part.as_os_str().to_str().unwrap_or("") { "." => {}, ".." => { out.pop(); }, s => out.push(s.to_string()) }
         }
         let rel = out.join("/");
-        if self.root.join(&rel).exists() { Ok(rel) } else { Err(rquickjs::Error::new_resolving(base, name)) }
+        if embedded(&rel).is_some() || self.root.join(&rel).exists() { Ok(rel) } else { Err(rquickjs::Error::new_resolving(base, name)) }
     }
 }
 struct Load { root: PathBuf }
 impl Loader for Load {
     fn load<'js>(&mut self, ctx: &Ctx<'js>, name: &str) -> Result<Module<'js, rquickjs::module::Declared>> {
-        let src = std::fs::read_to_string(self.root.join(name)).map_err(|_| rquickjs::Error::new_loading(name))?;
+        let src = match embedded(name) { Some(t) => t, None => std::fs::read_to_string(self.root.join(name)).map_err(|_| rquickjs::Error::new_loading(name))? };
         Module::declare(ctx.clone(), name, src)
     }
 }
 
+fn usage() -> ! {
+    eprintln!("wobbly-clock-run: shows the clock (the web page's own code, run without a browser)\n\
+usage: wobbly-clock-run [--config FILE] [--web DIR] [--sink fb[:DEV]|ppm:DIR|matrix] [--size WxH] [--frames N] [--at EPOCH_MS]\n\
+  --config FILE   the settings file (default /etc/wobbly-clock/wobbly-clock.conf)\n\
+  --web DIR       the page's files (default $WOBBLY_WEB, /usr/share/wobbly-clock/web, or the current folder)\n\
+  --sink          where frames go (default: the config's output: hdmi = fb, matrix = the LED panel)\n\
+  --size WxH      the picture size for the ppm sink; --frames N stop after N frames; --at EPOCH_MS pretend it is this moment\n\
+tests: wobbly-clock-run <repo-root> <out.ppm> [--app] [--w=N --h=N --search=... --conf=JSON ...]");
+    std::process::exit(2)
+}
+
 fn main() {
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    if argv.iter().any(|x| x == "--help" || x == "-h") { usage(); }
+    if argv.iter().any(|x| x == "--version" || x == "-V") { println!("wobbly-clock-run {}", env!("CARGO_PKG_VERSION")); return; }
+    let legacy = argv.first().map_or(false, |x| !x.starts_with('-'));
     let mut flags: Vec<(String, String)> = vec![];
-    let a: Vec<String> = std::env::args().filter(|x| { if let Some(f) = x.strip_prefix("--") { if let Some((k, v)) = f.split_once('=') { flags.push((k.to_string(), v.to_string())); return false; } } true }).collect();
-    if a.len() < 3 { eprintln!("usage: wobbly-host <repo-root> <out.ppm> [w h] [time] [state-json]"); std::process::exit(2); }
-    let root = std::fs::canonicalize(&a[1]).expect("repo root");
-    let out = a[2].clone();
+    let mut pos: Vec<String> = vec![];
+    let mut i = 0;
+    while i < argv.len() {
+        let x = &argv[i];
+        if let Some(f) = x.strip_prefix("--") {
+            if let Some((k, v)) = f.split_once('=') { flags.push((k.to_string(), v.to_string())); }
+            else if !legacy && i + 1 < argv.len() && !argv[i + 1].starts_with("--") && f != "app" { flags.push((f.to_string(), argv[i + 1].clone())); i += 1; }
+            else { flags.push((f.to_string(), "1".into())); }
+        } else { pos.push(x.clone()); }
+        i += 1;
+    }
     let fl = |k: &str| flags.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
-    let w: u32 = a.get(3).and_then(|s| s.parse().ok()).or(fl("w").and_then(|v| v.parse().ok())).unwrap_or(480);
-    let h: u32 = a.get(4).and_then(|s| s.parse().ok()).or(fl("h").and_then(|v| v.parse().ok())).unwrap_or(270);
+    let run_mode = !legacy;
+    let a: Vec<String> = std::iter::once("wobbly".to_string()).chain(pos.into_iter()).collect();
+    if legacy && a.len() < 3 { usage(); }
+    let (root, out_path): (PathBuf, String) = if legacy {
+        (std::fs::canonicalize(&a[1]).expect("repo root"), a[2].clone())
+    } else {
+        let web = fl("web").or_else(|| std::env::var("WOBBLY_WEB").ok()).or_else(|| Path::new("/usr/share/wobbly-clock/web").join("index.html").exists().then(|| "/usr/share/wobbly-clock/web".to_string())).unwrap_or_else(|| ".".into());
+        (std::fs::canonicalize(&web).unwrap_or_else(|e| { eprintln!("wobbly-clock-run: the page's files are not at {web}: {e}"); std::process::exit(1) }), String::new())
+    };
+    let mut w: u32 = a.get(3).and_then(|s| s.parse().ok()).or(fl("w").and_then(|v| v.parse().ok())).unwrap_or(480);
+    let mut h: u32 = a.get(4).and_then(|s| s.parse().ok()).or(fl("h").and_then(|v| v.parse().ok())).unwrap_or(270);
     let time = a.get(5).cloned().unwrap_or("2026-06-21T20:30:00Z".into());
     let state = a.get(6).cloned().unwrap_or("{}".into());
+    // run mode: the settings file and the output
+    let mut cfg_text = String::new();
+    let mut led: Option<(usize, usize)> = None;
+    if run_mode {
+        let cp = fl("config").unwrap_or_else(|| "/etc/wobbly-clock/wobbly-clock.conf".into());
+        cfg_text = std::fs::read_to_string(&cp).unwrap_or_default();       // no file: the defaults (the setup command writes one)
+        let size = fl("size").and_then(|s| s.split_once('x').map(|(a, b)| (a.parse().unwrap_or(480), b.parse().unwrap_or(270)))).unwrap_or((480usize, 270usize));
+        let (o, ow, oh) = out::Out::open(fl("sink").as_deref(), &cfg_text, size).unwrap_or_else(|e| { eprintln!("wobbly-clock-run: {e}"); std::process::exit(1) });
+        OUT.with(|x| *x.borrow_mut() = Some(o));
+        w = ow as u32; h = oh as u32;
+        if let Some(out::Kind::Matrix { layout, cell, .. }) = OUT.with(|x| x.borrow().as_ref().map(|o| match &o.kind { out::Kind::Matrix { layout, cell, .. } => out::Kind::Matrix { layout: layout.clone(), panel: None, dir: None, table: [0; 256], cell: *cell }, _ => out::Kind::Ppm { dir: String::new() } })) { led = Some((layout.display_width, layout.display_height)); let _ = cell; }
+        for e in &OUT.with(|x| x.borrow().as_ref().map(|o| o.cfg.errors.clone()).unwrap_or_default()) { eprintln!("wobbly-clock-run: {e}"); }
+    }
 
     let egl = egl::Egl::open(3).unwrap_or_else(|e| { eprintln!("{e}"); std::process::exit(1) });
     let gl = Rc::new(gl::Gl::new(egl));
@@ -153,21 +216,27 @@ fn main() {
         g.set("__store_write", Function::new(ctx.clone(), n_store_write)).unwrap();
         g.set("__http_start", Function::new(ctx.clone(), n_http_start)).unwrap();
         g.set("__http_poll", Function::new(ctx.clone(), n_http_poll)).unwrap();
+        g.set("__present", Function::new(ctx.clone(), n_present)).unwrap();
         g.set("__done", Function::new(ctx.clone(), || DONE.with(|d| d.set(true)))).unwrap();
         g.set("__root", root.to_string_lossy().to_string()).unwrap();
         let args = Object::new(ctx.clone()).unwrap();
-        args.set("w", w).unwrap(); args.set("h", h).unwrap(); args.set("out", out.clone()).unwrap(); args.set("time", time.clone()).unwrap(); args.set("state", state.clone()).unwrap();
+        args.set("w", w).unwrap(); args.set("h", h).unwrap(); args.set("out", out_path.clone()).unwrap(); args.set("time", time.clone()).unwrap(); args.set("state", state.clone()).unwrap();
         for (k, v) in &flags { match v.parse::<f64>() { Ok(n) if !v.is_empty() && !k.ends_with("search") && k != "time" && k != "state" && k != "tz" => { args.set(k.as_str(), n).unwrap(); } _ => { args.set(k.as_str(), v.as_str()).unwrap(); } } }
+        if let Some((c, r)) = led { args.set("ledCols", c).unwrap(); args.set("ledRows", r).unwrap(); }
+        if run_mode { args.set("app", 1).unwrap(); args.set("config", cfg_text.clone()).unwrap(); args.set("present", 1).unwrap(); }
+        if fl("app").is_some() { args.set("app", 1).unwrap(); }
         g.set("__args", args).unwrap();
         eprintln!("GL: {} / {}", gl.version(), (|| { let v = gl.call(&ctx, "getString", &[Value::new_int(ctx.clone(), 0x1F01)]).ok().and_then(|v| v.as_string().and_then(|s| s.to_string().ok())); v.unwrap_or_default() })());
 
-        let host = std::fs::read_to_string(root.join("native/host/js/host.js")).expect("host.js");
+        let host = embedded("host/host.js").expect("host.js");
         if let Err(e) = ctx.eval::<(), _>(host) { eprintln!("host.js: {}", describe(&ctx, e)); std::process::exit(1); }
-        let script_path = std::env::var("WOBBLY_SCRIPT").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("native/host/js/spike.js"));
-        let full = if script_path.is_absolute() { script_path.clone() } else if root.join(&script_path).exists() { root.join(&script_path) } else { std::env::current_dir().unwrap().join(&script_path) };
-        let spike = std::fs::read_to_string(&full).unwrap_or_else(|e| { eprintln!("{}: {e}", full.display()); std::process::exit(1) });
-        let full = std::fs::canonicalize(&full).unwrap_or(full);
-        let mod_name = full.strip_prefix(&root).map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| "script.js".into());
+        let (mod_name, spike) = if run_mode || fl("app").is_some() { ("host/boot.js".to_string(), embedded("host/boot.js").unwrap()) } else {
+            let script_path = std::env::var("WOBBLY_SCRIPT").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("native/host/js/spike.js"));
+            let full = if script_path.is_absolute() { script_path.clone() } else if root.join(&script_path).exists() { root.join(&script_path) } else { std::env::current_dir().unwrap().join(&script_path) };
+            let src = std::fs::read_to_string(&full).unwrap_or_else(|e| { eprintln!("{}: {e}", full.display()); std::process::exit(1) });
+            let full = std::fs::canonicalize(&full).unwrap_or(full);
+            (full.strip_prefix(&root).map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| "script.js".into()), src)
+        };
         match Module::evaluate(ctx.clone(), mod_name, spike) { Ok(p) => { MAIN_PROMISE.with(|m| *m.borrow_mut() = Some(rquickjs::Persistent::save(&ctx, p))); } Err(e) => { eprintln!("script: {}", describe(&ctx, e)); std::process::exit(1); } }
     });
 
@@ -178,10 +247,11 @@ fn main() {
         ctx.with(|c| { let _ = c.globals().get::<_, Function>("__pump").and_then(|f| f.call::<_, ()>(())); });
         let failed = ctx.with(|c| MAIN_PROMISE.with(|m| { let p = m.borrow().clone()?; let p = p.restore(&c).ok()?; match p.result::<Value>() { Some(Err(e)) => Some(describe(&c, e)), _ => None } }));
         if let Some(e) = failed { eprintln!("script failed: {e}"); std::process::exit(1); }
-        if started.elapsed().as_secs() > 120 { eprintln!("timeout"); std::process::exit(1); }
+        if !run_mode && started.elapsed().as_secs() > 120 { eprintln!("timeout"); std::process::exit(1); }
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
-    eprintln!("rendered {w}x{h} to {out} in {:.1}s", started.elapsed().as_secs_f64());
+    OUT.with(|o| if let Some(x) = o.borrow_mut().take() { x.finish(); });
+    if !run_mode { eprintln!("rendered {w}x{h} to {out_path} in {:.1}s", started.elapsed().as_secs_f64()); }
     std::process::exit(0);   // (skips freeing the JS heap: the page's objects reference each other)
 }
 

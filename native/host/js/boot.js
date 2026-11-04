@@ -2,7 +2,8 @@
 // js/index.js (the page's entry) is imported, and the frames are drawn by the same sky engine into an OpenGL ES framebuffer.
 import './polyfills.js';
 import { parseDocument, Element, Evt, EventTarget_, Node_, Text, Doc, setLayoutHook, setCanvasFactory, computedStyle, rect } from './dom.js';
-import { layoutClock } from '../../../js/clocklayout.js';
+import { layoutClock } from 'js/clocklayout.js';
+import { SETTINGS } from 'schema/settings.js';
 
 const G = globalThis, A = __args, W = A.w, H = A.h;
 
@@ -32,7 +33,9 @@ G.screen = { width: W, height: H, availWidth: W, availHeight: H, colorDepth: 24,
 G.matchMedia = (q) => ({ media: q, matches: /prefers-reduced-motion:\s*no-preference|orientation:\s*landscape/.test(q) && !/reduce/.test(q) ? true : false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null });
 G.history = { state: null, length: 1, replaceState() {}, pushState() {}, back() {}, forward() {}, go() {} };
 G.navigator = { onLine: true, language: 'en-US', languages: ['en-US'], userAgent: 'wobbly-host (Linux)', platform: 'Linux', hardwareConcurrency: 4, maxTouchPoints: 0, cookieEnabled: false, standalone: false, vibrate() { return false; } };
-const search = A.search ? (A.search[0] === '?' ? A.search : '?' + A.search) : '';
+let searchText = A.search || '';
+if (A.at) { const q = new URLSearchParams(searchText); q.set('t', new Date(A.at).toISOString()); q.set('speed', '1'); searchText = q.toString(); }     // --at: pretend it is this moment (and let time run on)
+const search = searchText ? (searchText[0] === '?' ? searchText : '?' + searchText) : '';
 G.location = { search, hash: '', href: doc.baseURI + search, origin: 'file://', protocol: 'file:', host: '', hostname: '', pathname: '/index.html', reload() {}, assign() {}, replace() {} };
 
 // ---- localStorage: one JSON file ----
@@ -44,6 +47,22 @@ G.location = { search, hash: '', href: doc.baseURI + search, origin: 'file://', 
 }
 
 if (A.conf) localStorage.setItem('conf', String(A.conf));
+if (A.config !== undefined && A.config !== '' || A.present) {
+  // the settings file (`key = value`, the page's own names) becomes the page's saved settings, coerced by the schema's types
+  const specs = Object.fromEntries(SETTINGS.map((x) => [x.key, x]));
+  const conf = JSON.parse(localStorage.getItem('conf') || '{}');
+  for (const raw of String(A.config || '').split('\n')) {
+    const line = raw.replace(/#.*/, '').trim(); const i = line.indexOf('='); if (i < 1) continue;
+    const k = line.slice(0, i).trim(), v = line.slice(i + 1).trim(), sp = specs[k];
+    if (/^(on|true|yes|1)$/i.test(v) && (!sp || sp.type === 'bool')) conf[k] = true;
+    else if (/^(off|false|no|0)$/i.test(v) && (!sp || sp.type === 'bool')) conf[k] = false;
+    else if (sp && sp.type === 'number' || (!sp && v !== '' && !Number.isNaN(Number(v)))) conf[k] = Number(v);
+    else conf[k] = v;
+  }
+  if ('location_latitude' in conf && 'location_longitude' in conf) { conf.locationChoice = 'manual'; conf.manualLocation = true; conf.preciseLocation = false; }
+  if (A.ledCols) { conf.screenMode = 'led'; conf.ledCols = A.ledCols; conf.ledRows = A.ledRows; }
+  localStorage.setItem('conf', JSON.stringify(conf));
+}
 
 // ---- fetch: local files, and the network through curl ----
 G.fetch = (url, init = {}) => new Promise((resolve, reject) => {
@@ -86,8 +105,27 @@ const t0 = performance.now();
 await import('js/index.js');
 doc.readyState = 'interactive'; doc.dispatchEvent(new Evt('DOMContentLoaded', { bubbles: true }));
 doc.readyState = 'complete'; G.dispatchEvent(new Evt('load'));
-const sky = $('sky'), want = A.frames || 3;
 const until = async (f, ms) => { const s = performance.now(); while (!f() && performance.now() - s < ms) await new Promise((r) => setTimeout(r, 20)); return f(); };
+const sky = $('sky'), want = A.frames || 3;
+let presented = 0;
+if (A.present) {
+  const gl = sky.getContext('webgl2');
+  const send = () => {
+    const e = G.__sky; if (!e) return;
+    const w = sky.width, h = sky.height; gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const px = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    const dim = $('dimmer'), level = dim && !dim.hidden ? Math.max(0, 1 - (parseFloat(dim.style.opacity) || 0)) : 1;
+    __present(w, h, px.buffer, level); presented++;
+  };
+  await until(() => !!G.__sky, 30000);
+  if (A.ledCols && G.__sky) G.__sky.glass.led.gap = 0;                 // the panel needs the cells' own colours, with no dark lines between
+  if (G.__sky) G.__sky.onFrame(send);
+}
+if (A.present) {
+  // the service: show frames until stopped, or until --frames have been presented
+  if (A.frames) { await until(() => presented >= A.frames, 600000); __done(); }
+  await new Promise(() => {});
+}
 const ok = await until(() => (G.__frames || 0) >= want && doc.body.classList.contains('ready'), (A.timeout || 60) * 1000);
 await new Promise((r) => setTimeout(r, A.settle || 600));
 console.log('ready: ' + ok + ', frames ' + (G.__frames || 0) + ', ' + Math.round(performance.now() - t0) + ' ms; body.dataset: ' + JSON.stringify(Object.fromEntries(Object.entries(Object.fromEntries(doc.body._attrs)).filter(([k]) => k.startsWith('data-')))));

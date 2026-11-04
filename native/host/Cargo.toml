@@ -13,3 +13,4 @@ tiny-skia = "0.11"
 serde_json = "1"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 chrono-tz = "0.10"
+wobbly-core = { path = "../core" }

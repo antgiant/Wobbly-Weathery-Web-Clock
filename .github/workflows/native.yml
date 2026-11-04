@@ -75,7 +75,7 @@ jobs:
           GALLIUM_DRIVER: softpipe
         run: |
           CONF='{"plants":false,"landscape":"hills"}'
-          WOBBLY_STORE="$RUNNER_TEMP/store.json" WOBBLY_SCRIPT=native/host/js/boot.js native/target/release/wobbly-host . "$RUNNER_TEMP/app-host.ppm" --w=480 --h=270 "--search=t=2026-06-21T17:00:00Z&speed=0&lat=40.7&lon=-74&weather=clear" --out="$RUNNER_TEMP/app-host.ppm" --frames=2 --tz=UTC --seed=1 --offline=1 "--conf=$CONF"
+          WOBBLY_STORE="$RUNNER_TEMP/store.json" native/target/release/wobbly-host . "$RUNNER_TEMP/app-host.ppm" --app --w=480 --h=270 "--search=t=2026-06-21T17:00:00Z&speed=0&lat=40.7&lon=-74&weather=clear" --out="$RUNNER_TEMP/app-host.ppm" --frames=2 --tz=UTC --seed=1 --offline=1 "--conf=$CONF"
           node native/host/tests/app-chromium.mjs "$RUNNER_TEMP/app-chrome.ppm" 480 270 "t=2026-06-21T17:00:00Z&speed=0&lat=40.7&lon=-74&weather=clear" "$CONF"
           node native/host/tests/ppm-diff.mjs "$RUNNER_TEMP/app-host.ppm" "$RUNNER_TEMP/app-chrome.ppm" 12 "$RUNNER_TEMP/app-diff.ppm" --max-mean 6 --max-over 12
       - name: The pictures
