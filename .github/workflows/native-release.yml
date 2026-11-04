@@ -21,15 +21,18 @@ jobs:
         with:
           node-version: 22
       - name: Version from the tag
-        run: echo "VERSION=$(echo "${GITHUB_REF_NAME:-native-v0.0.0}" | sed 's/^native-v//')" >> "$GITHUB_ENV"
+        run: |
+          echo "VERSION=$(echo "${GITHUB_REF_NAME:-native-v0.0.0}" | sed 's/^native-v//')" >> "$GITHUB_ENV"
       - name: Tests
         run: |
           rustup target add arm-unknown-linux-musleabihf aarch64-unknown-linux-musl
-          cargo test --manifest-path native/Cargo.toml
+          (cd native && cargo test)
       - name: Build
         run: |
-          cargo build --release --manifest-path native/Cargo.toml --target arm-unknown-linux-musleabihf
-          cargo build --release --manifest-path native/Cargo.toml --target aarch64-unknown-linux-musl
+          # cargo reads native/.cargo/config.toml (the linker for the static targets) from the directory it runs in
+          cd native
+          cargo build --release --target arm-unknown-linux-musleabihf
+          cargo build --release --target aarch64-unknown-linux-musl
       - name: Package
         run: |
           mkdir -p dist
@@ -52,4 +55,6 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --title "Native $VERSION" --notes "Static Raspberry Pi programs: wobbly-clock-run for ARMv6 (every 32-bit Pi) and aarch64, with a .deb each. Verify with SHA256SUMS."
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --title "Native $VERSION" \
+            --notes "Static Raspberry Pi programs. wobbly-clock-run for ARMv6 (every 32-bit Pi) and aarch64, with a .deb each. Verify with SHA256SUMS." 

@@ -102,8 +102,8 @@ jobs:
       - run: rustup target add arm-unknown-linux-musleabihf aarch64-unknown-linux-musl
       - name: Build both packages and look inside them
         run: |
-          cargo build --release --manifest-path native/Cargo.toml --target arm-unknown-linux-musleabihf
-          cargo build --release --manifest-path native/Cargo.toml --target aarch64-unknown-linux-musl
+          # cargo reads native/.cargo/config.toml (the linker for the static targets) from the directory it runs in
+          (cd native && cargo build --release --target arm-unknown-linux-musleabihf && cargo build --release --target aarch64-unknown-linux-musl)
           native/scripts/make-deb.sh armhf native/target/arm-unknown-linux-musleabihf/release/wobbly-clock-run 0.0.0-ci "$RUNNER_TEMP/debs"
           native/scripts/make-deb.sh arm64 native/target/aarch64-unknown-linux-musl/release/wobbly-clock-run 0.0.0-ci "$RUNNER_TEMP/debs"
           for d in "$RUNNER_TEMP"/debs/*.deb; do dpkg-deb -I "$d" | head -8; dpkg-deb -c "$d" | grep -E "usr/bin|service"; done
