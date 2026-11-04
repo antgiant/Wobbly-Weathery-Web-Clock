@@ -145,3 +145,8 @@ jobs:
           native/scripts/make-deb.sh armhf native/target/arm-unknown-linux-gnueabihf/release/wobbly-clock-run 0.0.0-ci "$RUNNER_TEMP/debs"
           native/scripts/make-deb.sh arm64 native/target/aarch64-unknown-linux-gnu/release/wobbly-clock-run 0.0.0-ci "$RUNNER_TEMP/debs"
           for d in "$RUNNER_TEMP"/debs/*.deb; do dpkg-deb -I "$d" | head -8; dpkg-deb -c "$d" | grep -E "usr/bin|service"; done
+      - name: The packages, to download and try on a Pi
+        uses: actions/upload-artifact@v4
+        with:
+          name: wobbly-clock-debs
+          path: ${{ runner.temp }}/debs/*.deb
