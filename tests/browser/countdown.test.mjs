@@ -12,7 +12,7 @@ const state = (page) => page.evaluate(() => {
   const pill = document.getElementById('timerPill');
   return { title: document.title, digits: digs.length, svgs: vis.length, pill: pill.hidden ? null : pill.textContent, left: Math.min(...r.map((a) => a.left)), right: Math.max(...r.map((a) => a.right)), vw: innerWidth, w: Math.max(...r.map((a) => a.width)) };
 });
-const open = (t, target, conf = {}, o = {}) => t.open({ query: NOW, timezone: 'UTC', width: 393, height: 852, ...o, conf: { clockStyle: 'solid', clockMode: 'countdown', timerTarget: target, ...conf } });
+const open = (t, target, conf = {}, o = {}) => t.open({ fast: true, query: NOW, timezone: 'UTC', width: 393, height: 852, ...o, conf: { clockStyle: 'solid', clockMode: 'countdown', timerTarget: target, ...conf } });
 
 export async function run(t) {
   // 3 days 4 h 5 min 6 s to go, seconds shown: days:hours:minutes, 5 digits
@@ -48,7 +48,7 @@ export async function run(t) {
   await h.close();
 
   // it ticks: one second later the last unit has changed
-  h = await t.open({ query: 't=2026-06-21T12:00:00Z&speed=1', timezone: 'UTC', width: 393, height: 852, conf: { clockStyle: 'solid', clockMode: 'countdown', timerTarget: '2026-06-21T12:05:00', twentyFourHourClock: true } });
+  h = await t.open({ fast: true, query: 't=2026-06-21T12:00:00Z&speed=1', timezone: 'UTC', width: 393, height: 852, conf: { clockStyle: 'solid', clockMode: 'countdown', timerTarget: '2026-06-21T12:05:00', twentyFourHourClock: true } });
   const t0 = await h.page.evaluate(() => document.title);
   await h.page.waitForTimeout(2300);
   const t1 = await h.page.evaluate(() => document.title);
@@ -72,7 +72,7 @@ export async function run(t) {
   t.check('the day after the date, the digits show the time again (12:00:0x, six digits, no caption)', /^12:00:0\d$/.test(s0.title) && s0.digits === 6 && s0.pill === null, JSON.stringify(s0));
   await h.close();
   // (with the page clock frozen instead of time travel, which would leave the setting alone) the setting goes back to "The time" by itself
-  h = await t.open({ fixedTime: '2026-06-21T12:00:00Z', timezone: 'UTC', width: 393, height: 852, conf: { clockStyle: 'solid', clockMode: 'countdown', timerTarget: '2026-06-20T08:00:00', timerLabel: 'Done', twentyFourHourClock: true } });
+  h = await t.open({ fast: true, fixedTime: '2026-06-21T12:00:00Z', timezone: 'UTC', width: 393, height: 852, conf: { clockStyle: 'solid', clockMode: 'countdown', timerTarget: '2026-06-20T08:00:00', timerLabel: 'Done', twentyFourHourClock: true } });
   await h.settle(5200);
   s = await state(h.page);
   const back = await h.page.evaluate(() => ({ mode: JSON.parse(localStorage.getItem('conf')).clockMode, select: document.getElementById('clockMode').value }));
@@ -80,7 +80,7 @@ export async function run(t) {
   await h.close();
   // midnight itself: the last second of the day still shows 00:00, the first second of the next shows the time
   for (const [at, expect] of [['2026-06-21T23:59:58Z', '00:00'], ['2026-06-22T00:00:02Z', 'clock']]) {
-    h = await t.open({ query: `t=${at}&speed=0`, timezone: 'UTC', width: 393, height: 852, conf: { clockStyle: 'solid', clockMode: 'countdown', timerTarget: '2026-06-21T08:00:00', twentyFourHourClock: true } });
+    h = await t.open({ fast: true, query: `t=${at}&speed=0`, timezone: 'UTC', width: 393, height: 852, conf: { clockStyle: 'solid', clockMode: 'countdown', timerTarget: '2026-06-21T08:00:00', twentyFourHourClock: true } });
     await h.settle(900);
     s = await state(h.page);
     t.check(`${at.slice(11, 19)}: ${expect === '00:00' ? 'still 00:00 (the target\'s day has not ended)' : 'the time again (the day has ended)'}`, expect === '00:00' ? s.title === '00:00' : /^0:00:0\d$/.test(s.title), s.title);
@@ -88,7 +88,7 @@ export async function run(t) {
   }
 
   // switching in the settings: a new countdown starts at the next midnight, and Time brings the clock back
-  h = await t.open({ query: NOW, timezone: 'UTC', width: 393, height: 852, conf: { clockStyle: 'solid', twentyFourHourClock: true } });
+  h = await t.open({ fast: true, query: NOW, timezone: 'UTC', width: 393, height: 852, conf: { clockStyle: 'solid', twentyFourHourClock: true } });
   await h.page.evaluate(() => document.getElementById('settings').dispatchEvent(new MouseEvent('click', { bubbles: true })));
   await h.page.waitForTimeout(300);
   await h.page.click('.tab[data-tab="clock"]');

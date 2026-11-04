@@ -20,7 +20,7 @@ const cases = [
 export async function run(t) {
   for (const [i, c] of cases.entries()) {
     if (t.quick && i >= 2) break;                                       // the quick check: the first two panel sizes
-    const h = await t.open({ query: NOON, width: c.w, height: c.h, conf: { screenMode: 'led', ledCols: c.cols, ledRows: c.rows, clockStyle: 'solid', twentyFourHourClock: true } });
+    const h = await t.open({ fast: true, query: NOON, width: c.w, height: c.h, conf: { screenMode: 'led', ledCols: c.cols, ledRows: c.rows, clockStyle: 'solid', twentyFourHourClock: true } });
     await h.settle(600);
     const s = await h.page.evaluate(() => {
       const g = window.__sky.glass, clock = document.getElementById('clock').getBoundingClientRect();
@@ -74,7 +74,7 @@ export async function run(t) {
 
   if (t.quick) return;
   // the settings: choosing a size changes the panel at once, and the choices are saved
-  const h = await t.open({ query: NOON, width: 1000, height: 560, conf: { screenMode: 'led', clockStyle: 'solid' } });
+  const h = await t.open({ fast: true, query: NOON, width: 1000, height: 560, conf: { screenMode: 'led', clockStyle: 'solid' } });
   await h.page.evaluate(() => document.getElementById('settings').dispatchEvent(new MouseEvent('click', { bubbles: true })));
   await h.page.click('#tab-extras');
   await h.page.click('.seg__btn[data-level="advanced"]');                        // the LED controls are Advanced settings
@@ -97,7 +97,7 @@ export async function run(t) {
 
   // ---- stars: the LED averaging used to lose them ----
   const countStars = async (query, conf) => {
-    const hh = await t.open({ query: `${query}&speed=0&landscape=hills&az=200&pitch=35`, width: 900, height: 500, conf: { screenMode: 'led', ledCols: 64, ledRows: 32, clockStyle: 'solid', hideSeconds: true, followSun: false, plants: false, countdown: 'off', cloudMotion: 0, weatherMode: 'clear', ...conf } });
+    const hh = await t.open({ fast: true, query: `${query}&speed=0&landscape=hills&az=200&pitch=35`, width: 900, height: 500, conf: { screenMode: 'led', ledCols: 64, ledRows: 32, clockStyle: 'solid', hideSeconds: true, followSun: false, plants: false, countdown: 'off', cloudMotion: 0, weatherMode: 'clear', ...conf } });
     await hh.settle(2800);
     const shot = await hh.shot();
     const n = await t.analyze(hh.page, shot, ({ w, h: H, lum }) => {

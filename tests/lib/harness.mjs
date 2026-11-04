@@ -98,7 +98,7 @@ export async function startHarness({ headless = true } = {}) {
     if (o.seedConf !== false) await page.addInitScript((c) => { if (!localStorage.getItem('conf')) localStorage.setItem('conf', JSON.stringify(c)); }, base);
     if (o.init) await page.addInitScript(o.init);
     const q = o.query || '';
-    const url = `${srv.url}/?${/\blat=/.test(q) ? '' : 'lat=40.7&lon=-74&'}${o.sw ? 'sw=1&' : ''}${q}`;
+    const url = `${srv.url}/?${/\blat=/.test(q) ? '' : 'lat=40.7&lon=-74&'}${o.sw ? 'sw=1&' : ''}${o.fast ? 'fastjobs=1&' : ''}${q}`;
     const origWait = page.waitForTimeout.bind(page);
     page.waitForTimeout = (ms) => { stats.waitMs += ms; return origWait(ms); };          // every deliberate wait is counted
     const h = {
@@ -106,7 +106,7 @@ export async function startHarness({ headless = true } = {}) {
       ready: (timeout = 90000) => page.waitForFunction(() => document.body.classList.contains('ready') && window.__frames >= 1, null, { timeout }),
       goto: (u = url) => page.goto(u),
       /** Wait for the page's own periodic work (the countdown, rain alert ... start 0.6 to 2.5 s after load). */
-      settle: (ms = 3200) => page.waitForTimeout(ms),
+      settle: (ms = 3200) => page.waitForTimeout(o.fast ? Math.max(500, Math.round(ms * 0.4)) : ms),     // fast: the page's first jobs come sooner (?fastjobs=1), so less waiting is needed
       shot: async (name) => { const buf = await page.screenshot(); if (name && process.env.TEST_ARTIFACTS) { fs.mkdirSync(process.env.TEST_ARTIFACTS, { recursive: true }); fs.writeFileSync(path.join(process.env.TEST_ARTIFACTS, name + '.png'), buf); } return buf; },
       close: async () => { await ctx.close(); },
     };

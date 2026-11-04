@@ -6,7 +6,7 @@ export const tier = 'fast';          // part of the quick check (npm test); the 
 
 const wx = (page) => page.evaluate(() => ({ ...window.__sky.wx }));
 const GLASS = { clockStyle: 'glass', hideSeconds: false, followSun: false, glassFrost: 0.3 };
-const open = (t, weather, conf = {}, extra = '') => t.open({ query: `t=2026-12-10T17:08:25Z&speed=0&weather=${weather}${extra}`, conf: { ...GLASS, ...conf }, width: 420, height: 700 });
+const open = (t, weather, conf = {}, extra = '') => t.open({ fast: true, query: `t=2026-12-10T17:08:25Z&speed=0&weather=${weather}${extra}`, conf: { ...GLASS, ...conf }, width: 420, height: 700 });
 
 // bounding box of the digits (from the page's own layout), and a screenshot
 const box = (page) => page.evaluate(() => { const r = [...document.querySelectorAll('#clock svg')].filter((e) => getComputedStyle(e).display !== 'none' && e.querySelector('path[id]')).map((e) => e.getBoundingClientRect()); return { x0: Math.min(...r.map((a) => a.left)), y0: Math.min(...r.map((a) => a.top)), x1: Math.max(...r.map((a) => a.right)), y1: Math.max(...r.map((a) => a.bottom)) }; });
@@ -84,7 +84,7 @@ export async function run(t) {
   await s.close();
 
   // ---- raindrops: a simulation, not a pattern (js/sky/drops.js) ----
-  const rd = await t.open({ query: 't=2026-12-10T17:08:50Z&speed=1&weather=rain', conf: { ...GLASS, hideSeconds: false }, width: 420, height: 700 });
+  const rd = await t.open({ fast: true, query: 't=2026-12-10T17:08:50Z&speed=1&weather=rain', conf: { ...GLASS, hideSeconds: false }, width: 420, height: 700 });
   await rd.page.waitForTimeout(9000);
   const snap = () => rd.page.evaluate(() => { const s = window.__drops; return { n: s.drops.length, onGlass: s.drops.filter((d) => !d.dying).every((d) => s.inkAt(d.x, d.y) > 0.25), running: s.drops.filter((d) => d.run).length, big: Math.max(0, ...s.drops.map((d) => d.r)), text: document.title, dying: s.drops.filter((d) => d.dying).length }; });
   const a = await snap();

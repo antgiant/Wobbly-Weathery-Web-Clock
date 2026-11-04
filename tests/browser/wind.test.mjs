@@ -19,7 +19,7 @@ const meanLean = (d) => Object.values(d).reduce((s, p) => s + lean(p), 0) / Obje
 const STILL = { clockStyle: 'solid', hideSeconds: false, followSun: false };
 
 export async function run(t) {
-  const q = (az, conf, weather = 'storm', extra = '') => t.open({ query: `t=2026-06-21T17:08:25Z&speed=0&weather=${weather}&az=${az}${extra}`, conf: { ...STILL, ...conf }, width: 420, height: 700 });
+  const q = (az, conf, weather = 'storm', extra = '') => t.open({ fast: true, query: `t=2026-06-21T17:08:25Z&speed=0&weather=${weather}&az=${az}${extra}`, conf: { ...STILL, ...conf }, width: 420, height: 700 });
 
   let h = await q(0, {});
   t.check('off by default: nothing is bent', (await h.page.evaluate(async () => (await import('/js/wind.js')).sway.mode)) === 'off');
