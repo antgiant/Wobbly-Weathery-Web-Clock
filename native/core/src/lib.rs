@@ -7,6 +7,7 @@ pub mod config;
 pub mod countdown;
 pub mod digits;
 pub mod dim;
+pub mod disc;
 pub mod frame;
 pub mod sky;
 pub mod skytable;

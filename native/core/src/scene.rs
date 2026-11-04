@@ -67,14 +67,17 @@ pub fn render(scene: &Scene, t_ms: f64, text: &str, w: usize, h: usize) -> Vec<u
     let seen = crate::stars::visibility(alt) * crate::weather::star_visibility(&scene.weather);
     let mut starlight = vec![0.0f64; if seen > 0.02 { w * h } else { 0 }];
     if seen > 0.02 { for s in crate::stars::field(w, h, sky_px) { starlight[s.y * w + s.x] = s.brightness * seen; } }
+    // the sun: a small warm disc with a glow, in the sky only
+    let sun_disc = crate::disc::sun_position(t_ms, scene.lat, scene.lon, scene.horizon).map(|(x, y)| (x * w as f64, y * h as f64, (0.006 * w as f64).max(1.0)));
     let mut out = Vec::with_capacity(w * h * 3);
     for y in 0..h {
         let bg = at_row(&colors, y as f64 + 0.5, h as f64, scene.horizon);
         for x in 0..w {
             let c = cov.at(x, y) as f64;
             let mut base = bg;
-            if !starlight.is_empty() { let a = starlight[y * w + x]; if a > 0.0 { base = [0, 1, 2].map(|k| bg[k] + (235.0 - bg[k]).max(0.0) * a); } }
-            if let (Some(hc), Some(hv)) = (&halo_cov, halo) { let a = hc.at(x, y) as f64 * 0.75; base = [0, 1, 2].map(|k| bg[k] + (hv[k] - bg[k]) * a); }
+            if let Some((cx, cy, r)) = sun_disc { if y < sky_px { let a = crate::disc::weight(x as f64 + 0.5 - cx, y as f64 + 0.5 - cy, r); if a > 0.0 { base = [0, 1, 2].map(|k| bg[k] + ([255.0, 248.0, 225.0][k] - bg[k]) * a); } } }
+            if !starlight.is_empty() { let a = starlight[y * w + x]; if a > 0.0 { let under = base; base = [0, 1, 2].map(|k| under[k] + (235.0 - under[k]).max(0.0) * a); } }
+            if let (Some(hc), Some(hv)) = (&halo_cov, halo) { let a = hc.at(x, y) as f64 * 0.75; let under = base; base = [0, 1, 2].map(|k| under[k] + (hv[k] - under[k]) * a); }
             for k in 0..3 { out.push(((base[k] + (ink[k] - base[k]) * c) * level).round().clamp(0.0, 255.0) as u8); }
         }
     }
