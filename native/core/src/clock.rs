@@ -80,7 +80,7 @@ pub fn scene_for(c: &Config, zone: &Zone, utc_ms: f64) -> Scene { scene_with(c, 
 pub fn scene_with(c: &Config, zone: &Zone, utc_ms: f64, live: Option<&crate::weather::Weather>) -> Scene {
     let wx = match (c.weather_mode.as_str(), live) { ("live", Some(l)) => l.clone(), ("live", None) => crate::weather::Weather::CLEAR, (m, _) => crate::weather::Weather::preset(m) };
     let look = if c.weather_mode == "live" { wx.mode().to_string() } else { c.weather_mode.clone() };
-    Scene { lat: c.latitude, lon: c.longitude, brightness_day: c.brightness_day, brightness_night: c.brightness_night, transition_minutes: c.brightness_transition, weather: look, wx, digit_weather: c.digit_weather, sway: c.wind_sway.clone(),
+    Scene { lat: c.latitude, lon: c.longitude, brightness_day: c.brightness_day, brightness_night: c.brightness_night, transition_minutes: c.brightness_transition, weather: look, wx, digit_weather: c.digit_weather, sway: c.wind_sway.clone(), landscape: if c.landscape == "auto" { "flat".into() } else { c.landscape.clone() },
         style: style_for(c, zone, utc_ms).into(), frost: c.glass_frost, glow: c.glass_glow, glow_color: c.glass_glow_color.clone(), ..Scene::default() }
 }
 

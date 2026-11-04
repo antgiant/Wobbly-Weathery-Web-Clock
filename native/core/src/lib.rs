@@ -23,6 +23,8 @@ pub mod tz;
 pub mod moon;
 pub mod morph;
 pub mod raster;
+pub mod landscape;
+pub mod landtable;
 pub mod live;
 pub mod matrix;
 pub mod output;

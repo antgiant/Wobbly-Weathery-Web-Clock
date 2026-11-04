@@ -32,10 +32,12 @@ pub struct Scene {
     pub digit_weather: bool,
     /// wind sway: "off", "lean" or "full"
     pub sway: String,
+    /// "flat", "hills", "mountains", "desert", "ocean" or "city" ("auto" is flat)
+    pub landscape: String,
 }
 
 impl Default for Scene {
-    fn default() -> Self { Scene { lat: 40.7, lon: -74.0, horizon: 0.63, brightness_day: 1.0, brightness_night: 1.0, transition_minutes: 45.0, weather: "clear".into(), style: "solid".into(), frost: 0.35, glow: 0.0, glow_color: "follow".into(), wx: crate::weather::Weather::CLEAR, digit_weather: true, sway: "off".into() } }
+    fn default() -> Self { Scene { lat: 40.7, lon: -74.0, horizon: 0.63, brightness_day: 1.0, brightness_night: 1.0, transition_minutes: 45.0, weather: "clear".into(), style: "solid".into(), frost: 0.35, glow: 0.0, glow_color: "follow".into(), wx: crate::weather::Weather::CLEAR, digit_weather: true, sway: "off".into(), landscape: "flat".into() } }
 }
 
 const WHITE: Rgb = [255.0, 255.0, 255.0];
@@ -81,11 +83,27 @@ pub fn background(scene: &Scene, t_ms: f64, w: usize, h: usize) -> (Vec<f32>, Sk
     // the moon: a disc, lit as much as it is, its bright side towards the sun; faint by day
     let moon = crate::disc::moon_position(t_ms, scene.lat, scene.lon, scene.horizon, w as f64 / h as f64).map(|(x, y, dir, k)| (x * w as f64, y * h as f64, (0.006 * w as f64).max(1.5), dir, k));
     let day = crate::weather::daylight(alt);
+    // the landscape: the ground takes the landscape's colour; hills, mountains, a skyline or dunes stand on the horizon
+    let land = scene.landscape.as_str();
+    let mult = crate::landscape::ground_mult(land, crate::weather::daylight(alt));
+    let ground = [0, 1, 2].map(|k| (colors.ground[k] * mult[k]).clamp(0.0, 255.0));
+    let haze = |k: usize, tint: f64| colors.horizon[k] + (ground[k] - colors.horizon[k]) * tint;
+    let silhouette: Vec<(usize, f64)> = (0..w).map(|x| { let (hh, snow) = crate::landscape::profile(land, (x as f64 + 0.5) / w as f64); ((hh * h as f64).round() as usize, snow) }).collect();
     let mut out = Vec::with_capacity(w * h * 3);
     for y in 0..h {
-        let bg = at_row(&colors, y as f64 + 0.5, h as f64, scene.horizon);
+        let mut bg = at_row(&colors, y as f64 + 0.5, h as f64, scene.horizon);
+        if y >= sky_px { bg = ground; }
         for x in 0..w {
             let mut base = bg;
+            if y >= sky_px && land == "ocean" { let depth = (y - sky_px) as f64 / (h - sky_px).max(1) as f64; let f = crate::landscape::wave(x as f64 / w as f64, depth, t_ms / 1000.0); let sky_tint = colors.horizon; base = [0, 1, 2].map(|k| (ground[k] * f + sky_tint[k] * 0.15 * (1.0 - depth)).clamp(0.0, 255.0)); }
+            let (sh, snow) = silhouette[x];
+            if sh > 0 && y < sky_px && y + sh >= sky_px {
+                let top = sky_px - sh;
+                let tint = if land == "city" { 0.62 } else { 0.5 };
+                let mut col = [haze(0, tint), haze(1, tint), haze(2, tint)];
+                if snow > 0.0 && (y - top) as f64 <= snow * sh as f64 { col = [0, 1, 2].map(|k| col[k] + ([232.0, 236.0, 248.0][k] - col[k]).max(0.0) * 0.8); }
+                base = col;
+            }
             if let Some((cx, cy, r)) = sun_disc { if y < sky_px { let a = crate::disc::weight(x as f64 + 0.5 - cx, y as f64 + 0.5 - cy, r); if a > 0.0 { base = [0, 1, 2].map(|k| bg[k] + ([255.0, 248.0, 225.0][k] - bg[k]) * a); } } }
             if let Some((cx, cy, r, dir, k)) = moon { if y < sky_px + 2 { let (edge, lit) = crate::moon::disc(x as f64 + 0.5 - cx, y as f64 + 0.5 - cy, r, dir.0, dir.1, k); if edge > 0.0 { let a = (lit * (1.0 - 0.55 * day)).clamp(0.0, 1.0); let under = base; base = [0, 1, 2].map(|c| under[c] + ([232.0, 234.0, 240.0][c] - under[c]) * a); } } }
             if !starlight.is_empty() { let a = starlight[y * w + x]; if a > 0.0 { let under = base; base = [0, 1, 2].map(|k| under[k] + (235.0 - under[k]).max(0.0) * a); } }

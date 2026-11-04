@@ -19,6 +19,8 @@ pub struct Config {
     pub glass_glow_color: String,
     /// a manual weather setting; "live" (the default) is clear for now
     pub weather_mode: String,
+    /// "auto" (flat: the native program has no terrain data), "flat", "hills", "mountains", "desert", "ocean" or "city"
+    pub landscape: String,
     /// "off", "lean" or "full": the digits lean downwind (and in full flutter in the gusts)
     pub wind_sway: String,
     /// rain beads and snow on the digits
@@ -45,7 +47,7 @@ pub struct LedOptions { pub gpio_mapping: String, pub slowdown_gpio: u32, pub pw
 
 impl Default for Config {
     fn default() -> Self {
-        Config { latitude: 0.0, longitude: 0.0, time_zone: String::new(), twenty_four_hour: None, hide_seconds: false, clock_style: "auto".into(), glass_frost: 0.35, glass_glow: 0.0, glass_glow_color: "follow".into(), weather_mode: "live".into(), wind_sway: "off".into(), digit_weather: true, clock_mode: "time".into(), timer_target: String::new(), brightness_day: 1.0, brightness_night: 1.0, brightness_transition: 45.0,
+        Config { latitude: 0.0, longitude: 0.0, time_zone: String::new(), twenty_four_hour: None, hide_seconds: false, clock_style: "auto".into(), glass_frost: 0.35, glass_glow: 0.0, glass_glow_color: "follow".into(), weather_mode: "live".into(), landscape: "auto".into(), wind_sway: "off".into(), digit_weather: true, clock_mode: "time".into(), timer_target: String::new(), brightness_day: 1.0, brightness_night: 1.0, brightness_transition: 45.0,
             output: "hdmi".into(), matrix_config: String::new(), gamma: 2.2, render_scale: 0,
             led: LedOptions { gpio_mapping: "regular".into(), slowdown_gpio: 1, pwm_bits: 11, pwm_lsb_nanoseconds: 130, rgb_sequence: "RGB".into(), panel_type: String::new(), multiplexing: 0, row_addr_type: 0 },
             errors: vec![] }
@@ -98,6 +100,7 @@ pub fn parse(text: &str) -> Config {
     if let Some((l, v)) = map.get("glassGlowColor") { if ["warm", "white", "cool", "follow"].contains(&v.as_str()) { c.glass_glow_color = v.clone() } else { errors.push(format!("line {l}: glassGlowColor is warm, white, cool or follow, not \"{v}\"")) } }
     if let Some((l, v)) = map.get("windSway") { if ["off", "lean", "full"].contains(&v.as_str()) { c.wind_sway = v.clone() } else { errors.push(format!("line {l}: windSway is off, lean or full, not \"{v}\"")) } }
     if let Some((l, v)) = map.get("digitWeather") { match v.as_str() { "on" => c.digit_weather = true, "off" => c.digit_weather = false, _ => errors.push(format!("line {l}: digitWeather is on or off, not \"{v}\"")) } }
+    if let Some((l, v)) = map.get("landscape") { if v == "auto" || crate::landscape::known(v) { c.landscape = v.clone() } else { errors.push(format!("line {l}: landscape is auto, flat, hills, mountains, desert, ocean or city, not \"{v}\"")) } }
     if let Some((l, v)) = map.get("output") { if v == "hdmi" || v == "matrix" { c.output = v.clone() } else { errors.push(format!("line {l}: output is hdmi or matrix, not \"{v}\"")) } }
     if let Some((l, v)) = map.get("ledGpioMapping") { if ["regular", "adafruit-hat", "adafruit-hat-pwm"].contains(&v.as_str()) { c.led.gpio_mapping = v.clone() } else { errors.push(format!("line {l}: ledGpioMapping is regular, adafruit-hat or adafruit-hat-pwm, not \"{v}\"")) } }
     for (k, into) in [("timeZone", &mut c.time_zone), ("matrixConfig", &mut c.matrix_config), ("ledRgbSequence", &mut c.led.rgb_sequence), ("ledPanelType", &mut c.led.panel_type)] { if let Some((_, v)) = map.get(k) { *into = v.clone(); } }
