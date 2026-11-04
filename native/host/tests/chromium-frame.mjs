@@ -23,7 +23,7 @@ const bytes = await pg.evaluate(async ({ w, h, time, state }) => {
   const c = document.getElementById('c'); c.style.cssText = `width:${w}px;height:${h}px;display:block`;
   const e = new SkyEngine(c, { baseUrl: '.' });
   while (!e.assetsDone) await new Promise(r => setTimeout(r, 5));
-  e.set(JSON.parse(state)); const t = Date.parse(time);
+  e.set({ sim: { base: new Date(time), startPerf: performance.now(), scale: 0 }, ...JSON.parse(state) }); const t = Date.parse(time);
   e.render(t); e.render(t);
   const gl = c.getContext('webgl2'); const px = new Uint8Array(w * h * 4);
   gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);

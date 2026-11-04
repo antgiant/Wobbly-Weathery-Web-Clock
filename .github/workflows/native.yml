@@ -64,7 +64,7 @@ jobs:
         run: |
           native/target/release/wobbly-clock-run . "$RUNNER_TEMP/host.ppm" 480 270
           node native/host/tests/chromium-frame.mjs "$RUNNER_TEMP/chrome.ppm"
-          node native/host/tests/ppm-diff.mjs "$RUNNER_TEMP/host.ppm" "$RUNNER_TEMP/chrome.ppm" 8 "$RUNNER_TEMP/diff.ppm" --max-mean 1.5 --max-over 1
+          node native/host/tests/ppm-diff.mjs "$RUNNER_TEMP/host.ppm" "$RUNNER_TEMP/chrome.ppm" 8 "$RUNNER_TEMP/diff.ppm" --max-mean 1 --max-over 0.5
       - name: The same 2D drawing (glass-mask style), drawn by the host and by Chromium
         run: |
           WOBBLY_SCRIPT=native/host/tests/canvas-host.js native/target/release/wobbly-clock-run . "$RUNNER_TEMP/c2d-host.ppm"
