@@ -1,33 +1,8 @@
-//! Wobbly core: the logic the native clock must share exactly with the web page. No I/O, no dependencies, `no_std`-friendly maths
-//! (only `f64` arithmetic). Every function is checked against vectors generated from the web code (`tests/golden.tsv`, made by
-//! `tools/native-golden.mjs`), so a change on either side that breaks the agreement fails a test.
+//! What the native clock program needs that is not the web page: the settings file it reads, the mapping of the picture onto a chain of LED
+//! panels, gamma, framebuffer bytes, and the pipe to the panel program. (The clock itself, sky and all, is the web page's own code, run by
+//! `native/host`; this crate used to hold a Rust re-implementation of it, which was retired so that there is one renderer, not two.)
 
-pub mod clock;
 pub mod config;
-pub mod countdown;
-pub mod digits;
-pub mod dim;
-pub mod disc;
-pub mod effects;
-pub mod follow;
-pub mod frame;
-pub mod glass;
-pub mod sky;
-pub mod skytable;
-pub mod stars;
-pub mod sun;
-pub mod weather;
-pub mod wind;
-pub mod weathertable;
-pub mod tz;
-pub mod moon;
-pub mod morph;
-pub mod raster;
-pub mod landscape;
-pub mod landtable;
-pub mod live;
 pub mod matrix;
 pub mod output;
-pub mod scene;
-pub mod season;
 pub mod sink;

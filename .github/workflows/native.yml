@@ -55,19 +55,19 @@ jobs:
       - name: Install the GPU libraries the host loads (Mesa)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq libegl1 libgles2 libgl1-mesa-dri
       - name: Build the host
-        run: cargo build --release -p wobbly-host --manifest-path native/Cargo.toml
+        run: cargo build --release -p wobbly-clock-run --manifest-path native/Cargo.toml
       - name: One sky, drawn by the host and by Chromium
         # softpipe is Mesa's slow but exact software renderer: llvmpipe miscompiles some of the engine's integer noise code on some versions,
         # which is a fault of that renderer, not of the shaders (the Raspberry Pi drivers are not affected: they are checked on real hardware)
         env:
           GALLIUM_DRIVER: softpipe
         run: |
-          native/target/release/wobbly-host . "$RUNNER_TEMP/host.ppm" 480 270
+          native/target/release/wobbly-clock-run . "$RUNNER_TEMP/host.ppm" 480 270
           node native/host/tests/chromium-frame.mjs "$RUNNER_TEMP/chrome.ppm"
           node native/host/tests/ppm-diff.mjs "$RUNNER_TEMP/host.ppm" "$RUNNER_TEMP/chrome.ppm" 8 "$RUNNER_TEMP/diff.ppm" --max-mean 1.5 --max-over 1
       - name: The same 2D drawing (glass-mask style), drawn by the host and by Chromium
         run: |
-          WOBBLY_SCRIPT=native/host/tests/canvas-host.js native/target/release/wobbly-host . "$RUNNER_TEMP/c2d-host.ppm"
+          WOBBLY_SCRIPT=native/host/tests/canvas-host.js native/target/release/wobbly-clock-run . "$RUNNER_TEMP/c2d-host.ppm"
           node native/host/tests/chromium-canvas.mjs "$RUNNER_TEMP/c2d-chrome.ppm"
           node native/host/tests/ppm-diff.mjs "$RUNNER_TEMP/c2d-host.ppm" "$RUNNER_TEMP/c2d-chrome.ppm" 8 "$RUNNER_TEMP/c2d-diff.ppm" --max-mean 0.5 --max-over 1
       - name: The whole page (sky, ground, Liquid Glass digits), run by the host and by Chromium
@@ -75,7 +75,7 @@ jobs:
           GALLIUM_DRIVER: softpipe
         run: |
           CONF='{"plants":false,"landscape":"hills"}'
-          WOBBLY_STORE="$RUNNER_TEMP/store.json" native/target/release/wobbly-host . "$RUNNER_TEMP/app-host.ppm" --app --w=480 --h=270 "--search=t=2026-06-21T17:00:00Z&speed=0&lat=40.7&lon=-74&weather=clear" --out="$RUNNER_TEMP/app-host.ppm" --frames=2 --tz=UTC --seed=1 --offline=1 "--conf=$CONF"
+          WOBBLY_STORE="$RUNNER_TEMP/store.json" native/target/release/wobbly-clock-run . "$RUNNER_TEMP/app-host.ppm" --app --w=480 --h=270 "--search=t=2026-06-21T17:00:00Z&speed=0&lat=40.7&lon=-74&weather=clear" --out="$RUNNER_TEMP/app-host.ppm" --frames=2 --tz=UTC --seed=1 --offline=1 "--conf=$CONF"
           node native/host/tests/app-chromium.mjs "$RUNNER_TEMP/app-chrome.ppm" 480 270 "t=2026-06-21T17:00:00Z&speed=0&lat=40.7&lon=-74&weather=clear" "$CONF"
           node native/host/tests/ppm-diff.mjs "$RUNNER_TEMP/app-host.ppm" "$RUNNER_TEMP/app-chrome.ppm" 12 "$RUNNER_TEMP/app-diff.ppm" --max-mean 6 --max-over 12
       - name: The pictures
@@ -86,38 +86,18 @@ jobs:
           path: ${{ runner.temp }}/*.ppm
 
   core:
-    name: Rust core (tests, and builds for every Pi)
+    name: Tests (settings file, panel mapping) and builds for every Pi
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: The golden vectors and digit shapes are the web code's current ones
+      - name: Cross tools
         run: |
-          node tools/native-golden.mjs --check
-          node tools/native-digits.mjs --check
-      - name: Install the Rust targets
-        run: rustup target add arm-unknown-linux-gnueabihf aarch64-unknown-linux-gnu
-      - name: Tests (the Rust core agrees with the web code)
+          sudo apt-get update -qq && sudo apt-get install -y -qq gcc-arm-linux-gnueabihf gcc-aarch64-linux-gnu qemu-user
+          rustup target add arm-unknown-linux-gnueabihf aarch64-unknown-linux-gnu
+      - name: Tests
         run: cargo test --manifest-path native/Cargo.toml
-      - name: Builds for the original Pi Zero (ARMv6) and for 64-bit Pis
-        run: |
-          cargo build --release --lib --manifest-path native/Cargo.toml --target arm-unknown-linux-gnueabihf
-          cargo build --release --lib --manifest-path native/Cargo.toml --target aarch64-unknown-linux-gnu
-
-  cross:
-    name: The Pi binaries render the same frames (QEMU)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - name: Tools
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq qemu-user
-          rustup target add arm-unknown-linux-musleabihf aarch64-unknown-linux-musl
-      - name: Static ARMv6 and aarch64 builds, run under emulation, frames compared byte for byte with the host build
+      - name: Builds for the original Pi Zero (ARMv6, runs on every 32-bit Pi) and for 64-bit Pis, started under emulation
         run: native/scripts/cross-check.sh
 
   matrix-sink:
@@ -143,11 +123,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: rustup target add arm-unknown-linux-musleabihf aarch64-unknown-linux-musl
+      - name: Cross tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq gcc-arm-linux-gnueabihf gcc-aarch64-linux-gnu
+          rustup target add arm-unknown-linux-gnueabihf aarch64-unknown-linux-gnu
       - name: Build both packages and look inside them
         run: |
-          # cargo reads native/.cargo/config.toml (the linker for the static targets) from the directory it runs in
-          (cd native && cargo build --release --target arm-unknown-linux-musleabihf && cargo build --release --target aarch64-unknown-linux-musl)
-          native/scripts/make-deb.sh armhf native/target/arm-unknown-linux-musleabihf/release/wobbly-clock-run 0.0.0-ci "$RUNNER_TEMP/debs"
-          native/scripts/make-deb.sh arm64 native/target/aarch64-unknown-linux-musl/release/wobbly-clock-run 0.0.0-ci "$RUNNER_TEMP/debs"
+          # cargo reads native/.cargo/config.toml (the cross linkers) from the directory it runs in
+          (cd native && cargo build --release --target arm-unknown-linux-gnueabihf && cargo build --release --target aarch64-unknown-linux-gnu)
+          native/scripts/make-deb.sh armhf native/target/arm-unknown-linux-gnueabihf/release/wobbly-clock-run 0.0.0-ci "$RUNNER_TEMP/debs"
+          native/scripts/make-deb.sh arm64 native/target/aarch64-unknown-linux-gnu/release/wobbly-clock-run 0.0.0-ci "$RUNNER_TEMP/debs"
           for d in "$RUNNER_TEMP"/debs/*.deb; do dpkg-deb -I "$d" | head -8; dpkg-deb -c "$d" | grep -E "usr/bin|service"; done

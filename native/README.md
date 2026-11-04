@@ -1,76 +1,74 @@
-# The native version (Raspberry Pi): a working renderer for HDMI and LED panels, tested everywhere except on a real Pi
+# The native version (Raspberry Pi): the web page's own code, run without a browser
 
-This folder is where the native version of the clock will live, in the same repository as the web page so the two stay tightly in step.
-The plan, requirements and open questions are in [`../TODO.md`](../TODO.md) ("Raspberry Pi targets"). This file is the contract between the
-two halves.
+**One engine, two ways to show it.** The sky, the weather, the plants and the Liquid Glass digits are drawn by the web page's JavaScript and
+GLSL (`../js/`, `../index.html`). In a browser the page does it; on a Pi, `wobbly-clock-run` does it: a small program that runs the *same
+files* in an embedded JavaScript engine (QuickJS), draws with the Pi's GPU through EGL and OpenGL ES, and sends the frames straight to an HDMI
+screen or an LED panel. There is no browser, no desktop and no second implementation to keep in step: a change to the page is a change to the
+Pi, because it is the same code. (An earlier version of this folder re-implemented the renderer in Rust; it was retired for exactly that
+reason.)
 
-## What is shared (the sync contract)
+```
+ web page (js/, GLSL, index.html)  ──►  browser                     the page, as ever
+                                   └─►  wobbly-clock-run  ──►  framebuffer (HDMI)
+                                         QuickJS + EGL/GLES      LED panel (via wobbly-matrix)
+                                         tiny DOM, 2D canvas     picture files (tests)
+```
 
-| Shared thing | Where | How the native version uses it |
+## What is shared, and how it is kept honest
+
+| Shared thing | Where | How the Pi uses it |
 |---|---|---|
-| **The settings** (keys, types, defaults, options, ranges, which tab, Simple/Advanced, which ones presets set) | [`../schema/settings.js`](../schema/settings.js), generated as [`../schema/settings.json`](../schema/settings.json) | the command line (`wobbly-clock set hideSeconds on`), the config file, the setup questions, the man page and `--help` are all generated from it |
-| **The presets** | [`../schema/presets.js`](../schema/presets.js) (also in the JSON) | `wobbly-clock preset bedside` |
-| **Share links** (short `?c=...` and readable) | [`../js/share.js`](../js/share.js): a frozen version-1 table and presets, golden links in [`../tests/unit/share.test.mjs`](../tests/unit/share.test.mjs) | `wobbly-clock apply '<link>'` decodes the same links; its tests must decode the same golden links to the same setups |
-| **Brightness model** (day, night, sunset transition) | [`../js/sky/dim.js`](../js/sky/dim.js) | the same maths drives the panel brightness; its unit tests become the reference values |
-| **Countdown digits** | [`../js/countdown.js`](../js/countdown.js) | same rules (6 / 4 digit caps), same test cases |
-| **Pictures to match** | the web renderer, via golden frames | the native output at LED sizes and a few HDMI sizes is compared with the web page's picture (average colour per region within a tolerance) |
+| **Everything the page draws** | `../js/`, `../index.html`, `../data/` | embedded in the program and run unmodified (`wobbly-clock-run --web DIR` runs a folder instead, for working on the page) |
+| **Settings** (names, types, defaults) | `../schema/settings.js` | the settings file (`key = value`) becomes the page's saved settings; the command line, man pages and `--help` are generated from the same schema |
+| **Presets and share links** | `../schema/presets.js`, `../js/share.js` | `wobbly-clock preset bedside`, `wobbly-clock apply '<link>'` |
+| **The digits' layout** | `../js/clocklayout.js` | the page lays its digits out with CSS; the Pi has no CSS engine, so this pure function does the same sums. `tests/browser/clocklayout.test.mjs` compares it with the real page for eight window sizes and settings, so the two cannot drift apart unnoticed |
 
-**Rule: a change to a shared thing changes both halves in the same commit** (or the commit says which half is still to do, and `TODO.md`
-says so too). Nothing here may be copied by hand: generate from the schema, or import the same data.
+**What proves the Pi draws what the browser draws** (`.github/workflows/native.yml`, job "The native host draws what the browser draws"): the same
+moment is rendered by the program and by Chromium and the two pictures are compared (`native/host/tests/`): the sky alone (mean difference
+0.5 of 255), a 2D-canvas drawing in the style of the glass mask (0.13 of 255), and the whole page with the glass digits (sky, ground and digits
+in the same places; the small remaining difference is the edge of the glass).
+Mesa's fast software renderer (llvmpipe) gets some of the engine's integer noise arithmetic wrong in some versions, so the comparison uses
+its exact but slow one (softpipe); the Pi's own drivers (v3d, vc4) are separate, and are checked on a Pi.
 
-## What exists today (2026-11-04)
+## What is in this folder
 
-`native/cli/` is a zero-dependency Node program (`node native/cli/main.mjs ...`) that is the whole **control layer**, tested without a Pi:
-
-| File | What it does |
+| Where | What |
 |---|---|
-| `config.mjs` | the web page's setting names, values and defaults; a `key = value` file; presets; share links as a configuration |
-| `hardware.mjs` | machine profiles (Zero, Zero 2, 3, 4, 5, probed from the board), the `requires` rules from the schema, gating with reasons and fallbacks |
-| `panel.mjs` | `matrix.cfg` (rpi-fb-matrix's format) in and out, plain answers to panel grid, checks in words, drawing |
-| `patterns.mjs` | the test patterns (bars and ramp, identify, brightness sweep, border) as RGB frames |
-| `service.mjs`, `update.mjs` | the systemd unit, boot-partition config, signed and checksummed updates with rollback (logic; the network and file calls are injected) |
-| `manpage.mjs` | `man wobbly-clock(1)` and `wobbly-clock.conf(5)` generated from the schema into `native/man/` |
-| `main.mjs` | the commands: `setup test get set presets preset apply import-matrix-cfg export-matrix-cfg install-service capabilities man` |
+| `host/` | **`wobbly-clock-run`**, the program. Rust: `src/main.rs` (QuickJS, module loader, the page's files inside the program, timers), `src/egl.rs` (a GPU context with no window), `src/gl.rs` (the ~56 OpenGL ES calls the engine makes), `src/canvas2d.rs` (the 2D canvas, drawn by tiny-skia), `src/out.rs` (where frames go). `js/` is its JavaScript: `host.js` (WebGL objects, canvas), `dom.js` (a small DOM: the page's `index.html` is parsed into it, with a selector engine and events), `polyfills.js` (what QuickJS lacks: URL, Intl time zones, TextEncoder ...), `boot.js` (loads the settings, runs the page, hands frames to the output) |
+| `core/` | small and tested: the settings file reader (`config.rs`), the LED panel mapping (`matrix.rs`: rpi-fb-matrix's `matrix.cfg`, every rotation and chain), gamma and framebuffer bytes (`output.rs`), the pipe to the panel program (`sink.rs`) |
+| `cli/` | `wobbly-clock`, the command line (Node, zero dependencies): `setup test get set presets preset apply run status logs restart update install-service import-matrix-cfg export-matrix-cfg capabilities man` |
+| `matrix-sink/` | `wobbly-matrix`, a small C program that drives hub75 panels through hzeller's library |
+| `scripts/` | `make-deb.sh`, `cross-check.sh`, the update script and its timer, the signing-key helper |
+| `man/` | `man wobbly-clock(1)` and `wobbly-clock.conf(5)`, generated from the schema |
 
-**`native/core/`** is the start of the compiled side: a Rust crate (no dependencies, no I/O) with the **brightness model** (`dim.rs`, from `js/sky/dim.js`) and the **countdown digits** (`countdown.rs`, from `js/countdown.js`). Its tests read `core/tests/golden.tsv`, 2,295 vectors generated from the web code by `tools/native-golden.mjs`, and assert the same answers, so the two cannot drift (a JS unit test fails if the file is stale; `native.yml` runs `cargo test` and builds the crate for the original Pi Zero, `arm-unknown-linux-gnueabihf`, and for `aarch64`). It also has the **ten digit shapes** (`digits.rs`, generated from `dd` in `js/config.js` by `tools/native-digits.mjs`), the page's **morph** (`morph.rs`: `easeInOutBack` and the blend of two digits, checked against the web code's numbers) and a small **software rasteriser** (`raster.rs`: the four curves flattened and stroked 80 wide with soft edges, as coverage 0..1; this is what the HDMI and LED outputs will colour with the sky behind). `frame.rs` lays the time out ("12:34:56", colons as two round dots), centres and fits it to any size, and composes a frame (a gradient background for now, the time in the ink colour, a brightness factor) as RGB bytes; `cargo run --release --example frame -- 64 32 12:34 out.ppm` writes a picture. It reads well down to a 64 x 32 panel. **The sky** (`sun.rs`, `sky.rs`, `skytable.rs`, `scene.rs`): a low-precision solar position and sunrise/sunset search (checked against the astronomy library the page uses: altitude to 0.05 degree, azimuth to 0.3, 56 sunrise/sunset checks to within 90 seconds, polar day and night included); the **sky colours** are a lookup table **baked from the real web page** (`tools/native-sky.mjs` opens the page at 47 moments, measures the top of the sky, the horizon and the ground, and writes `skytable.rs`; a March morning the table never saw is the held-out test); `scene.rs` puts it together: sky for the sun's height, the time over it, ink chosen for contrast (white or navy, with a halo of the other at twilight when the horizon passes behind the digits), dimmed by the day/night brightness. `cargo run --release --example scene -- 128 64 2026-06-21T22:30:00Z 40.7 -74 12:34 out.ppm` writes a picture. Regenerate the table by hand (it needs Chromium) when the web look changes. **Output and the program** (`matrix.rs`, `output.rs`, `tz.rs`, `config.rs`, `clock.rs`, `sink.rs`, `src/bin/wobbly-clock-run.rs`): `wobbly-clock-run --config /etc/wobbly-clock/wobbly-clock.conf` is the program the service runs. It reads the same settings file the command line writes (checked against a file the Node side wrote), works out the local time itself (zoneinfo files and POSIX rules, checked against `Intl` around daylight-saving changes in 13 zones), draws the scene once a second, and sends it to **HDMI** (the kernel framebuffer, 32, 24 or 16 bits per pixel, any resolution) or to an **LED panel**: it reads `matrix.cfg`, arranges the picture for the chain exactly as the layout says (every pixel lands once, all four rotations, parallel chains; layouts written by the Node side are read back identically), applies gamma, and streams frames to **`wobbly-matrix`** (`native/matrix-sink/`, a small C program that drives the panels through hzeller's library; the brightness goes to the panel's own PWM so no colour steps are lost). `--sink ppm:DIR` writes pictures instead, for looking and for tests.
-
-**Built for the Pis:** `native/scripts/cross-check.sh` builds **static** binaries (about 0.5 MB, no libraries, `arm-unknown-linux-musleabihf` for every 32-bit Pi from the Zero up, `aarch64-unknown-linux-musl` for 64-bit) with Rust's own linker, runs them under QEMU and compares the frames byte for byte with the host build (they are identical). `native/scripts/make-deb.sh` makes a `.deb` per architecture (the binary, the systemd unit, the man pages, a sample config, the `wobbly` user); `.github/workflows/native-release.yml` publishes them, with checksums and signatures, when a `native-vX.Y.Z` tag is pushed. **What is not verified:** a real Pi (speed, GPIO timing, heat, the framebuffer on real hardware), and a real panel. The panel program is compiled against hzeller's real header and library by CI, not run.
-
-**Also in the picture:** **countdown mode** (`clockMode = countdown`, `timerTarget`; the same digits, 6/4 caps, `00:00` on the day and back to the time after it, checked against 65 vectors from the web code in New York time including both daylight-saving days), **manual weather** (`weatherMode`: how the page draws each setting's sky and ground at midday, baked by `tools/native-weather.mjs` into `weathertable.rs` and applied in proportion to daylight; `live` is clear because the native program has no live weather yet) and a **star field** (deterministic, a few per thousand pixels, fading in below about 6 degrees of twilight and gone through overcast, never on the ground). The **sun disc** (`disc.rs`): a small warm disc with a glow, drawn where the page draws it (measured: rising on the right, setting on the left, the horizon at 63% of the height, about 30 degrees visible above it, so at midday in summer it is off the top, as in the page); the position checks use numbers measured on the real page. **Liquid glass** (`glass.rs`, `clockStyle = auto | glass | stained | solid`, `glassFrost`, `glassGlow`, `glassGlowColor`): each stroke is a round transparent tube in software: the picture behind is refracted (a cylinder flips it) and frosted, the rim reflects the sky (Fresnel), a highlight runs along the upper left, a thin dark line marks the edge, the light from inside fills it, and stained glass tints each glyph whole (red, green, gold, blue) and always glows a little. **Auto** is liquid glass, and coloured lights from Thanksgiving to Christmas (`season.rs`, checked against `js/season.js`). The page's look was measured and the native glass calibrated to it: what the glass adds to the picture (mean colour inside the digits against what is behind them) is within 18 per channel of the page's at midday, dusk and night, with about 80% of its contrast (`tests/glass.rs`). **Speed:** the glass is shaded only inside the digits' rectangle, the sky is drawn once a minute and reused, and for HDMI the picture is drawn smaller and enlarged when a frame takes longer than 0.4 s (`renderScale = 0` is automatic, 1 to 8 forces it), so a Pi Zero stays on time at a smaller internal size instead of falling behind. On a fast core a 1080p glass frame takes about 0.16 s. **Weather** (`weather.rs`, `wind.rs`, `effects.rs`, `live.rs`): the page's weather model (cover, precipitation, snow, fog, wind, the presets) and its Open-Meteo mapping, checked against the web code (9 presets, 7 realistic answers, 48 wind combinations, gusts, the bent digits). **`weatherMode = live`** fetches Open-Meteo the way the page does, with `curl` (no TLS in the binary; the first answer arrives before the first frame, a thread refreshes every 10 minutes and keeps the last good answer when a fetch fails) and the sky takes the look of the nearest manual setting. **Wind sway** (`windSway = lean | full`): each digit bends at the top, downwind, by up to 90 path units (the page's maximum), across the way the screen looks (the follow-the-sun heading), and gusts flutter per digit in `full`. **Rain and snow on the digits** (`digitWeather`): snow settles on the surfaces that face up, rain beads sit on the glass (seeded, so frames compare; they change every few seconds). **Where things are on the picture** (`follow.rs`, `disc.rs`, `moon.rs`): the page's "follow the sun" camera (sunrise a quarter of the way in from the right, sunset from the left, following the sun's real bearing so the seasons show; at night the camera turns back from the sunset framing to the next sunrise one) is ported exactly (within 0.3 degree of the web code on 55 cases), and bodies are placed through a pinhole camera with the page's 80 degree field of view and the horizon at 63% of the height. The **moon** (a low-precision lunar position with parallax: within 0.6 degree of the astronomy library; the lit fraction within 0.02) is drawn as a disc lit as much as it is, its bright side facing the sun, with a faint earthshine on the dark part; its screen position was checked against two moments measured on the real page. **Landscapes** (`landscape.rs`, `landtable.rs`, `landscape = auto | flat | hills | mountains | desert | ocean | city`): the ground takes the colour the page gives each landscape (baked from the page, midday and night, as a multiple of the flat ground), the sea has waves, and hills, snow-capped mountains, a skyline of blocks or low dunes stand on the horizon, drawn from seeded noise with heights read off the page's pictures. `auto` (real terrain from elevation data in the page) is flat in the native program. **Packaging and updates:** the `.deb` now also carries the **command line** (`wobbly-clock setup | get | set | preset | apply | run | status | logs | restart | update ...`, which runs on Node; `Recommends: nodejs`, and the wrapper says so if Node is missing; the renderer itself needs nothing) and the **update script** `wobbly-clock-update` with a systemd timer (`systemctl enable --now wobbly-clock-update.timer`: 3 o'clock at night, spread over an hour, catching up if the Pi was off). The script reads `LATEST` from the release, stops when it is already current (versions compare as numbers), checks the download's **SHA-256** against `SHA256SUMS` and, when a release key is installed, its **ed25519 signature** (a missing or wrong signature stops the update; with no key installed only the checksum is checked, and it says so), refuses a program that does not run, keeps the old program as `.previous`, swaps the new one in atomically, restarts the service and **puts the old one back** if the service is not running ten seconds later. `tests/unit/native-update-script.test.mjs` runs it for real (a release on disk, real signatures from openssl, a stand-in systemctl) through the good update, a corrupt download, a forged signature, a missing signature, no key, a dud program, a service that will not start (rollback), a dry run and an unreachable release. To turn signing on, run `native/scripts/make-signing-key.sh` once: commit the public key as `native/release-key.pem` and save the private key as the secret `NATIVE_SIGNING_KEY`. Language decision: **Rust**.
-
-Not built: the **renderer** (the sky, digits and landscape drawn to HDMI or the matrix) and the release/packaging pipeline (static binary, `.deb`,
-download, install). `wobbly-clock run` does not exist yet; the service unit already points at it. The LED guide is [`../docs/LED-PANELS.md`](../docs/LED-PANELS.md).
-The command line is written in JavaScript so the settings, share links and brightness maths are the web page's own code; the renderer's
-language (Rust or C) is still to be decided, and the command line may move into it once it exists.
-
-## Layout (core exists; the rest is planned)
+## Running it
 
 ```
-native/
-  README.md        this file
-  Cargo.toml       (or CMakeLists.txt) the workspace
-  core/            astronomy, the sky model, the digit morph and countdown, the brightness model; no I/O
-  output-hdmi/     full resolution over HDMI: DRM/KMS or framebuffer (OpenGL ES 2 where there is a GPU)
-  output-matrix/   LED panels, through rpi-rgb-led-matrix
-  cli/             wobbly-clock: setup, test, set/get, preset, apply, install-service, update, status
-  man/             generated from ../schema/settings.json
-  tests/           unit tests, golden frames, fake hardware profiles
+wobbly-clock-run --config /etc/wobbly-clock/wobbly-clock.conf          # what the service runs: HDMI, or the LED panel if output = matrix
+wobbly-clock-run --config my.conf --sink ppm:/tmp/frames --size 960x540 --frames 3 --at 1782061200000     # pictures, for looking and for tests
 ```
+
+* **HDMI**: frames are read back from the GPU and written to the kernel framebuffer (`/dev/fb0`, 32, 24 or 16 bits). The page's own
+  night dimming is applied to the pixels. (Direct scan-out through KMS/GBM, with no read-back, is the next step; see `../TODO.md`.)
+* **LED panel**: the page's LED look is rendered at four pixels per LED, the middle of each cell is read back, mapped onto the chain by
+  `matrix.cfg`, gamma-corrected and streamed to `wobbly-matrix`; the brightness goes to the panel's own PWM.
+* **Live weather** and the other network lookups are the page's own, through `curl`.
+
+**Limits today:** the pills (sunrise countdown, rain alert, countdown name) and the settings drawer are page furniture made of DOM elements
+and are not drawn natively; the LED card's bitmap font is (it is drawn into the canvas). The Raspberry Pi 3 and Zero have OpenGL ES 2.0 only
+and cannot yet run the shaders (they need OpenGL ES 3.0, which the Pi 4 and 5 have); an ES 2.0 profile of the shaders is under way, see
+`../TODO.md`. **Not verified on a real Pi:** speed, the drivers, the framebuffer, a real panel.
 
 ## Builds, releases and CI
 
-- Releases are **tagged `native-vX.Y.Z`** and attach a static binary plus a `.deb` per architecture (ARMv6/ARMv7 `armhf`, `arm64`);
-  the web page is deployed continuously from `main` and is not affected by these tags.
-- CI for this folder is **its own workflow** (`.github/workflows/native.yml`, to be added with the first code) that runs only when
-  `native/` or `schema/` changes; the web CI (`ci.yml`) is unchanged by native-only changes. The web version stamp (`js/version.js`) only
-  hashes the web files, so a native-only change never bumps the web version.
-- GitHub Pages serves the repository root, so this folder is published with the site; harmless, but a small deploy workflow that publishes
-  only the web files is a later tidy-up.
-- The web linter and test runner ignore `native/`.
-
-## Before writing code
-
-1. Answer the questions in `TODO.md` ("Questions to answer first"): which panels, and which Pi goes with each.
-2. Measure the current page on your Zero, 3 and 4 (WebGL2 yes/no, frames per second, memory, temperature).
-3. Decide the language for `core/` (Rust or C), then add the workspace, a CI workflow, and a first golden-frame test that renders one
-   fixed moment at 64 x 32 and compares it with the web page's picture.
+* `cargo test` in `native/` runs the settings, panel-mapping and gamma tests. The program builds for the Pi Zero/1 (ARMv6, `arm-unknown-linux-gnueabihf`,
+  which runs on every 32-bit Pi) and for 64-bit Pis (`aarch64-unknown-linux-gnu`) with the cross compilers `gcc-arm-linux-gnueabihf` and
+  `gcc-aarch64-linux-gnu`; `scripts/cross-check.sh` builds both and starts each under QEMU. The GPU driver (Mesa) is loaded at run time, so no
+  graphics libraries are needed to build.
+* `scripts/make-deb.sh` makes a `.deb` per architecture (the program, the systemd unit, the man pages, the command line and the update script);
+  `.github/workflows/native-release.yml` publishes them, with checksums and signatures, when a tag `native-vX.Y.Z` is pushed. The web page is
+  deployed from `main` and is not affected by these tags.
+* The update script (`wobbly-clock-update`, with a systemd timer) replaces the one program file: it checks the SHA-256 and the ed25519 signature,
+  keeps the old program, swaps the new one in atomically and puts the old one back if the service does not start. `tests/unit/native-update-script.test.mjs`
+  runs it for real. To turn signing on, run `scripts/make-signing-key.sh` once.
+* `native.yml` runs only when `native/`, the page's drawing code or the schema change; the web CI is unchanged by native-only changes.

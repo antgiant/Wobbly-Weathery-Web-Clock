@@ -28,7 +28,6 @@ pub fn read(id: usize, x: i32, y: i32, w: u32, h: u32) -> Vec<u8> {
         out
     })
 }
-pub fn size(id: usize) -> (u32, u32) { CANVASES.with(|c| { let c = c.borrow(); (c[id].pm.width(), c[id].pm.height()) }) }
 
 fn num(v: &Value, k: &str) -> f32 { v.get(k).and_then(|x| x.as_f64()).unwrap_or(0.0) as f32 }
 fn color(a: &Value) -> Color {
@@ -44,7 +43,7 @@ fn blend(name: &str) -> BlendMode {
     }
 }
 fn shader(p: &Value, alpha: f32) -> Shader<'static> {
-    let mut stops = |p: &Value| -> Vec<GradientStop> {
+    let stops = |p: &Value| -> Vec<GradientStop> {
         p["stops"].as_array().map(|a| a.iter().map(|s| { let mut c = color(&s[1]); c.apply_opacity(alpha); GradientStop::new(s[0].as_f64().unwrap_or(0.0) as f32, c) }).collect()).unwrap_or_default()
     };
     match p["k"].as_str().unwrap_or("color") {

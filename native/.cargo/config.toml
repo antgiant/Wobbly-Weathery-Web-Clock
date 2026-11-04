@@ -1,7 +1,12 @@
-# Static binaries for the Pis with no external cross toolchain: the musl targets link with Rust's own lld.
-[target.arm-unknown-linux-musleabihf]
-linker = "rust-lld"
-[target.aarch64-unknown-linux-musl]
-linker = "rust-lld"
-[target.armv7-unknown-linux-musleabihf]
-linker = "rust-lld"
+# Cross builds for the Pis (dynamic, glibc: the GPU driver is loaded at run time, so nothing but a C compiler for QuickJS is needed to build):
+#   sudo apt install gcc-arm-linux-gnueabihf gcc-aarch64-linux-gnu
+#   rustup target add arm-unknown-linux-gnueabihf aarch64-unknown-linux-gnu
+# arm-unknown-linux-gnueabihf is ARMv6 with hardware floating point: it runs on every 32-bit Pi, from the Zero to the 4.
+[target.arm-unknown-linux-gnueabihf]
+linker = "arm-linux-gnueabihf-gcc"
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
+
+# bindgen (QuickJS bindings on 32-bit Arm) needs the target's C headers
+[env]
+BINDGEN_EXTRA_CLANG_ARGS_arm_unknown_linux_gnueabihf = "--sysroot=/usr/arm-linux-gnueabihf -I/usr/arm-linux-gnueabihf/include"

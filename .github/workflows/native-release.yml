@@ -1,6 +1,6 @@
 name: Native release
 
-# Tag native-vX.Y.Z to build the Raspberry Pi programs and publish them: a static binary per Pi family, a .deb each, checksums, and (when the
+# Tag native-vX.Y.Z to build the Raspberry Pi programs and publish them: a program per Pi family, a .deb each, checksums, and (when the
 # NATIVE_SIGNING_KEY secret holds an ed25519 private key in PEM) a signature of each. The web page is unaffected by these tags.
 
 on:
@@ -25,20 +25,21 @@ jobs:
           echo "VERSION=$(echo "${GITHUB_REF_NAME:-native-v0.0.0}" | sed 's/^native-v//')" >> "$GITHUB_ENV"
       - name: Tests
         run: |
-          rustup target add arm-unknown-linux-musleabihf aarch64-unknown-linux-musl
+          sudo apt-get update -qq && sudo apt-get install -y -qq gcc-arm-linux-gnueabihf gcc-aarch64-linux-gnu
+          rustup target add arm-unknown-linux-gnueabihf aarch64-unknown-linux-gnu
           (cd native && cargo test)
       - name: Build
         run: |
-          # cargo reads native/.cargo/config.toml (the linker for the static targets) from the directory it runs in
+          # cargo reads native/.cargo/config.toml (the cross linkers) from the directory it runs in
           cd native
-          cargo build --release --target arm-unknown-linux-musleabihf
-          cargo build --release --target aarch64-unknown-linux-musl
+          cargo build --release --target arm-unknown-linux-gnueabihf
+          cargo build --release --target aarch64-unknown-linux-gnu
       - name: Package
         run: |
           mkdir -p dist
           # the names the update script looks for (wobbly-clock-run-armv6, -aarch64), LATEST, and a .deb each
-          cp native/target/arm-unknown-linux-musleabihf/release/wobbly-clock-run dist/wobbly-clock-run-armv6
-          cp native/target/aarch64-unknown-linux-musl/release/wobbly-clock-run dist/wobbly-clock-run-aarch64
+          cp native/target/arm-unknown-linux-gnueabihf/release/wobbly-clock-run dist/wobbly-clock-run-armv6
+          cp native/target/aarch64-unknown-linux-gnu/release/wobbly-clock-run dist/wobbly-clock-run-aarch64
           echo "$VERSION" > dist/LATEST
           native/scripts/make-deb.sh armhf dist/wobbly-clock-run-armv6 "$VERSION" dist
           native/scripts/make-deb.sh arm64 dist/wobbly-clock-run-aarch64 "$VERSION" dist
@@ -59,4 +60,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* --title "Native $VERSION" \
-            --notes "Static Raspberry Pi programs. wobbly-clock-run for ARMv6 (every 32-bit Pi) and aarch64, with a .deb each. Verify with SHA256SUMS (and the .sig files with the release key). wobbly-clock-update, installed by the .deb, reads LATEST and these files." 
+            --notes "Raspberry Pi programs (the web page's own code, run without a browser). wobbly-clock-run for ARMv6 (every 32-bit Pi) and aarch64, with a .deb each. Verify with SHA256SUMS (and the .sig files with the release key). wobbly-clock-update, installed by the .deb, reads LATEST and these files." 

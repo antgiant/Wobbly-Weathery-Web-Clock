@@ -1,7 +1,7 @@
 [workspace]
+# core: the settings file, the LED panel mapping, gamma and the framebuffer bytes (small, tested); host: wobbly-clock-run, the program that runs the
+# web page's own code. The host loads the GPU driver (EGL, OpenGL ES) at run time, so building it needs only a C compiler (for QuickJS).
 members = ["core", "host"]
-# the host links against the system GPU driver and is built on its own (cargo build -p wobbly-host); the static Pi builds cover the core only
-default-members = ["core"]
 resolver = "2"
 
 [profile.release]

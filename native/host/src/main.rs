@@ -5,6 +5,7 @@ mod canvas2d;
 mod egl;
 mod gl;
 mod out;
+mod webfiles { include!(concat!(env!("OUT_DIR"), "/web_files.rs")); }
 
 use rquickjs::loader::{Loader, Resolver};
 use rquickjs::{ArrayBuffer, Context, Ctx, Function, Module, Object, Result, Runtime, Value};
@@ -29,20 +30,28 @@ thread_local! {
     static MAIN_PROMISE: std::cell::RefCell<Option<rquickjs::Persistent<rquickjs::Promise<'static>>>> = std::cell::RefCell::new(None);
     static GL: std::cell::RefCell<Option<Rc<gl::Gl>>> = std::cell::RefCell::new(None);
     static ROOT: std::cell::RefCell<PathBuf> = std::cell::RefCell::new(PathBuf::new());
+    static WEB_ON_DISK: std::cell::Cell<bool> = std::cell::Cell::new(true);
     static DONE: std::cell::Cell<bool> = std::cell::Cell::new(false);
     static T0: std::cell::Cell<Option<Instant>> = std::cell::Cell::new(None);
 }
-fn path_of(p: &str) -> PathBuf { if Path::new(p).is_absolute() { PathBuf::from(p) } else { ROOT.with(|r| r.borrow().join(p)) } }
+/// The page's files: from a folder (`--web DIR`, and the tests), or the copy inside the program (the root is then the made-up folder "/web").
+fn vfs_read(p: &str) -> Option<Vec<u8>> {
+    let (root, on_disk) = ROOT.with(|r| (r.borrow().to_string_lossy().to_string(), WEB_ON_DISK.with(|d| d.get())));
+    let rel = p.strip_prefix(root.as_str()).map(|r| r.trim_start_matches('/')).unwrap_or_else(|| p.trim_start_matches('/'));
+    if on_disk { std::fs::read(Path::new(&root).join(rel)).ok().or_else(|| if Path::new(p).is_absolute() { std::fs::read(p).ok() } else { None }) }
+    else { webfiles::WEB.iter().find(|(k, _)| *k == rel).map(|(_, v)| v.to_vec()) }
+}
+fn vfs_exists(rel: &str) -> bool { vfs_read(rel).is_some() }
 fn throw<'js>(ctx: &Ctx<'js>, m: String) -> rquickjs::Error { rquickjs::Exception::throw_message(ctx, &m) }
 fn n_gl<'js>(ctx: Ctx<'js>, name: String, args: Rest<Value<'js>>) -> Result<Value<'js>> { let g = GL.with(|g| g.borrow().clone().unwrap()); g.call(&ctx, &name, &args.0) }
 fn n_now() -> f64 { T0.with(|t| t.get().unwrap().elapsed().as_secs_f64() * 1000.0) }
 fn n_readfile<'js>(ctx: Ctx<'js>, p: String) -> Result<ArrayBuffer<'js>> {
-    let full = path_of(&p); let b = std::fs::read(&full).map_err(|e| throw(&ctx, format!("{}: {e}", full.display())))?; ArrayBuffer::new_copy(ctx.clone(), b)
+    let b = vfs_read(&p).ok_or_else(|| throw(&ctx, format!("{p}: not found")))?; ArrayBuffer::new_copy(ctx.clone(), b)
 }
-fn n_readtext<'js>(ctx: Ctx<'js>, p: String) -> Result<String> { let full = path_of(&p); std::fs::read_to_string(&full).map_err(|e| throw(&ctx, format!("{}: {e}", full.display()))) }
+fn n_readtext<'js>(ctx: Ctx<'js>, p: String) -> Result<String> { let b = vfs_read(&p).ok_or_else(|| throw(&ctx, format!("{p}: not found")))?; String::from_utf8(b).map_err(|_| throw(&ctx, format!("{p}: not text"))) }
 fn n_decode<'js>(ctx: Ctx<'js>, p: String) -> Result<Object<'js>> {
-    let full = path_of(&p);
-    let img = image::open(&full).map_err(|e| throw(&ctx, format!("{}: {e}", full.display())))?.to_rgba8();
+    let bytes = vfs_read(&p).ok_or_else(|| throw(&ctx, format!("{p}: not found")))?;
+    let img = image::load_from_memory(&bytes).map_err(|e| throw(&ctx, format!("{p}: {e}")))?.to_rgba8();
     let o = Object::new(ctx.clone())?;
     o.set("w", img.width())?; o.set("h", img.height())?;
     o.set("data", ArrayBuffer::new_copy(ctx.clone(), img.into_raw())?)?;
@@ -105,7 +114,7 @@ fn n_c2d_call<'js>(id: usize, op: String, arg: String, buf: Option<ArrayBuffer<'
 }
 fn n_c2d_read<'js>(ctx: Ctx<'js>, id: usize, x: i32, y: i32, w: u32, h: u32) -> Result<ArrayBuffer<'js>> { ArrayBuffer::new_copy(ctx.clone(), canvas2d::read(id, x, y, w, h)) }
 
-struct Res { root: PathBuf }
+struct Res;
 impl Resolver for Res {
     fn resolve<'js>(&mut self, _c: &Ctx<'js>, base: &str, name: &str) -> Result<String> {
         let joined = if name.starts_with("./") || name.starts_with("../") {
@@ -118,31 +127,32 @@ impl Resolver for Res {
             match part.as_os_str().to_str().unwrap_or("") { "." => {}, ".." => { out.pop(); }, s => out.push(s.to_string()) }
         }
         let rel = out.join("/");
-        if embedded(&rel).is_some() || self.root.join(&rel).exists() { Ok(rel) } else { Err(rquickjs::Error::new_resolving(base, name)) }
+        if embedded(&rel).is_some() || vfs_exists(&rel) { Ok(rel) } else { Err(rquickjs::Error::new_resolving(base, name)) }
     }
 }
-struct Load { root: PathBuf }
+struct Load;
 impl Loader for Load {
     fn load<'js>(&mut self, ctx: &Ctx<'js>, name: &str) -> Result<Module<'js, rquickjs::module::Declared>> {
-        let src = match embedded(name) { Some(t) => t, None => std::fs::read_to_string(self.root.join(name)).map_err(|_| rquickjs::Error::new_loading(name))? };
+        let src = match embedded(name) { Some(t) => t, None => String::from_utf8(vfs_read(name).ok_or_else(|| rquickjs::Error::new_loading(name))?).map_err(|_| rquickjs::Error::new_loading(name))? };
         Module::declare(ctx.clone(), name, src)
     }
 }
 
-fn usage() -> ! {
-    eprintln!("wobbly-clock-run: shows the clock (the web page's own code, run without a browser)\n\
+fn usage(code: i32) -> ! {
+    let text = format!("wobbly-clock-run: shows the clock (the web page's own code, run without a browser)\n\
 usage: wobbly-clock-run [--config FILE] [--web DIR] [--sink fb[:DEV]|ppm:DIR|matrix] [--size WxH] [--frames N] [--at EPOCH_MS]\n\
   --config FILE   the settings file (default /etc/wobbly-clock/wobbly-clock.conf)\n\
-  --web DIR       the page's files (default $WOBBLY_WEB, /usr/share/wobbly-clock/web, or the current folder)\n\
+  --web DIR       use the page's files from this folder instead of the copy inside the program (for working on the page)\n\
   --sink          where frames go (default: the config's output: hdmi = fb, matrix = the LED panel)\n\
   --size WxH      the picture size for the ppm sink; --frames N stop after N frames; --at EPOCH_MS pretend it is this moment\n\
 tests: wobbly-clock-run <repo-root> <out.ppm> [--app] [--w=N --h=N --search=... --conf=JSON ...]");
-    std::process::exit(2)
+    if code == 0 { println!("{text}"); } else { eprintln!("{text}"); }
+    std::process::exit(code)
 }
 
 fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
-    if argv.iter().any(|x| x == "--help" || x == "-h") { usage(); }
+    if argv.iter().any(|x| x == "--help" || x == "-h") { usage(0); }
     if argv.iter().any(|x| x == "--version" || x == "-V") { println!("wobbly-clock-run {}", env!("CARGO_PKG_VERSION")); return; }
     let legacy = argv.first().map_or(false, |x| !x.starts_with('-'));
     let mut flags: Vec<(String, String)> = vec![];
@@ -160,12 +170,14 @@ fn main() {
     let fl = |k: &str| flags.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
     let run_mode = !legacy;
     let a: Vec<String> = std::iter::once("wobbly".to_string()).chain(pos.into_iter()).collect();
-    if legacy && a.len() < 3 { usage(); }
+    if legacy && a.len() < 3 { usage(2); }
     let (root, out_path): (PathBuf, String) = if legacy {
         (std::fs::canonicalize(&a[1]).expect("repo root"), a[2].clone())
     } else {
-        let web = fl("web").or_else(|| std::env::var("WOBBLY_WEB").ok()).or_else(|| Path::new("/usr/share/wobbly-clock/web").join("index.html").exists().then(|| "/usr/share/wobbly-clock/web".to_string())).unwrap_or_else(|| ".".into());
-        (std::fs::canonicalize(&web).unwrap_or_else(|e| { eprintln!("wobbly-clock-run: the page's files are not at {web}: {e}"); std::process::exit(1) }), String::new())
+        match fl("web").or_else(|| std::env::var("WOBBLY_WEB").ok()) {
+            Some(web) => (std::fs::canonicalize(&web).unwrap_or_else(|e| { eprintln!("wobbly-clock-run: the page's files are not at {web}: {e}"); std::process::exit(1) }), String::new()),
+            None => { WEB_ON_DISK.with(|d| d.set(false)); (PathBuf::from("/web"), String::new()) }       // the copy inside the program
+        }
     };
     let mut w: u32 = a.get(3).and_then(|s| s.parse().ok()).or(fl("w").and_then(|v| v.parse().ok())).unwrap_or(480);
     let mut h: u32 = a.get(4).and_then(|s| s.parse().ok()).or(fl("h").and_then(|v| v.parse().ok())).unwrap_or(270);
@@ -190,7 +202,7 @@ fn main() {
     let rt = Runtime::new().unwrap();
     rt.set_memory_limit(512 << 20);
     rt.set_max_stack_size(4 << 20);
-    rt.set_loader(Res { root: root.clone() }, Load { root: root.clone() });
+    rt.set_loader(Res, Load);
     let ctx = Context::full(&rt).unwrap();
     T0.with(|t| t.set(Some(Instant::now())));
     if let Ok(p) = std::env::var("WOBBLY_STORE") { STORE.with(|s| *s.borrow_mut() = Some(PathBuf::from(p))); }
