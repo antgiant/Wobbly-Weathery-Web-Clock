@@ -103,7 +103,7 @@ fn main() {
 
         let host = std::fs::read_to_string(root.join("native/host/js/host.js")).expect("host.js");
         if let Err(e) = ctx.eval::<(), _>(host) { eprintln!("host.js: {}", describe(&ctx, e)); std::process::exit(1); }
-        let spike = std::fs::read_to_string(root.join("native/host/js/spike.js")).expect("spike.js");
+        let spike = std::fs::read_to_string(std::env::var("WOBBLY_SCRIPT").map(PathBuf::from).unwrap_or_else(|_| root.join("native/host/js/spike.js"))).expect("spike.js");
         match Module::evaluate(ctx.clone(), "spike", spike) { Ok(p) => { let _ = p; } Err(e) => { eprintln!("spike: {}", describe(&ctx, e)); std::process::exit(1); } }
     });
 
