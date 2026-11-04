@@ -224,4 +224,5 @@ Decision: the web page and the Pi share ONE renderer, the JavaScript + GLSL unde
 - [ ] Only if a real Pi 3 is too slow on the CPU: an OpenGL ES 2.0 profile of the shaders (packed 8-bit textures instead of float targets; VAO, instancing and blit emulated in the host; constant loop bounds; `#if` switches in the same source files) so the Pi 3's GPU can do the work. Time it first on the real Pi 3.
 - [-] Direct scan-out through KMS/GBM: not built, on purpose. A clock draws about once a second, so reading a 1080p frame back and writing it to the framebuffer costs a few milliseconds a second; scan-out would save that and nothing visible.
 - [ ] Pills and the settings drawer natively (they are DOM furniture; the LED card already draws into the canvas).
+- [x] Pi Zero tested (2026-11-04): 28 minutes for three 320x180 frames on the CPU. Not supported; Pi 3 is the lowest target.
 - [ ] First tests on real hardware: Pi 4 (ES 3.1), Pi 3 (ES 2.0), an LED panel.

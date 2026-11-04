@@ -8,7 +8,7 @@ G.location = { search: '', href: 'file://' + (G.__root || '') + '/index.html', h
 G.navigator = { userAgent: 'wobbly-host', hardwareConcurrency: 4 };
 G.console = { log: (...a) => __print(a.join(' ')), warn: (...a) => __print('warn: ' + a.join(' ')), error: (...a) => __print('error: ' + a.join(' ')), info: () => {}, debug: () => {} };
 const t0 = __now();
-G.performance = { now: () => __now() - t0, mark() {}, measure() {} };
+G.performance = { now: () => __now() - t0, mark(n) { if (G.__args && G.__args.timing) __print('[' + Math.round(__now() - t0) + ' ms] ' + n); }, measure() {} };
 
 // ---- timers, pumped by the host ------------------------------------------------------------------------------------
 let timers = [], tid = 1;

@@ -2,6 +2,8 @@
 
 The native clock is the web page's own code run by a small program, `wobbly-clock-run`, with no browser. This is how to try it and what to tell me.
 
+**Measured: the original Pi Zero is too slow.** Three 320x180 frames took 28 minutes on a Pi Zero (one 700 MHz ARMv6 core, drawing in software), so the Zero and Zero W / Pi 1 are not supported by this approach. Test on a Pi 3 (or Zero 2 W, Pi 4, 5).
+
 **What to expect.** Pi 4 and 5 draw on the GPU. Pi 3, Zero 2 and Zero have a GPU too old for the page's shaders (they need OpenGL ES 3), so the program
 says `no OpenGL ES 3 on this GPU ... drawing on the CPU instead` and draws in software: the same picture, slower. The Pi 3 should manage a frame every few
 seconds at a small size; the original Zero (ARMv6, one slow core) may need a minute per frame, which is why step 3 measures before you put it on a screen.

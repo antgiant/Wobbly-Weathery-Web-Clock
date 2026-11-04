@@ -56,7 +56,7 @@ wobbly-clock-run --config my.conf --sink ppm:/tmp/frames --size 960x540 --frames
 * **Live weather** and the other network lookups are the page's own, through `curl`.
 
 **Limits today:** the pills (sunrise countdown, rain alert, countdown name) and the settings drawer are page furniture made of DOM elements
-and are not drawn natively; the LED card's bitmap font is (it is drawn into the canvas). **Which Pis:** the Pi 4 and 5 have OpenGL ES 3 in hardware and draw on the GPU. The
+and are not drawn natively; the LED card's bitmap font is (it is drawn into the canvas). **Which Pis:** measured on a real Pi Zero: three 320x180 frames took 28 minutes (software drawing on one ARMv6 core), so the original Zero, Zero W and Pi 1 are **not supported**.  the Pi 4 and 5 have OpenGL ES 3 in hardware and draw on the GPU. The
 Pi 3, Zero 2 and Zero have OpenGL ES 2 only, and the page's shaders need ES 3 (float render targets, integer arithmetic, instancing), so there
 the program notices (`no OpenGL ES 3 on this GPU`), restarts itself with Mesa's software renderer (llvmpipe, on the CPU; `--software` forces it)
 and draws the same picture more slowly, at a smaller internal size when frames take too long (the page's own adaptive scale). A GPU-accelerated
