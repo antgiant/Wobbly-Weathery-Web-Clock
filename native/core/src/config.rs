@@ -11,6 +11,12 @@ pub struct Config {
     /// `None` is "auto"
     pub twenty_four_hour: Option<bool>,
     pub hide_seconds: bool,
+    /// a manual weather setting; "live" (the default) is clear for now
+    pub weather_mode: String,
+    /// "time" or "countdown"
+    pub clock_mode: String,
+    /// a datetime-local value, "2026-12-25T08:00", in the clock's time zone
+    pub timer_target: String,
     pub brightness_day: f64,
     pub brightness_night: f64,
     pub brightness_transition: f64,
@@ -27,7 +33,7 @@ pub struct LedOptions { pub gpio_mapping: String, pub slowdown_gpio: u32, pub pw
 
 impl Default for Config {
     fn default() -> Self {
-        Config { latitude: 0.0, longitude: 0.0, time_zone: String::new(), twenty_four_hour: None, hide_seconds: false, brightness_day: 1.0, brightness_night: 1.0, brightness_transition: 45.0,
+        Config { latitude: 0.0, longitude: 0.0, time_zone: String::new(), twenty_four_hour: None, hide_seconds: false, weather_mode: "live".into(), clock_mode: "time".into(), timer_target: String::new(), brightness_day: 1.0, brightness_night: 1.0, brightness_transition: 45.0,
             output: "hdmi".into(), matrix_config: String::new(), gamma: 2.2,
             led: LedOptions { gpio_mapping: "regular".into(), slowdown_gpio: 1, pwm_bits: 11, pwm_lsb_nanoseconds: 130, rgb_sequence: "RGB".into(), panel_type: String::new(), multiplexing: 0, row_addr_type: 0 },
             errors: vec![] }
@@ -35,6 +41,16 @@ impl Default for Config {
 }
 
 fn bool_of(v: &str) -> Option<bool> { match v.to_ascii_lowercase().as_str() { "on" | "true" | "yes" | "1" => Some(true), "off" | "false" | "no" | "0" => Some(false), _ => None } }
+
+/// "2026-12-25T08:00" -> (year, month, day, hour, minute), checked for sensible ranges.
+pub fn parse_target(v: &str) -> Option<(i64, i64, i64, i64, i64)> {
+    let b = v.as_bytes();
+    if b.len() != 16 || b[4] != b'-' || b[7] != b'-' || b[10] != b'T' || b[13] != b':' { return None; }
+    let n = |r: std::ops::Range<usize>| v[r].parse::<i64>().ok();
+    let (y, mo, d, h, mi) = (n(0..4)?, n(5..7)?, n(8..10)?, n(11..13)?, n(14..16)?);
+    if !(1..=12).contains(&mo) || !(1..=31).contains(&d) || h > 23 || mi > 59 { return None; }
+    Some((y, mo, d, h, mi))
+}
 
 pub fn parse(text: &str) -> Config {
     let mut map: HashMap<String, (usize, String)> = HashMap::new();
@@ -60,6 +76,9 @@ pub fn parse(text: &str) -> Config {
     int("ledRowAddrType", 0, 5, &mut c.led.row_addr_type, &mut errors);
     if let Some((l, v)) = map.get("hideSeconds") { match bool_of(v) { Some(b) => c.hide_seconds = b, None => errors.push(format!("line {l}: hideSeconds is on or off, not \"{v}\"")) } }
     if let Some((l, v)) = map.get("twentyFourHourClock") { match v.as_str() { "auto" => c.twenty_four_hour = None, x => match bool_of(x) { Some(b) => c.twenty_four_hour = Some(b), None => errors.push(format!("line {l}: twentyFourHourClock is auto, on or off, not \"{v}\"")) } } }
+    if let Some((l, v)) = map.get("clockMode") { if v == "time" || v == "countdown" { c.clock_mode = v.clone() } else { errors.push(format!("line {l}: clockMode is time or countdown, not \"{v}\"")) } }
+    if let Some((l, v)) = map.get("timerTarget") { if v.is_empty() || parse_target(v).is_some() { c.timer_target = v.clone() } else { errors.push(format!("line {l}: timerTarget looks like 2026-12-25T08:00, not \"{v}\"")) } }
+    if let Some((l, v)) = map.get("weatherMode") { if v == "live" || crate::weather::known(v) { c.weather_mode = v.clone() } else { errors.push(format!("line {l}: weatherMode is live, clear, partly, cloudy, overcast, rain, storm, snow, fog or haze, not \"{v}\"")) } }
     if let Some((l, v)) = map.get("output") { if v == "hdmi" || v == "matrix" { c.output = v.clone() } else { errors.push(format!("line {l}: output is hdmi or matrix, not \"{v}\"")) } }
     if let Some((l, v)) = map.get("ledGpioMapping") { if ["regular", "adafruit-hat", "adafruit-hat-pwm"].contains(&v.as_str()) { c.led.gpio_mapping = v.clone() } else { errors.push(format!("line {l}: ledGpioMapping is regular, adafruit-hat or adafruit-hat-pwm, not \"{v}\"")) } }
     for (k, into) in [("timeZone", &mut c.time_zone), ("matrixConfig", &mut c.matrix_config), ("ledRgbSequence", &mut c.led.rgb_sequence), ("ledPanelType", &mut c.led.panel_type)] { if let Some((_, v)) = map.get(k) { *into = v.clone(); } }

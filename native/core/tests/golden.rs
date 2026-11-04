@@ -50,6 +50,20 @@ fn matches_the_web_code() {
                 }
                 n_cd += 1;
             }
+            "countdown" => {
+                // New York time, the page's countdown: the phase and the digits, with and without seconds
+                let zone = wobbly_core::tz::Zone::load("America/New_York").expect("America/New_York zoneinfo");
+                for (show_seconds, want) in [(true, c[4]), (false, c[5])] {
+                    let cfg = wobbly_core::config::Config { clock_mode: "countdown".into(), timer_target: c[1].into(), hide_seconds: !show_seconds, twenty_four_hour: Some(true), ..Default::default() };
+                    let now = f(c[2]);
+                    let target = wobbly_core::clock::target_ms(&cfg, &zone).unwrap();
+                    let phase = match wobbly_core::clock::phase_of(target, now, &zone) { wobbly_core::clock::Phase::Counting => "counting", wobbly_core::clock::Phase::Done => "done", wobbly_core::clock::Phase::Over => "over" };
+                    assert_eq!(phase, c[3], "{at}: phase");
+                    let got = wobbly_core::clock::display_text(&cfg, &zone, now);
+                    if want == "time" { assert_eq!(got, wobbly_core::clock::time_text(&cfg, &zone, now), "{at}: after the day the clock shows the time"); } else { assert_eq!(got, want, "{at}"); }
+                }
+                n_cd += 1;
+            }
             "tz" => {}                       // read by tests/tz.rs
             other => panic!("unknown vector kind {other} at {at}"),
         }
