@@ -68,10 +68,40 @@ for (const [lat, lon] of PLACES) {
   }
 }
 
+// ---- local time: the wall clock of a zone at a moment, from Intl (what the page's js/timezone.js shows) ----
+const ZONES = ['America/New_York', 'Europe/London', 'Australia/Sydney', 'Asia/Kolkata', 'Asia/Kathmandu', 'America/Sao_Paulo', 'Pacific/Auckland', 'Europe/Paris', 'Asia/Tokyo', 'America/Phoenix', 'UTC', 'America/Los_Angeles', 'Pacific/Chatham'];
+const WHEN = ['2008-03-09T06:59:59Z', '2008-03-09T07:00:00Z', '2015-11-01T05:59:59Z', '2015-11-01T06:00:00Z', '2024-01-15T12:00:00Z', '2024-03-10T06:59:59Z', '2024-03-10T07:00:00Z', '2024-03-31T00:59:59Z', '2024-03-31T01:00:00Z', '2024-10-27T00:59:59Z', '2024-10-27T01:00:00Z', '2026-04-05T15:00:00Z', '2026-06-21T12:00:00Z', '2026-10-04T15:59:59Z', '2026-10-04T16:00:00Z', '2026-11-01T05:59:59Z', '2026-11-01T06:00:00Z', '2026-12-31T23:59:59Z', '2030-07-04T00:00:00Z', '2035-03-11T07:00:00Z', '2035-11-04T06:00:00Z'];
+for (const z of ZONES) {
+  const f = new Intl.DateTimeFormat('en-US', { timeZone: z, hourCycle: 'h23', hour: 'numeric', minute: 'numeric', second: 'numeric' });
+  for (const iso of WHEN) { const d = new Date(iso), p = Object.fromEntries(f.formatToParts(d).map((x) => [x.type, Number(x.value)])); lines.push(['tz', z, Math.floor(+d / 1000), `${p.hour % 24},${p.minute},${p.second}`].join('\t')); }
+}
+
+// ---- panel layouts written by the Node command line (native/cli/panel.mjs), which the Rust side must read the same way ----
+const { fromAnswers, writeMatrixCfg } = await import('../native/cli/panel.mjs');
+const fixtures = {};
+for (const [name, a] of Object.entries({
+  row: { panelWidth: 32, panelHeight: 16, across: 4, down: 1, entry: 'top-left', wiring: 'row' },
+  snake: { panelWidth: 32, panelHeight: 32, across: 2, down: 2, entry: 'top-right', wiring: 'snake-across' },
+  snakedown: { panelWidth: 64, panelHeight: 64, across: 3, down: 2, entry: 'bottom-left', wiring: 'snake-down' },
+  sameside: { panelWidth: 32, panelHeight: 16, across: 3, down: 3, entry: 'bottom-right', wiring: 'rows-same-side' },
+  parallel: { panelWidth: 32, panelHeight: 32, across: 2, down: 3, entry: 'top-left', wiring: 'row', parallel: 3 },
+})) {
+  const cfg = fromAnswers(a);
+  fixtures[`native/core/tests/matrix/${name}.cfg`] = writeMatrixCfg(cfg);
+  fixtures[`native/core/tests/matrix/${name}.expect`] = `${cfg.displayWidth} ${cfg.displayHeight} ${cfg.chainLength} ${cfg.parallelCount}\n` + cfg.panels.map((r) => r.map((t) => `${t.order}:${t.rotate}:${t.parallel || 0}`).join(' ')).join('\n') + '\n';
+}
+
+// ---- a configuration file written by the Node command line (native/cli/config.mjs): the Rust program must read the same settings ----
+const NC = await import('../native/cli/config.mjs');
+fixtures['native/core/tests/config_node.conf'] = NC.serialize({ ...NC.DEFAULT_CONFIG, hideSeconds: true, brightnessNight: 0.3, brightnessDay: 0.9, brightnessTransition: 60, location_latitude: 41.88, location_longitude: -87.63, output: 'matrix', twentyFourHourClock: false, timeZone: 'America/Chicago', clockStyle: 'solid', matrixConfig: '/etc/wobbly-clock/matrix.cfg' });
+
 const text = lines.join('\n') + '\n';
-const out = path.join(root, 'native/core/tests/golden.tsv');
+const files = { 'native/core/tests/golden.tsv': text, ...fixtures };
 if (process.argv.includes('--check')) {
-  const have = fs.existsSync(out) ? fs.readFileSync(out, 'utf8') : '';
-  if (have !== text) { console.error('native/core/tests/golden.tsv is out of date: run node tools/native-golden.mjs'); process.exit(1); }
+  const stale = Object.entries(files).filter(([f, t]) => (fs.existsSync(path.join(root, f)) ? fs.readFileSync(path.join(root, f), 'utf8') : '') !== t).map(([f]) => f);
+  if (stale.length) { console.error(`${stale.join(', ')} out of date: run node tools/native-golden.mjs`); process.exit(1); }
   console.log('golden vectors are current');
-} else { fs.writeFileSync(out, text); console.log(`wrote native/core/tests/golden.tsv (${lines.length - 1} vectors)`); }
+} else {
+  for (const [f, t] of Object.entries(files)) { fs.mkdirSync(path.dirname(path.join(root, f)), { recursive: true }); fs.writeFileSync(path.join(root, f), t); }
+  console.log(`wrote native/core/tests/golden.tsv (${lines.length - 1} vectors) and ${Object.keys(fixtures).length} fixture files`);
+}

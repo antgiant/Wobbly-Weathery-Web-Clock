@@ -1,7 +1,7 @@
 // Running on boot, headless: the systemd unit, the boot-partition config, the "setup needed" notice. Pure text and decisions; the commands that
 // write and enable files (`wobbly-clock install-service`) live in main.mjs and are only a thin layer over these.
 
-export function unit({ bin = '/usr/bin/wobbly-clock', config = '/etc/wobbly-clock/wobbly-clock.conf', user = 'wobbly', output = 'hdmi' } = {}) {
+export function unit({ bin = '/usr/bin/wobbly-clock-run', config = '/etc/wobbly-clock/wobbly-clock.conf', user = 'wobbly', output = 'hdmi' } = {}) {
   const isMatrix = output === 'matrix';
   // The LED library needs the GPIO as root and drops privileges after opening it (the library's own `--led-no-drop-privs` is off);
   // HDMI needs the video device, so the video group.
@@ -13,7 +13,7 @@ Wants=network-online.target time-sync.target
 
 [Service]
 Type=simple
-ExecStart=${bin} run --config ${config}
+ExecStart=${bin} --config ${config}
 Restart=on-failure
 RestartSec=5
 ${isMatrix ? '# the matrix library opens the GPIO as root, then drops privileges itself\n' : `User=${user}\nSupplementaryGroups=video render\n`}Nice=${isMatrix ? '-5' : '0'}

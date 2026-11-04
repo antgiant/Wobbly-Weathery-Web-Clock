@@ -45,7 +45,7 @@ Ask where the clock shows (HDMI or LED panel), describe the panels in plain ques
 Light the output with test patterns and stop: colour bars and a grey ramp, the panels numbered, a brightness sweep, a border box. Ctrl\\-C ends it.
 .TP
 .B run
-Show the clock (what the service runs).
+Show the clock: runs \\fBwobbly\\-clock\\-run\\fR, the program the service starts (the renderer, a separate static binary).
 .TP
 .BI get " [setting]"
 Print every setting that differs from the default, or one setting.

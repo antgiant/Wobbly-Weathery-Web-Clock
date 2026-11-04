@@ -182,6 +182,36 @@ Sign mode. Values: on | off. Default: off.
 .TP
 .B output
 Output. Values: hdmi | matrix. Default: hdmi.
+.TP
+.B matrixConfig
+Panel layout file (matrix.cfg). Values: text, up to 120 characters. Default: .
+.TP
+.B gamma
+Gamma for LED panels. Values: 1 to 3. Default: 2.2.
+.TP
+.B ledGpioMapping
+How the panels are wired to the Pi (led\-gpio\-mapping). Values: regular | adafruit\-hat | adafruit\-hat\-pwm. Default: regular.
+.TP
+.B ledSlowdownGpio
+GPIO slowdown (led\-slowdown\-gpio): 1 to 4 on a Pi 3 and later. Values: 0 to 4. Default: 1.
+.TP
+.B ledPwmBits
+Colour depth in bits (led\-pwm\-bits). Values: 1 to 11. Default: 11.
+.TP
+.B ledPwmLsbNanoseconds
+Shortest pulse in nanoseconds (led\-pwm\-lsb\-nanoseconds). Values: 50 to 3000. Default: 130.
+.TP
+.B ledRgbSequence
+Colour order of the panel (led\-rgb\-sequence). Values: text, up to 3 characters. Default: RGB.
+.TP
+.B ledPanelType
+Panel chip (led\-panel\-type), for example FM6126A. Values: text, up to 12 characters. Default: .
+.TP
+.B ledMultiplexing
+Row multiplexing (led\-multiplexing). Values: 0 to 17. Default: 0.
+.TP
+.B ledRowAddrType
+Row address type (led\-row\-addr\-type). Values: 0 to 5. Default: 0.
 .SH PRESETS
 Applied with \fBwobbly\-clock preset\fR. A preset sets the look and the power settings; it never changes the place, units or labels.
 .TP

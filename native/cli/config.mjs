@@ -11,6 +11,16 @@ export const EXTRA = {
   location_longitude: { type: 'number', default: 0, min: -180, max: 180, step: 0.0001, label: 'Longitude' },
   kiosk: { type: 'bool', default: false, label: 'Sign mode' },
   output: { type: 'enum', default: 'hdmi', options: ['hdmi', 'matrix'], label: 'Output' },
+  matrixConfig: { type: 'text', default: '', max: 120, label: 'Panel layout file (matrix.cfg)' },
+  gamma: { type: 'number', default: 2.2, min: 1, max: 3, step: 0.1, label: 'Gamma for LED panels' },
+  ledGpioMapping: { type: 'enum', default: 'regular', options: ['regular', 'adafruit-hat', 'adafruit-hat-pwm'], label: 'How the panels are wired to the Pi (led-gpio-mapping)' },
+  ledSlowdownGpio: { type: 'number', default: 1, min: 0, max: 4, step: 1, label: 'GPIO slowdown (led-slowdown-gpio): 1 to 4 on a Pi 3 and later' },
+  ledPwmBits: { type: 'number', default: 11, min: 1, max: 11, step: 1, label: 'Colour depth in bits (led-pwm-bits)' },
+  ledPwmLsbNanoseconds: { type: 'number', default: 130, min: 50, max: 3000, step: 10, label: 'Shortest pulse in nanoseconds (led-pwm-lsb-nanoseconds)' },
+  ledRgbSequence: { type: 'text', default: 'RGB', max: 3, label: 'Colour order of the panel (led-rgb-sequence)' },
+  ledPanelType: { type: 'text', default: '', max: 12, label: 'Panel chip (led-panel-type), for example FM6126A' },
+  ledMultiplexing: { type: 'number', default: 0, min: 0, max: 17, step: 1, label: 'Row multiplexing (led-multiplexing)' },
+  ledRowAddrType: { type: 'number', default: 0, min: 0, max: 5, step: 1, label: 'Row address type (led-row-addr-type)' },
 };
 export const DEFAULT_CONFIG = { ...SETTING_DEFAULTS, ...Object.fromEntries(Object.entries(EXTRA).map(([k, v]) => [k, v.default])) };
 export const spec = (key) => SETTINGS.find((s) => s.key === key) || (EXTRA[key] && { key, ...EXTRA[key] });

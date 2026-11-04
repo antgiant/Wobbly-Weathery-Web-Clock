@@ -50,6 +50,7 @@ fn matches_the_web_code() {
                 }
                 n_cd += 1;
             }
+            "tz" => {}                       // read by tests/tz.rs
             other => panic!("unknown vector kind {other} at {at}"),
         }
     }

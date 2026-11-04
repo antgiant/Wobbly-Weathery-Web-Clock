@@ -5,8 +5,9 @@ From a box of parts to a lit panel. The panels are the common "hub75" matrix pan
 [rpi-fb-matrix](https://github.com/antgiant/rpi-fb-matrix), so panels you already wired keep working.
 
 > **Status:** the setup, test patterns, layout checks and configuration described here are built (`native/cli/`, `wobbly-clock setup`,
-> `wobbly-clock test`). The program that draws the sky onto the panel is **not built yet**; until it is, the web page on a Pi 4 plus
-> `rpi-fb-matrix` (see TODO.md, "Ways to build it") is the way to put this clock on a panel.
+> `wobbly-clock test`), and so is the renderer (`wobbly-clock-run`, a static program for every Pi) and the small program that drives the panels
+> (`wobbly-matrix`, `native/matrix-sink/`). **Not yet tried on a real panel**: the renderer is tested against fake panels and under emulation, and the C
+> end is checked to compile against the library, but nobody has lit a panel with it. Treat the first run as a test and use `wobbly-clock test`.
 
 ## 1. What to buy
 
@@ -97,6 +98,9 @@ sudo systemctl enable --now wobbly-clock
 Or put a `wobbly-clock.conf` on the boot partition (the card's small FAT part, `/boot/firmware/`): it is read once at boot and renamed
 `wobbly-clock.conf.applied`. A share link works too: `wobbly-clock apply 'https://clock.wooleys.us/?c=...'`. With no configuration at
 all, the first boot shows the words SETUP NEEDED on the panel instead of nothing.
+
+The package's service runs as the unprivileged `wobbly` user, which is right for HDMI. The panel library needs root to open the GPIO (and drops privileges itself), so
+for an LED panel run `sudo systemctl edit wobbly-clock` and add `[Service]` with an empty `User=` line (and `Nice=-5` if the panel flickers).
 
 `wobbly-clock status`, `logs` and `restart` look after the service. `man wobbly-clock` and `man wobbly-clock.conf` list every command and setting.
 

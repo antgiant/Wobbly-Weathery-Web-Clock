@@ -6,9 +6,9 @@ name: Native
 
 on:
   push:
-    paths: ['native/**', 'schema/**', 'js/share.js', 'js/countdown.js', 'js/sky/dim.js', 'js/easing.js', 'js/config.js', 'tools/native-*.mjs', '.github/workflows/native.yml']
+    paths: ['native/**', 'docs/LED-PANELS.md', 'schema/**', 'js/share.js', 'js/countdown.js', 'js/sky/dim.js', 'js/easing.js', 'js/config.js', 'tools/native-*.mjs', '.github/workflows/native.yml']
   pull_request:
-    paths: ['native/**', 'schema/**', 'js/share.js', 'js/countdown.js', 'js/sky/dim.js', 'js/easing.js', 'js/config.js', 'tools/native-*.mjs', '.github/workflows/native.yml']
+    paths: ['native/**', 'docs/LED-PANELS.md', 'schema/**', 'js/share.js', 'js/countdown.js', 'js/sky/dim.js', 'js/easing.js', 'js/config.js', 'tools/native-*.mjs', '.github/workflows/native.yml']
   workflow_dispatch:
 
 permissions:
@@ -62,3 +62,48 @@ jobs:
         run: |
           cargo build --release --lib --manifest-path native/Cargo.toml --target arm-unknown-linux-gnueabihf
           cargo build --release --lib --manifest-path native/Cargo.toml --target aarch64-unknown-linux-gnu
+
+  cross:
+    name: The Pi binaries render the same frames (QEMU)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq qemu-user
+          rustup target add arm-unknown-linux-musleabihf aarch64-unknown-linux-musl
+      - name: Static ARMv6 and aarch64 builds, run under emulation, frames compared byte for byte with the host build
+        run: native/scripts/cross-check.sh
+
+  matrix-sink:
+    name: The panel program compiles against the hub75 library
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build hzeller/rpi-rgb-led-matrix and compile wobbly-matrix against its real header
+        run: |
+          git clone --depth 1 https://github.com/hzeller/rpi-rgb-led-matrix "$RUNNER_TEMP/hz"
+          make -C "$RUNNER_TEMP/hz/lib" -j2
+          cc -O2 -Wall -Wextra -o "$RUNNER_TEMP/wobbly-matrix" native/matrix-sink/wobbly-matrix.c \
+            -I "$RUNNER_TEMP/hz/include" -L "$RUNNER_TEMP/hz/lib" -lrgbmatrix -lstdc++ -lm -lpthread
+          ls -l "$RUNNER_TEMP/wobbly-matrix"
+
+  package:
+    name: The .deb builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: rustup target add arm-unknown-linux-musleabihf aarch64-unknown-linux-musl
+      - name: Build both packages and look inside them
+        run: |
+          cargo build --release --manifest-path native/Cargo.toml --target arm-unknown-linux-musleabihf
+          cargo build --release --manifest-path native/Cargo.toml --target aarch64-unknown-linux-musl
+          native/scripts/make-deb.sh armhf native/target/arm-unknown-linux-musleabihf/release/wobbly-clock-run 0.0.0-ci "$RUNNER_TEMP/debs"
+          native/scripts/make-deb.sh arm64 native/target/aarch64-unknown-linux-musl/release/wobbly-clock-run 0.0.0-ci "$RUNNER_TEMP/debs"
+          for d in "$RUNNER_TEMP"/debs/*.deb; do dpkg-deb -I "$d" | head -8; dpkg-deb -c "$d" | grep -E "usr/bin|service"; done
