@@ -174,6 +174,17 @@ function makeGL(canvas) {
     getError: () => call('getError'),
     _screenSize: () => ensureScreen(),
   });
+  if (G.__args && G.__args.profile) {
+    const prof = G.__prof = {}; let cur = 0; const names = {}, srcs = {};
+    const useP = gl.useProgram, shSrc = gl.shaderSource, attach = gl.attachShader;
+    gl.shaderSource = (s, src) => { srcs[s.id] = src; return shSrc(s, src); };
+    gl.attachShader = (p, s) => { if (srcs[s.id] && s.id) { const m = /\n(?:\/\/\s*)?(?:uniform|float|in|out)[^\n]*\n/.exec(srcs[s.id]); (names[p.id] ||= []).push(srcs[s.id].length); } return attach(p, s); };
+    gl.useProgram = (p) => { cur = p ? p.id : 0; return useP(p); };
+    for (const k of ['drawArrays', 'drawArraysInstanced', 'generateMipmap', 'texImage2D', 'readPixels', 'blitFramebuffer']) {
+      const f = gl[k]; gl[k] = (...a) => { const t = __now(); const r = f(...a); call('finish'); const d = __now() - t; const key = k + (k.startsWith('draw') ? ' prog' + cur + ' (' + (names[cur] || []).join('+') + ' chars)' : ''); const e = (prof[key] ||= { n: 0, ms: 0 }); e.n++; e.ms += d; return r; };
+    }
+    G.__profDump = () => { const rows = Object.entries(prof).sort((a, b) => b[1].ms - a[1].ms).slice(0, 14); __print('--- GL time by call (ms, count) ---'); rows.forEach(([k, v]) => __print(String(Math.round(v.ms)).padStart(8) + '  x' + String(v.n).padEnd(5) + k)); for (const k in prof) delete prof[k]; };
+  }
   return gl;
 }
 
