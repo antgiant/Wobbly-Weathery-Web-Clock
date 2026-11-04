@@ -78,7 +78,7 @@ Maintainer: Wobbly Weathery Web Clock <noreply@users.noreply.github.com>
 Installed-Size: $size
 Section: misc
 Priority: optional
-Depends: libegl1, libgles2, libgl1-mesa-dri, libdrm2, libgbm1, libatomic1, curl
+Depends: libegl1, libgles2, libgl1-mesa-dri, libdrm2, libgbm1, curl
 Recommends: nodejs (>= 18), openssl
 Homepage: https://github.com/antgiant/Wobbly-Weathery-Web-Clock
 Description: a clock in front of a real-time sky, for a Raspberry Pi

@@ -15,7 +15,7 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>, keep: &dyn Fn(&Path) -> bool) {
 
 fn main() {
     // ARMv6 (the original Pi Zero) has no 64-bit atomic instructions; QuickJS's Atomics need them from libatomic
-    if std::env::var("CARGO_CFG_TARGET_ARCH").map_or(false, |a| a == "arm") { println!("cargo:rustc-link-arg=-Wl,--no-as-needed,-latomic"); }
+    if std::env::var("CARGO_CFG_TARGET_ARCH").map_or(false, |a| a == "arm") && std::env::var("WOBBLY_NO_LIBATOMIC").is_err() { println!("cargo:rustc-link-arg=-Wl,--no-as-needed,-latomic"); }
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
     let mut files: Vec<PathBuf> = vec![root.join("index.html")];
     walk(&root.join("js"), &mut files, &|p| p.extension().map_or(false, |x| x == "js"));
