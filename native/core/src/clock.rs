@@ -62,11 +62,37 @@ pub fn time_text(c: &Config, zone: &Zone, utc_ms: f64) -> String {
     if c.hide_seconds { format!("{hour}:{m:02}") } else { format!("{hour}:{m:02}:{s:02}") }
 }
 
-pub fn scene_for(c: &Config) -> Scene {
-    Scene { lat: c.latitude, lon: c.longitude, brightness_day: c.brightness_day, brightness_night: c.brightness_night, transition_minutes: c.brightness_transition, weather: c.weather_mode.clone(), ..Scene::default() }
+/// The style in force: the user's choice, or while it is on "auto": liquid glass, with coloured lights from Thanksgiving to Christmas.
+pub fn style_for(c: &Config, zone: &Zone, utc_ms: f64) -> &'static str {
+    match c.clock_style.as_str() {
+        "glass" => "glass", "stained" => "stained", "solid" => "solid",
+        _ => {
+            let secs = (utc_ms / 1000.0).floor() as i64;
+            let (y, m, d) = civil_from_days((secs + zone.offset_at(secs) as i64).div_euclid(86400));
+            if crate::season::is_christmas_season(y, m, d) { "stained" } else { "glass" }
+        }
+    }
+}
+
+pub fn scene_for(c: &Config, zone: &Zone, utc_ms: f64) -> Scene {
+    Scene { lat: c.latitude, lon: c.longitude, brightness_day: c.brightness_day, brightness_night: c.brightness_night, transition_minutes: c.brightness_transition, weather: c.weather_mode.clone(),
+        style: style_for(c, zone, utc_ms).into(), frost: c.glass_frost, glow: c.glass_glow, glow_color: c.glass_glow_color.clone(), ..Scene::default() }
 }
 
 /// The frame (RGB, `w` x `h`) for a moment.
 pub fn frame(c: &Config, zone: &Zone, utc_ms: f64, w: usize, h: usize) -> Vec<u8> {
-    scene::render(&scene_for(c), utc_ms, &display_text(c, zone, utc_ms), w, h)
+    scene::render(&scene_for(c, zone, utc_ms), utc_ms, &display_text(c, zone, utc_ms), w, h)
+}
+
+/// One clock: its settings, its zone, and the cached sky. Call `frame` once a second.
+pub struct Clock { pub cfg: Config, pub zone: Zone, cache: scene::BackgroundCache }
+
+impl Clock {
+    pub fn new(cfg: Config) -> Clock { let zone = zone_for(&cfg); Clock { cfg, zone, cache: scene::BackgroundCache::default() } }
+    pub fn frame(&mut self, utc_ms: f64, w: usize, h: usize) -> Vec<u8> {
+        let sc = scene_for(&self.cfg, &self.zone, utc_ms);
+        scene::render_cached(&mut self.cache, &sc, utc_ms, &display_text(&self.cfg, &self.zone, utc_ms), w, h)
+    }
+    /// The panel brightness level (0.1 to 1) now.
+    pub fn level(&self, utc_ms: f64) -> f64 { scene::brightness(&scene_for(&self.cfg, &self.zone, utc_ms), utc_ms) }
 }

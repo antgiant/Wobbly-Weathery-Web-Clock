@@ -11,6 +11,12 @@ pub struct Config {
     /// `None` is "auto"
     pub twenty_four_hour: Option<bool>,
     pub hide_seconds: bool,
+    /// "auto" (liquid glass; coloured lights from Thanksgiving to Christmas), "glass", "stained" or "solid"
+    pub clock_style: String,
+    pub glass_frost: f64,
+    pub glass_glow: f64,
+    /// "warm", "white", "cool" or "follow"
+    pub glass_glow_color: String,
     /// a manual weather setting; "live" (the default) is clear for now
     pub weather_mode: String,
     /// "time" or "countdown"
@@ -23,6 +29,8 @@ pub struct Config {
     pub output: String,
     pub matrix_config: String,
     pub gamma: f64,
+    /// 0 = automatic: HDMI is drawn smaller and enlarged when a frame takes too long; 1 to 8 forces how many times smaller
+    pub render_scale: u32,
     pub led: LedOptions,
     pub errors: Vec<String>,
 }
@@ -33,8 +41,8 @@ pub struct LedOptions { pub gpio_mapping: String, pub slowdown_gpio: u32, pub pw
 
 impl Default for Config {
     fn default() -> Self {
-        Config { latitude: 0.0, longitude: 0.0, time_zone: String::new(), twenty_four_hour: None, hide_seconds: false, weather_mode: "live".into(), clock_mode: "time".into(), timer_target: String::new(), brightness_day: 1.0, brightness_night: 1.0, brightness_transition: 45.0,
-            output: "hdmi".into(), matrix_config: String::new(), gamma: 2.2,
+        Config { latitude: 0.0, longitude: 0.0, time_zone: String::new(), twenty_four_hour: None, hide_seconds: false, clock_style: "auto".into(), glass_frost: 0.35, glass_glow: 0.0, glass_glow_color: "follow".into(), weather_mode: "live".into(), clock_mode: "time".into(), timer_target: String::new(), brightness_day: 1.0, brightness_night: 1.0, brightness_transition: 45.0,
+            output: "hdmi".into(), matrix_config: String::new(), gamma: 2.2, render_scale: 0,
             led: LedOptions { gpio_mapping: "regular".into(), slowdown_gpio: 1, pwm_bits: 11, pwm_lsb_nanoseconds: 130, rgb_sequence: "RGB".into(), panel_type: String::new(), multiplexing: 0, row_addr_type: 0 },
             errors: vec![] }
     }
@@ -69,6 +77,7 @@ pub fn parse(text: &str) -> Config {
     num("brightnessTransition", 1.0, 600.0, &mut c.brightness_transition, &mut errors);
     num("gamma", 1.0, 3.0, &mut c.gamma, &mut errors);
     let int = |k: &str, lo: u32, hi: u32, into: &mut u32, errors: &mut Vec<String>| { if let Some((l, v)) = map.get(k) { match v.parse::<u32>() { Ok(x) if x >= lo && x <= hi => *into = x, _ => errors.push(format!("line {l}: {k} is a whole number from {lo} to {hi}, not \"{v}\"")) } } };
+    int("renderScale", 0, 8, &mut c.render_scale, &mut errors);
     int("ledSlowdownGpio", 0, 4, &mut c.led.slowdown_gpio, &mut errors);
     int("ledPwmBits", 1, 11, &mut c.led.pwm_bits, &mut errors);
     int("ledPwmLsbNanoseconds", 50, 3000, &mut c.led.pwm_lsb_nanoseconds, &mut errors);
@@ -79,6 +88,10 @@ pub fn parse(text: &str) -> Config {
     if let Some((l, v)) = map.get("clockMode") { if v == "time" || v == "countdown" { c.clock_mode = v.clone() } else { errors.push(format!("line {l}: clockMode is time or countdown, not \"{v}\"")) } }
     if let Some((l, v)) = map.get("timerTarget") { if v.is_empty() || parse_target(v).is_some() { c.timer_target = v.clone() } else { errors.push(format!("line {l}: timerTarget looks like 2026-12-25T08:00, not \"{v}\"")) } }
     if let Some((l, v)) = map.get("weatherMode") { if v == "live" || crate::weather::known(v) { c.weather_mode = v.clone() } else { errors.push(format!("line {l}: weatherMode is live, clear, partly, cloudy, overcast, rain, storm, snow, fog or haze, not \"{v}\"")) } }
+    num("glassFrost", 0.0, 1.0, &mut c.glass_frost, &mut errors);
+    num("glassGlow", 0.0, 1.0, &mut c.glass_glow, &mut errors);
+    if let Some((l, v)) = map.get("clockStyle") { if ["auto", "glass", "stained", "solid"].contains(&v.as_str()) { c.clock_style = v.clone() } else { errors.push(format!("line {l}: clockStyle is auto, glass, stained or solid, not \"{v}\"")) } }
+    if let Some((l, v)) = map.get("glassGlowColor") { if ["warm", "white", "cool", "follow"].contains(&v.as_str()) { c.glass_glow_color = v.clone() } else { errors.push(format!("line {l}: glassGlowColor is warm, white, cool or follow, not \"{v}\"")) } }
     if let Some((l, v)) = map.get("output") { if v == "hdmi" || v == "matrix" { c.output = v.clone() } else { errors.push(format!("line {l}: output is hdmi or matrix, not \"{v}\"")) } }
     if let Some((l, v)) = map.get("ledGpioMapping") { if ["regular", "adafruit-hat", "adafruit-hat-pwm"].contains(&v.as_str()) { c.led.gpio_mapping = v.clone() } else { errors.push(format!("line {l}: ledGpioMapping is regular, adafruit-hat or adafruit-hat-pwm, not \"{v}\"")) } }
     for (k, into) in [("timeZone", &mut c.time_zone), ("matrixConfig", &mut c.matrix_config), ("ledRgbSequence", &mut c.led.rgb_sequence), ("ledPanelType", &mut c.led.panel_type)] { if let Some((_, v)) = map.get(k) { *into = v.clone(); } }

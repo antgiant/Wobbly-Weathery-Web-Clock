@@ -91,6 +91,13 @@ for (const z of ZONES) {
   if (keep === undefined) delete process.env.TZ; else process.env.TZ = keep;
 }
 
+// ---- the Christmas season (js/season.js): Thanksgiving to December 25, for every day of several years ----
+{
+  const { thanksgivingDay, isChristmasSeason } = await import('../js/season.js');
+  for (const year of [2024, 2025, 2026, 2027, 2028, 2031]) lines.push(['thanksgiving', year, thanksgivingDay(year)].join('\t'));
+  for (const [y, m, d] of [[2026, 11, 25], [2026, 11, 26], [2026, 11, 27], [2026, 12, 1], [2026, 12, 25], [2026, 12, 26], [2026, 10, 31], [2027, 1, 1], [2025, 11, 26], [2025, 11, 27], [2028, 11, 22], [2028, 11, 23]]) lines.push(['season', y, m, d, isChristmasSeason(new Date(y, m - 1, d)) ? 1 : 0].join('\t'));
+}
+
 // ---- panel layouts written by the Node command line (native/cli/panel.mjs), which the Rust side must read the same way ----
 const { fromAnswers, writeMatrixCfg } = await import('../native/cli/panel.mjs');
 const fixtures = {};

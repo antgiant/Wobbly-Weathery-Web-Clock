@@ -2802,3 +2802,21 @@ countdown	2027-01-01T00:00	1798865940000	done	00:00	00:00
 countdown	2027-01-01T00:00	1798866000000	over	time	time
 countdown	2027-01-01T00:00	1798887600000	over	time	time
 countdown	2027-01-01T00:00	1799038800000	over	time	time
+thanksgiving	2024	28
+thanksgiving	2025	27
+thanksgiving	2026	26
+thanksgiving	2027	25
+thanksgiving	2028	23
+thanksgiving	2031	27
+season	2026	11	25	0
+season	2026	11	26	1
+season	2026	11	27	1
+season	2026	12	1	1
+season	2026	12	25	1
+season	2026	12	26	0
+season	2026	10	31	0
+season	2027	1	1	0
+season	2025	11	26	0
+season	2025	11	27	1
+season	2028	11	22	0
+season	2028	11	23	1

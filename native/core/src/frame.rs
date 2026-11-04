@@ -3,7 +3,7 @@
 
 use crate::digits::STROKE;
 use crate::morph::digit;
-use crate::raster::{draw_digit_stroked, Coverage};
+use crate::raster::{draw_digit_stroked, field_digit, field_dot, Coverage, Field};
 
 pub type Rgb = [u8; 3];
 
@@ -79,4 +79,57 @@ pub fn ppm(rgb: &[u8], w: usize, h: usize) -> Vec<u8> {
     let mut out = format!("P6\n{w} {h}\n255\n").into_bytes();
     out.extend_from_slice(rgb);
     out
+}
+
+/// The same layout as `draw_text`, as a distance field (see `raster::Field`) for the glass shading. `half_px` is returned too: half the stroke, in pixels.
+pub fn field_text(text: &str, w: usize, h: usize, fill: f64) -> (Field, f64) {
+    let mut f = Field::new(w, h);
+    let (scale, left, top) = fit(text, w, h, fill);
+    let half = STROKE * scale / 2.0;
+    let reach = half + 1.0;
+    let mut x = left;
+    for p in pieces(text) {
+        match p {
+            Some(d) => { field_digit(&mut f, digit(d), x - 20.0 * scale + 10.0 * scale, top, scale, reach); x += DIGIT_W * scale; }
+            None => { for cy in [190.0, 350.0] { field_dot(&mut f, x + COLON_W * scale / 2.0, top + cy * scale, reach); } x += COLON_W * scale; }
+        }
+    }
+    (f, half)
+}
+
+/// The x position (pixels) of the middle of each glyph (digit or colon), left to right: stained glass tints a glyph as a whole.
+pub fn glyph_centers(text: &str, w: usize, h: usize, fill: f64) -> Vec<f64> {
+    let (scale, left, _) = fit(text, w, h, fill);
+    let mut x = left; let mut out = vec![];
+    for p in pieces(text) { let wd = if p.is_some() { DIGIT_W } else { COLON_W } * scale; out.push(x + wd / 2.0); x += wd; }
+    out
+}
+
+/// The rectangle (x0, y0, x1, y1, in pixels, clipped to the picture) the time can touch with a stroke of `stroke` in digit space: everything outside it is
+/// untouched, so shading only needs to look here.
+pub fn text_bbox(text: &str, w: usize, h: usize, fill: f64, stroke: f64) -> (usize, usize, usize, usize) {
+    let (scale, left, top) = fit(text, w, h, fill);
+    let total: f64 = pieces(text).iter().map(|p| if p.is_some() { DIGIT_W } else { COLON_W }).sum();
+    let pad = stroke * scale / 2.0 + 3.0;
+    let (x0, y0) = ((left - 30.0 * scale - pad).floor().max(0.0), (top - pad).floor().max(0.0));
+    let (x1, y1) = ((left + total * scale + 30.0 * scale + pad).ceil().min(w as f64), (top + 560.0 * scale + pad).ceil().min(h as f64));
+    (x0 as usize, y0 as usize, x1.max(x0) as usize, y1.max(y0) as usize)
+}
+
+/// Like `field_text`, but the field covers only the time's own rectangle: returns it with the rectangle's top-left corner in the picture.
+pub fn field_text_region(text: &str, w: usize, h: usize, fill: f64) -> (Field, (usize, usize), f64) {
+    let (scale, left, top) = fit(text, w, h, fill);
+    let half = STROKE * scale / 2.0;
+    let (x0, y0, x1, y1) = text_bbox(text, w, h, fill, STROKE);
+    let mut f = Field::new((x1 - x0).max(1), (y1 - y0).max(1));
+    let (ox, oy) = (x0 as f64, y0 as f64);
+    let reach = half + 1.0;
+    let mut x = left;
+    for p in pieces(text) {
+        match p {
+            Some(d) => { field_digit(&mut f, digit(d), x - 20.0 * scale + 10.0 * scale - ox, top - oy, scale, reach); x += DIGIT_W * scale; }
+            None => { for cy in [190.0, 350.0] { field_dot(&mut f, x + COLON_W * scale / 2.0 - ox, top + cy * scale - oy, reach); } x += COLON_W * scale; }
+        }
+    }
+    (f, (x0, y0), half)
 }

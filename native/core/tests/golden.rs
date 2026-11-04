@@ -64,6 +64,8 @@ fn matches_the_web_code() {
                 }
                 n_cd += 1;
             }
+            "thanksgiving" => { assert_eq!(wobbly_core::season::thanksgiving_day(c[1].parse().unwrap()), c[2].parse::<i64>().unwrap(), "{at}"); n_cd += 1; }
+            "season" => { assert_eq!(wobbly_core::season::is_christmas_season(c[1].parse().unwrap(), c[2].parse().unwrap(), c[3].parse().unwrap()), c[4] == "1", "{at}"); n_cd += 1; }
             "tz" => {}                       // read by tests/tz.rs
             other => panic!("unknown vector kind {other} at {at}"),
         }
