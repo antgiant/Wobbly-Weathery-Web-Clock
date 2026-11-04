@@ -1,0 +1,42 @@
+name: Native
+
+# The native (Raspberry Pi) version: its command line is tested by the unit tests in ci.yml (tests/unit/native-*.test.mjs). This workflow adds
+# what needs more tools: the man pages are linted with mandoc, and the command line is run for real. Runs only when native/, schema/ or the
+# share-link code change.
+
+on:
+  push:
+    paths: ['native/**', 'schema/**', 'js/share.js', 'tools/native-man.mjs', '.github/workflows/native.yml']
+  pull_request:
+    paths: ['native/**', 'schema/**', 'js/share.js', 'tools/native-man.mjs', '.github/workflows/native.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cli:
+    name: Man pages and command line
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Man pages are current
+        run: node tools/native-man.mjs --check
+      - name: Lint the man pages
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq mandoc
+          mandoc -Tlint -Wwarning native/man/wobbly-clock.1 native/man/wobbly-clock.conf.5
+      - name: The command line runs
+        env:
+          WOBBLY_CONFIG: ${{ runner.temp }}/wc/wobbly-clock.conf
+        run: |
+          node native/cli/main.mjs --version
+          node native/cli/main.mjs preset bedside
+          node native/cli/main.mjs set hideSeconds on
+          node native/cli/main.mjs get
+          node native/cli/main.mjs capabilities
+          mandoc -Tutf8 native/man/wobbly-clock.conf.5 | head -40

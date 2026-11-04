@@ -1,3 +1,4 @@
+import { msUntilQuiet } from './quiet.js';
 // Offline status: whether the app is saved on the device (so it opens with no connection), whether the connection is
 // up, and what that means for the live extras (weather, terrain, rain) that refresh by themselves when it returns.
 
@@ -58,11 +59,12 @@ document.addEventListener('DOMContentLoaded', () => document.getElementById('ref
 
 // The saved copy opens first, and the newer one is fetched behind it. When the service worker finds a file has changed it
 // says so, and this offers the reload (a banner at the top, so a clock left running on a shelf is never reloaded by surprise).
+let kioskTimer = 0;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('message', (e) => {
     if (!e.data || e.data.type !== 'updated') return;
-    if (document.documentElement.dataset.kiosk) {                      // a sign nobody can tap: update by itself, when the minute turns
-      setTimeout(() => location.reload(), 61000 - (Date.now() % 60000));
+    if (document.documentElement.dataset.kiosk) {                      // a sign nobody can tap: update by itself, in the quiet hour (3 at night)
+      if (!kioskTimer) kioskTimer = setTimeout(() => location.reload(), msUntilQuiet());
       return;
     }
     const b = document.getElementById('updateBanner');

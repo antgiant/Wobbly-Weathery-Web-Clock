@@ -10,10 +10,13 @@
 //   shareable  carried by a share link (js/share.js keeps its own frozen copy of version 1: this list may grow, that one never changes)
 //   preset     set by the presets and by "Reset all settings"
 //
-// Added later by the native work: `requires` (what hardware an option needs, so the native program can switch off what a machine
-// cannot do and say why). Run `npm run schema` after changing this file: it rewrites schema/settings.json.
+//   requires   (added by the native work) what a machine needs for the option to work, a list of tokens: "gles3" (an OpenGL ES 3 GPU),
+//              "cores>=2", "ram>=1024" (megabytes), "hdmi" (a full-resolution screen output), "sensors" (motion/compass: a phone, never a Pi).
+//              The native program switches off what a machine cannot do and says why (native/cli/hardware.mjs). The web page ignores it.
+//   requiresValue  the same, for one value of an enum ({ glass: ["gles3"] }); the native program falls back to `fallback`.
+// Run `npm run schema` after changing this file: it rewrites schema/settings.json.
 
-export const SETTINGS = [
+const RAW = [
   { key: "twentyFourHourClock", type: "tri", default: null, tab: "clock", advanced: false, label: "24-hour time", shareable: true, preset: false, doc: "null = follow the browser's locale until the user chooses" },
   { key: "hideSeconds", type: "bool", default: false, tab: "clock", advanced: false, label: "Hide seconds", shareable: true, preset: true },
   { key: "clockMode", type: "enum", default: "time", options: ["time", "countdown"], tab: "clock", advanced: true, label: "The digits show", shareable: true, preset: false, doc: "time | countdown: the digits show the time, or the time left to timerTarget" },
@@ -64,9 +67,25 @@ export const SETTINGS = [
   { key: "antiBurnIn", type: "enum", default: "auto", options: ["auto", "on", "off"], tab: "extras", advanced: true, label: "Anti burn-in", shareable: true, preset: false, doc: "auto (while the screen is kept on) | on | off: step the digits a few pixels round a small square, once a minute" },
   { key: "preciseLocation", type: "bool", default: false, tab: "place", advanced: false, label: "Use precise location", shareable: false, preset: false },
   { key: "manualLocation", type: "bool", default: false, tab: "place", advanced: false, label: "Set the place myself", shareable: false, preset: false, doc: "the place was typed or searched for (Settings -> Place): never replaced by GPS or the time-zone estimate" },
+  { key: "timeZone", type: "text", default: "", max: 40, tab: "place", advanced: false, label: "Show the time in another time zone", shareable: false, preset: false, doc: "an IANA time zone name (\"America/New_York\"); empty = this device's own time. Share links carry it as their own field (version 2), like the place" },
   { key: "gpsFrequency", type: "enum", default: -1, options: ["-1", "1", "5", "15", "30", "60", "120", "720", "1440", "-2"], tab: "place", advanced: true, label: "Location update frequency", shareable: false, preset: false },
   { key: "coarseLookups", type: "bool", default: true, tab: "place", advanced: true, label: "Share only an approximate position", shareable: false, preset: false, doc: "weather / terrain lookups use a rounded position, never the exact one" },
 ];
 
+
+// What each option needs (see the header). Anything not listed runs on every machine. Kept as one table so it is easy to review as a whole.
+const NEEDS = {
+  clockStyle: { requiresValue: { auto: ["gles3"], glass: ["gles3"], stained: ["gles3"] }, fallback: "solid" },
+  glassFrost: { requires: ["gles3"] }, glassGlow: { requires: ["gles3"] }, glassGlowColor: { requires: ["gles3"] },
+  digitWeather: { requires: ["gles3"], fallback: "off" },
+  windSway: { requires: ["cores>=2"], fallback: "off" },
+  plants: { requires: ["gles3"], fallback: false },
+  holidayTree: { requires: ["gles3"], fallback: false },
+  quality: { requiresValue: { high: ["gles3", "cores>=2"], medium: ["gles3"] }, fallback: "low" },
+  viewMode: { requiresValue: { look: ["sensors"] }, fallback: "fixed" },
+  sensorRotation: { requires: ["sensors"] }, compassRef: { requires: ["sensors"] }, vrDebug: { requires: ["sensors"] },
+  cloudMotion: { requiresValue: { 1: ["cores>=2"], 0.25: ["cores>=2"] }, fallback: 0 },
+};
+export const SETTINGS = RAW.map((s) => ({ ...s, ...(NEEDS[s.key] || {}) }));
 export const SETTING_DEFAULTS = Object.fromEntries(SETTINGS.map((s) => [s.key, s.default]));
 export const PRESET_KEYS = SETTINGS.filter((s) => s.preset).map((s) => s.key);

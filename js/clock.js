@@ -2,6 +2,7 @@ import { conf, vars, dd, adjustTimeSize, use24h } from './config.js';
 import { easing } from './easing.js'
 import { now as simNow, getSim } from './simtime.js'
 import { sway, topOffset, bend } from './wind.js'
+import { wallTime } from './timezone.js'
 import { secondsLeft, slotsFor, groupsFor, textOf, parseTarget, unitsFor, defaultTarget, phaseOf, doneSlots } from './countdown.js'
 
 function ci(c, i) {
@@ -54,10 +55,11 @@ function toDigitArray(str) {
 
 function getTime(date) {
   let h = "";
+  const wall = wallTime(date);
   if (use24h()) {
-    h = date.getHours().toString().padStart(2, "0");
+    h = wall.h.toString().padStart(2, "0");
   } else {
-    h = (date.getHours() % 12 || 12).toString().padStart(2, "0");
+    h = (wall.h % 12 || 12).toString().padStart(2, "0");
   }
   const el = document.getElementById("firstDigit");
   if (!use24h() && parseInt(h) < 10) {
@@ -72,8 +74,8 @@ function getTime(date) {
     }
   }
   
-  let m = date.getMinutes().toString().padStart(2, "0");
-  let s = date.getSeconds().toString().padStart(2, "0");
+  let m = wall.m.toString().padStart(2, "0");
+  let s = wall.s.toString().padStart(2, "0");
   let temp = {
     'h': toDigitArray(h),
     'm': toDigitArray(m),
@@ -116,6 +118,7 @@ function restoreTime() {
   layoutStale = true;
 }
 window.addEventListener('timerchange', function() { layoutStale = true; kickClock(); });
+window.addEventListener('timezonechange', function() { kickClock(); });
 
 
 // the caption: the name of the countdown and which units the digits are

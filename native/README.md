@@ -1,4 +1,4 @@
-# The native version (Raspberry Pi): not started
+# The native version (Raspberry Pi): the command line is built, the renderer is not
 
 This folder is where the native version of the clock will live, in the same repository as the web page so the two stay tightly in step.
 The plan, requirements and open questions are in [`../TODO.md`](../TODO.md) ("Raspberry Pi targets"). This file is the contract between the
@@ -17,6 +17,25 @@ two halves.
 
 **Rule: a change to a shared thing changes both halves in the same commit** (or the commit says which half is still to do, and `TODO.md`
 says so too). Nothing here may be copied by hand: generate from the schema, or import the same data.
+
+## What exists today (2026-11-04)
+
+`native/cli/` is a zero-dependency Node program (`node native/cli/main.mjs ...`) that is the whole **control layer**, tested without a Pi:
+
+| File | What it does |
+|---|---|
+| `config.mjs` | the web page's setting names, values and defaults; a `key = value` file; presets; share links as a configuration |
+| `hardware.mjs` | machine profiles (Zero, Zero 2, 3, 4, 5, probed from the board), the `requires` rules from the schema, gating with reasons and fallbacks |
+| `panel.mjs` | `matrix.cfg` (rpi-fb-matrix's format) in and out, plain answers to panel grid, checks in words, drawing |
+| `patterns.mjs` | the test patterns (bars and ramp, identify, brightness sweep, border) as RGB frames |
+| `service.mjs`, `update.mjs` | the systemd unit, boot-partition config, signed and checksummed updates with rollback (logic; the network and file calls are injected) |
+| `manpage.mjs` | `man wobbly-clock(1)` and `wobbly-clock.conf(5)` generated from the schema into `native/man/` |
+| `main.mjs` | the commands: `setup test get set presets preset apply import-matrix-cfg export-matrix-cfg install-service capabilities man` |
+
+Not built: the **renderer** (the sky, digits and landscape drawn to HDMI or the matrix) and the release/packaging pipeline (static binary, `.deb`,
+download, install). `wobbly-clock run` does not exist yet; the service unit already points at it. The LED guide is [`../docs/LED-PANELS.md`](../docs/LED-PANELS.md).
+The command line is written in JavaScript so the settings, share links and brightness maths are the web page's own code; the renderer's
+language (Rust or C) is still to be decided, and the command line may move into it once it exists.
 
 ## Layout (planned)
 

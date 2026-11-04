@@ -13,6 +13,11 @@
 // tests/unit/share.test.mjs holds golden links that must keep decoding to the same setups.
 
 export const VERSION = 1;
+/** Version 2 is version 1 plus one optional field at the end: the time zone to show the time in. A link without it is still written as version 1,
+ *  so every link ever made (and the golden links in the tests) is unchanged; only a link that carries a time zone says 2. */
+export const VERSION_TZ = 2;
+const ZONE = /^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+){0,2}$/;
+export const cleanZone = (z) => (typeof z === 'string' && z.length <= 40 && ZONE.test(z) ? z : '');
 
 /** The settings a link can carry: [key, type, default, ...]. b: on/off. tri: auto/on/off. e: one of the options. n: a number (min, max, step). t: text. d: a date and time. */
 export const SETTINGS_V1 = [
@@ -158,9 +163,11 @@ export function encodeShort(setup) {
   const w = new Writer(); w.bits = best; return w.text();
 }
 function writeSetup(w, base, diffs, s, setup) {
-  w.put(VERSION, 4); w.put(setup.kiosk ? 1 : 0, 1); w.put(setup.place ? 1 : 0, 1); w.put(base, 4); w.put(diffs.length, 7);
+  w.put(cleanZone(setup.timeZone) ? VERSION_TZ : VERSION, 4); w.put(setup.kiosk ? 1 : 0, 1); w.put(setup.place ? 1 : 0, 1); w.put(base, 4); w.put(diffs.length, 7);
   for (const i of diffs) { w.put(i, 7); putValue(w, SETTINGS_V1[i], s[SETTINGS_V1[i][0]]); }
   if (setup.place) { w.put(Math.round((Math.min(90, Math.max(-90, setup.place.lat)) + 90) / 180 * 4194303), 22); w.put(Math.round((Math.min(180, Math.max(-180, setup.place.lon)) + 180) / 360 * 8388607), 23); }
+  const zone = cleanZone(setup.timeZone);
+  if (zone) { w.put(zone.length, 6); for (const ch of zone) w.put(ch.charCodeAt(0), 7); }
 }
 
 /** @returns {{settings: object, place: object|null, kiosk: boolean, base: string}|null} null when it is not a link of ours. */
@@ -168,14 +175,17 @@ export function decodeShort(str) {
   try {
     if (typeof str !== 'string' || !str || str.length > 4000) return null;
     const rd = new Reader(str);
-    if (rd.get(4) !== VERSION) return null;                          // a newer version than this page knows: not understood
+    const version = rd.get(4);
+    if (version !== VERSION && version !== VERSION_TZ) return null;  // a newer version than this page knows: not understood
     const kiosk = rd.get(1) === 1, hasPlace = rd.get(1) === 1, base = rd.get(4), count = rd.get(7);
     if (base >= BASES_V1.length) return null;
     const settings = baseSettings(base);
     for (let k = 0; k < count; k++) { const i = rd.get(7); if (i >= SETTINGS_V1.length) return null; settings[SETTINGS_V1[i][0]] = getValue(rd, SETTINGS_V1[i]); }
     let place = null;
     if (hasPlace) { const la = rd.get(22) / 4194303 * 180 - 90, lo = rd.get(23) / 8388607 * 360 - 180; place = { lat: Math.round(la * 1e4) / 1e4, lon: Math.round(lo * 1e4) / 1e4 }; }
-    return { settings, place, kiosk, base: BASES_V1[base][0] };
+    let timeZone = '';
+    if (version === VERSION_TZ) { const n = rd.get(6); let z = ''; for (let i = 0; i < n; i++) z += String.fromCharCode(rd.get(7)); timeZone = cleanZone(z); }
+    return { settings, place, kiosk, base: BASES_V1[base][0], timeZone };
   } catch (_) { return null; }
 }
 
@@ -189,19 +199,31 @@ export function encodeReadable(setup) {
   const s = normalise(setup.settings);
   let bi = 0, fewest = Infinity;
   BASES_V1.forEach((b, i) => { const base = baseSettings(i); const n = SETTINGS_V1.filter((r) => !same(s[r[0]], base[r[0]])).length; if (n < fewest) { fewest = n; bi = i; } });
-  const base = baseSettings(bi), parts = [`v=${VERSION}`, `preset=${BASES_V1[bi][0]}`];
+  const base = baseSettings(bi), zone = cleanZone(setup.timeZone), parts = [`v=${zone ? VERSION_TZ : VERSION}`, `preset=${BASES_V1[bi][0]}`];
   for (const r of SETTINGS_V1) if (!same(s[r[0]], base[r[0]])) parts.push(`${r[0]}=${encodeURIComponent(showValue(r, s[r[0]]))}`);
   if (setup.place) parts.push(`place=${setup.place.lat},${setup.place.lon}`);
+  if (zone) parts.push(`tz=${encodeURIComponent(zone)}`);
   if (setup.kiosk) parts.push('kiosk=1');
   return parts.join('&');
+}
+
+// Friendlier names a person might type in a readable link. They are only read, never written (the readable form always writes the real names).
+const ALIASES = { weather: 'weatherMode', style: 'clockStyle', night: 'brightnessNight', day: 'brightnessDay', timezone: 'tz', sign: 'kiosk', transition: 'brightnessTransition', frost: 'glassFrost', glow: 'glassGlow' };
+const onOff = (v) => (/^(1|on|true|yes)$/i.test(v) ? true : /^(0|off|false|no)$/i.test(v) ? false : null);
+function withAliases(search) {
+  const q = new URLSearchParams(search);
+  for (const [alias, real] of Object.entries(ALIASES)) if (q.has(alias) && !q.has(real)) q.set(real, q.get(alias));
+  if (q.has('seconds') && !q.has('hideSeconds') && onOff(q.get('seconds')) !== null) q.set('hideSeconds', onOff(q.get('seconds')) ? 'off' : 'on');   // seconds=off is hideSeconds=on
+  if (q.has('led') && !q.has('screenMode') && onOff(q.get('led')) !== null) q.set('screenMode', onOff(q.get('led')) ? 'led' : 'normal');
+  return q;
 }
 
 /** @returns {{settings, place, kiosk, base}|null} */
 export function decodeReadable(search) {
   try {
-    const q = new URLSearchParams(search);
+    const q = withAliases(search);
     if (!q.has('preset') && !q.has('kiosk')) return null;
-    if (q.has('v') && Number(q.get('v')) !== VERSION) return null;
+    if (q.has('v') && Number(q.get('v')) !== VERSION && Number(q.get('v')) !== VERSION_TZ) return null;
     let bi = BASES_V1.findIndex((b) => b[0] === q.get('preset'));
     if (bi < 0) bi = 0;
     const settings = baseSettings(bi);
@@ -209,7 +231,7 @@ export function decodeReadable(search) {
     let place = null;
     const m = PLACE.exec((q.get('place') || '').trim());
     if (m && Math.abs(+m[1]) <= 90 && Math.abs(+m[2]) <= 180) place = { lat: Math.round(+m[1] * 1e4) / 1e4, lon: Math.round(+m[2] * 1e4) / 1e4 };
-    return { settings, place, kiosk: q.get('kiosk') === '1' || q.get('kiosk') === 'on' || q.get('kiosk') === 'true', base: BASES_V1[bi][0] };
+    return { settings, place, kiosk: q.get('kiosk') === '1' || q.get('kiosk') === 'on' || q.get('kiosk') === 'true', base: BASES_V1[bi][0], timeZone: cleanZone(q.get('tz') || '') };
   } catch (_) { return null; }
 }
 
@@ -220,11 +242,25 @@ export function fromSearch(search) {
   return decodeReadable(search);
 }
 
+/**
+ * Whatever a person pastes (a link in either form, with or without the address): both forms of it, in words, or null when it is not ours.
+ * @returns {{setup, short: string, readable: string, form: 'short'|'readable', describe: string}|null}
+ */
+export function convertLink(text, fallbackBase = 'https://example.invalid/') {
+  const t = String(text || '').trim();
+  if (!t) return null;
+  const at = t.indexOf('?'), search = at >= 0 ? t.slice(at) : (/^(c|v|preset|kiosk)=/.test(t) ? `?${t}` : '');
+  const setup = search ? fromSearch(search) : null;
+  if (!setup) return null;
+  const base = at > 0 ? t.slice(0, at) : fallbackBase, form = new URLSearchParams(search).has('c') ? 'short' : 'readable';
+  return { setup, form, short: toLink(setup, base, 'short'), readable: toLink(setup, base, 'readable'), describe: describe(setup) };
+}
+
 /** Setup from the live settings (a conf-like object). `kiosk` is the choice made when sharing. */
 export function setupFromConf(conf, kiosk = false) {
   const settings = {}; for (const r of SETTINGS_V1) settings[r[0]] = conf[r[0]] === undefined ? r[2] : conf[r[0]];
   const place = conf.manualLocation && Number.isFinite(Number(conf.location_latitude)) && Number.isFinite(Number(conf.location_longitude)) ? { lat: Math.round(Number(conf.location_latitude) * 1e4) / 1e4, lon: Math.round(Number(conf.location_longitude) * 1e4) / 1e4 } : null;
-  return { settings: normalise(settings), place, kiosk: !!kiosk };
+  return { settings: normalise(settings), place, kiosk: !!kiosk, timeZone: cleanZone(conf.timeZone) };
 }
 
 /** @param {'short'|'readable'} form */
@@ -245,6 +281,7 @@ export function describe(setup) {
   if (s.screenMode === 'led') bits.push(`LED panel ${s.ledCols} x ${s.ledRows}`);
   if (!same(s.brightnessNight, base.brightnessNight) || !same(s.brightnessDay, base.brightnessDay)) bits.push(`brightness ${Math.round(s.brightnessDay * 100)}% by day, ${Math.round(s.brightnessNight * 100)}% at night`);
   bits.push(setup.place ? `place ${setup.place.lat}, ${setup.place.lon}` : 'place estimated from the time zone');
+  if (cleanZone(setup.timeZone)) bits.push(`time shown for ${setup.timeZone.replace(/_/g, ' ')}`);
   if (setup.kiosk) bits.push('kiosk mode (no controls)');
   return bits.join(', ');
 }

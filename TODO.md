@@ -4,7 +4,7 @@ Things we know we want, not yet done. Newest first. (Items added 2026-11-02 and 
 
 ## CI performance breakdown: what is tested and how long each part takes
 
-**Progress (2026-11-03):** the recording is done: every run prints a "where the time went" table per suite (pages, opening, waiting, other), writes `timings*.json` (artifact) and a job summary table; each suite says what it covers (`covers`); `tools/tests-report.mjs` turns timings (or CI logs) into `docs/TESTS.md`. Still to do: generate `docs/TESTS.md` from a full CI run, then use it (fewer page opens, shorter waits, rebalanced shares).
+**Done 2026-11-04:** the recording (per-suite table on every run, `timings*.json`, job summary), each suite's `covers` line, and `docs/TESTS.md` generated from CI run 63 by `tools/tests-report.mjs --log` (what is tested, pages, opening/waiting/other seconds, where it could be faster). The three CI shares are now dealt by measured cost (`FULL_COST` in `tests/run.mjs`: about 372, 378, 369 s instead of 523, 333, 237 s, so CI takes about 6.5 minutes, not 9). **Still to do:** use the table to cut time: fewer page opens (opening is 47% of browser time: `christmas`, `digitweather`, `led` and `alerts` open 15 to 26 pages each), shorter waits (`perf`, `alerts`, `idle` are mostly deliberate waits: 34% of the total), and refresh `docs/TESTS.md` and `FULL_COST` from a new CI run after any big change (the numbers are from run 63; `share` and `place` have grown since). The README should show the breakdown with its date.
 
 A table of the **full** test run: every suite, what it covers (its checks, grouped), how many pages it opens, and how long it takes on
 the CI machine, so we can see where the 7 minutes go and what to cut or move.
@@ -24,7 +24,7 @@ the CI machine, so we can see where the 7 minutes go and what to cut or move.
 
 ## Raspberry Pi targets: a range of Pis, full-resolution HDMI and LED panels of any size
 
-**Decided 2026-11-03: it lives in this repository, in `native/`** (see `native/README.md`). **First step done:** the settings schema (`schema/settings.js`, `schema/presets.js`, generated `schema/settings.json`) is now the single source for the page's defaults, the presets and a settings-panel audit test, and a test keeps the frozen share-link table compatible with it. Still to do from the requirements below: `requires` (hardware needs) on schema entries, then the native workspace itself.
+**Decided 2026-11-03: it lives in this repository, in `native/`** (see `native/README.md`). **Done 2026-11-04:** the control layer in `native/cli/` (see `native/README.md`): `requires` on schema entries and hardware gating with reasons, config file and share links as configuration, panel setup questions with matrix.cfg import/export, checks and drawing, test patterns, systemd unit, signed updates with rollback, generated man pages (mandoc-linted in `native.yml`), the LED panel guide (`docs/LED-PANELS.md`). **Not done: the renderer** (the sky, digits and landscape on HDMI or the panel), `wobbly-clock run`, the release pipeline (static binary, .deb), the sd_notify watchdog, QEMU/container tests, golden frames against the web renderer, and the Pi measurements (questions 1 and 2 below). **Earlier first step:** the settings schema (`schema/settings.js`, `schema/presets.js`, generated `schema/settings.json`) is now the single source for the page's defaults, the presets and a settings-panel audit test, and a test keeps the frozen share-link table compatible with it. Still to do from the requirements below: `requires` (hardware needs) on schema entries, then the native workspace itself.
 
 (Replaces the earlier "original Pi Zero" entry; updated 2026-11-02.) **Goals:** run the clock on **a range of Raspberry Pis**, from the
 original Zero up to a 4, in **two output modes**: (1) **full resolution over HDMI**, and (2) **an LED matrix panel of configurable
@@ -202,17 +202,13 @@ Added 2026-11-02, after finding CI had been red for about eight runs in a row wi
 
 ## Share links and manual location: what is left
 
-Built 2026-11-03 (see the README, "Share links" and "Set the place myself"): the short and readable links (`js/share.js`, frozen
-version-1 table and presets, golden links in `tests/unit/share.test.mjs`), Settings > Presets > Share this setup, kiosk mode, links that are
-applied but never saved, a place by coordinates or search (Settings > Place > Set the place myself), no first-run question for any of it.
-Not done yet:
+Built 2026-11-03 and 2026-11-04 (see the README, "Share links" and "Set the place myself"): the short and readable links (`js/share.js`,
+frozen version-1 table, version 2 adds an optional time zone), kiosk mode, links applied but never saved, a place by coordinates, search or
+the built-in city list (`js/cities.js`, works offline), a QR code (`js/qr.js`), a length limit check, paste-to-convert, friendlier names in
+readable links, "Use this setup / Just look", the time at another place (`timeZone`), and kiosk updates in the quiet hour (`js/quiet.js`).
+Not done:
 
-- **A QR code** next to the links (needs a small QR library or a hand-written encoder; the short link is short enough for a small code).
-- **A city list inside the page** so a place can be searched offline and travel as a 2-character index instead of two numbers (about 8
-  characters now); weigh its few hundred KB against the page-size budget (`tests/unit/weight.test.mjs`).
-- **"Show the time at that place"** (the place's own time zone) for a sign in one city showing another's sky.
-- **"Use this setup / Just look"** when a link is opened on a normal phone (today it is applied for that load without saving).
-- **Convert between forms** in the Share box (paste a link, see the other form), and a check for a link that is longer than a given limit.
-- **Kiosk updates at a quiet hour** (today it reloads at the next minute turn after an update is found).
-- Whether `landscape` and `weather...` in the readable form should have friendlier aliases.
+- **A city index inside the link** (2 characters instead of two numbers): needs a frozen city list and a new link version; the built-in list
+  exists now, but its order is not frozen. Only worth it if links must be shorter than about 25 characters with a place.
+- A QR code for links over about 210 characters (version 10 is the largest the encoder makes; use the short link).
 

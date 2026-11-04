@@ -29,6 +29,10 @@
   <link rel="modulepreload" href="js/config.js">
   <link rel="modulepreload" href="js/wind.js">
   <link rel="modulepreload" href="js/share.js">
+  <link rel="modulepreload" href="js/timezone.js">
+  <link rel="modulepreload" href="js/qr.js">
+  <link rel="modulepreload" href="js/cities.js">
+  <link rel="modulepreload" href="js/quiet.js">
   <link rel="modulepreload" href="schema/settings.js">
   <link rel="modulepreload" href="schema/presets.js">
   <link rel="modulepreload" href="js/countdown.js">
@@ -91,6 +95,11 @@
   </div>
   <div id="toast" role="status" aria-live="polite" hidden></div>
   <button id="wakeBanner" type="button" hidden>Tap to keep the screen on</button>
+  <div id="sharedBanner" role="status" hidden>
+    <span id="sharedText">This clock is showing a shared setup.</span>
+    <button id="sharedUse" type="button">Use this setup</button>
+    <button id="sharedLook" type="button">Just look</button>
+  </div>
   <button id="updateBanner" type="button" hidden>A new version is ready: tap to update</button>
   <div id="clock">
     <svg id="firstDigit" viewBox="0 -8 100 116" preserveAspectRatio="xMidYMid meet">
@@ -270,6 +279,21 @@
             </div>
             <p class="hint" id="shareDescribe" role="status"></p>
             <p class="hint" id="shareNote"></p>
+            <div class="field">
+              <label class="field__label" for="shareQrForm">QR code of the <select id="shareQrForm"><option value="short">short link</option><option value="readable">readable link</option></select></label>
+              <div id="shareQr" class="qr" role="img" aria-label="QR code of the link"></div>
+              <p class="hint" id="shareQrNote"></p>
+            </div>
+            <div class="field adv">
+              <label class="field__label" for="shareLimit">Longest link the sign accepts (characters; 0 = no limit)</label>
+              <input type="number" id="shareLimit" min="0" max="2000" step="10" value="0" inputmode="numeric">
+              <p class="hint" id="shareLimitNote" role="status"></p>
+            </div>
+            <div class="field adv">
+              <label class="field__label" for="shareConvert">Paste a link to see it in the other form</label>
+              <input type="text" id="shareConvert" autocomplete="off" spellcheck="false" placeholder="https://…?c=… or …?preset=bedside&hideSeconds=on">
+              <p class="hint" id="shareConvertOut" role="status"></p>
+            </div>
           </div>
 
           <div class="group">
@@ -678,6 +702,12 @@
               </div>
               <p class="hint" id="manualHint" role="status"></p>
               <p class="hint">Latitude is north (+) or south (−), longitude east (+) or west (−), in decimal degrees. A search sends what you type to the free Open-Meteo place-search service, only when you type; the coordinates are kept on this device and weather lookups still use the position rounded to about 10 km.</p>
+            </div>
+            <div class="field">
+              <label class="field__label" for="timeZone">Show the time in another time zone</label>
+              <input type="text" id="timeZone" maxlength="40" placeholder="America/New_York" autocomplete="off" spellcheck="false" list="timeZoneList">
+              <datalist id="timeZoneList"></datalist>
+              <p class="hint" id="timeZoneHint" role="status">Leave empty for this device's own time. Searching for a place above fills this in. A sign in one city can show another city's time.</p>
             </div>
             <div class="field adv">
               <label class="field__label" for="gpsFrequency">Location update frequency</label>

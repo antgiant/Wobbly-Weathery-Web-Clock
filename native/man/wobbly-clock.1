@@ -1,0 +1,73 @@
+.TH WOBBLY-CLOCK 1 "2026-11-04" "Wobbly Weathery Web Clock" "User Commands"
+.SH NAME
+wobbly\-clock \- a clock in front of a real\-time sky, for a Raspberry Pi
+.SH SYNOPSIS
+.B wobbly\-clock
+.I command
+[arguments]
+.SH DESCRIPTION
+Shows the time over a sky computed for your place, on a screen (HDMI) or an LED panel. It has the same settings, names and defaults as the
+web page: what you can set here you can set there, and a share link from the web page works as a configuration.
+.SH COMMANDS
+.TP
+.B setup
+Ask where the clock shows (HDMI or LED panel), describe the panels in plain questions, check the answers, run the test, and write the configuration.
+.TP
+.B test
+Light the output with test patterns and stop: colour bars and a grey ramp, the panels numbered, a brightness sweep, a border box. Ctrl\-C ends it.
+.TP
+.B run
+Show the clock (what the service runs).
+.TP
+.BI get " [setting]"
+Print every setting that differs from the default, or one setting.
+.TP
+.BI set " setting value"
+Change one setting. Refused, with the reason, when this machine cannot do it.
+.TP
+.B presets
+List the presets.
+.TP
+.BI preset " name"
+Apply a preset.
+.TP
+.BI apply " link"
+Use a share link (short or readable) from the web page as the configuration, including its place and sign mode.
+.TP
+.BI import\-matrix\-cfg " file"
+Read the panel layout from an rpi\-fb\-matrix matrix.cfg.
+.TP
+.B export\-matrix\-cfg
+Write the panel layout as a matrix.cfg.
+.TP
+.B install\-service
+Write and enable a systemd service so the clock starts on boot.
+.TP
+.BR status ", " logs ", " restart
+Look after the service.
+.TP
+.B update
+Check for a new release now. Releases are checked against a checksum and a signature and rolled back if they do not start.
+.TP
+.BR \-\-help ", " \-\-version
+Short help; the version.
+.SH FILES
+.TP
+.I /etc/wobbly\-clock/wobbly\-clock.conf
+The settings; see wobbly\-clock.conf(5).
+.TP
+.I /etc/wobbly\-clock/matrix.cfg
+The panel layout, in rpi\-fb\-matrix's format.
+.TP
+.I /boot/firmware/wobbly\-clock.conf
+If present at boot, applied once and renamed. For setting a Pi up with no keyboard or screen.
+.SH EXIT STATUS
+0 success; 1 a setting or value was refused; 2 bad usage; 3 the hardware cannot do what was asked.
+.SH EXAMPLES
+.nf
+wobbly\-clock set hideSeconds on
+wobbly\-clock preset bedside
+wobbly\-clock apply 'https://clock.wooleys.us/?c=...'
+.fi
+.SH SEE ALSO
+wobbly\-clock.conf(5), the LED panel guide in docs/LED\-PANELS.md, https://github.com/hzeller/rpi\-rgb\-led\-matrix

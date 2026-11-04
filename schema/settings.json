@@ -75,7 +75,19 @@
    "label": "Style",
    "shareable": true,
    "preset": true,
-   "doc": "auto (liquid glass; coloured tube from Thanksgiving to Christmas) | glass | stained (coloured tube) | solid"
+   "doc": "auto (liquid glass; coloured tube from Thanksgiving to Christmas) | glass | stained (coloured tube) | solid",
+   "requiresValue": {
+    "auto": [
+     "gles3"
+    ],
+    "glass": [
+     "gles3"
+    ],
+    "stained": [
+     "gles3"
+    ]
+   },
+   "fallback": "solid"
   },
   {
    "key": "glassFrost",
@@ -89,7 +101,10 @@
    "label": "Frosting",
    "shareable": true,
    "preset": true,
-   "doc": "0 clear .. 1 heavily frosted"
+   "doc": "0 clear .. 1 heavily frosted",
+   "requires": [
+    "gles3"
+   ]
   },
   {
    "key": "glassGlow",
@@ -103,7 +118,10 @@
    "label": "Light from inside",
    "shareable": true,
    "preset": true,
-   "doc": "light from inside the glass, 0..1 (stained glass always glows a little)"
+   "doc": "light from inside the glass, 0..1 (stained glass always glows a little)",
+   "requires": [
+    "gles3"
+   ]
   },
   {
    "key": "legibility",
@@ -136,7 +154,10 @@
    "label": "Colour of the light (liquid glass)",
    "shareable": true,
    "preset": true,
-   "doc": "liquid glass: warm | white | cool | follow (the sun / moon light)"
+   "doc": "liquid glass: warm | white | cool | follow (the sun / moon light)",
+   "requires": [
+    "gles3"
+   ]
   },
   {
    "key": "clockColor",
@@ -183,7 +204,11 @@
    "label": "Christmas tree",
    "shareable": true,
    "preset": true,
-   "doc": "a lit Christmas tree in the scene from Thanksgiving to Christmas"
+   "doc": "a lit Christmas tree in the scene from Thanksgiving to Christmas",
+   "requires": [
+    "gles3"
+   ],
+   "fallback": false
   },
   {
    "key": "plants",
@@ -194,7 +219,11 @@
    "label": "Plants that suit this place",
    "shareable": true,
    "preset": true,
-   "doc": "grass, trees, cacti ... swaying in the wind"
+   "doc": "grass, trees, cacti ... swaying in the wind",
+   "requires": [
+    "gles3"
+   ],
+   "fallback": false
   },
   {
    "key": "quality",
@@ -211,7 +240,17 @@
    "label": "Quality",
    "shareable": true,
    "preset": true,
-   "doc": "auto | low | medium | high"
+   "doc": "auto | low | medium | high",
+   "requiresValue": {
+    "high": [
+     "gles3",
+     "cores>=2"
+    ],
+    "medium": [
+     "gles3"
+    ]
+   },
+   "fallback": "low"
   },
   {
    "key": "bodySize",
@@ -280,7 +319,13 @@
    "label": "Mode",
    "shareable": true,
    "preset": true,
-   "doc": "fixed | drag (look around) | look (gyro \"VR\" mode)"
+   "doc": "fixed | drag (look around) | look (gyro \"VR\" mode)",
+   "requiresValue": {
+    "look": [
+     "sensors"
+    ]
+   },
+   "fallback": "fixed"
   },
   {
    "key": "followSun",
@@ -380,7 +425,10 @@
    "label": "Screen rotation",
    "shareable": false,
    "preset": false,
-   "doc": "auto | ignore"
+   "doc": "auto | ignore",
+   "requires": [
+    "sensors"
+   ]
   },
   {
    "key": "compassRef",
@@ -396,7 +444,10 @@
    "label": "Compass reference (iPhone & iPad)",
    "shareable": false,
    "preset": false,
-   "doc": "auto | cam | top (iOS compass heading reference)"
+   "doc": "auto | cam | top (iOS compass heading reference)",
+   "requires": [
+    "sensors"
+   ]
   },
   {
    "key": "vrDebug",
@@ -407,7 +458,10 @@
    "label": "Show sensor readout",
    "shareable": false,
    "preset": false,
-   "doc": "settings panel"
+   "doc": "settings panel",
+   "requires": [
+    "sensors"
+   ]
   },
   {
    "key": "weatherMode",
@@ -462,7 +516,16 @@
    "label": "Cloud & water motion",
    "shareable": true,
    "preset": true,
-   "doc": "1 real time, 0.25 slow, 0 still"
+   "doc": "1 real time, 0.25 slow, 0 still",
+   "requiresValue": {
+    "1": [
+     "cores>=2"
+    ],
+    "0.25": [
+     "cores>=2"
+    ]
+   },
+   "fallback": 0
   },
   {
    "key": "rainAlert",
@@ -488,7 +551,11 @@
    "label": "Rain and snow on the digits",
    "shareable": true,
    "preset": false,
-   "doc": "on | off: rain beads and splashes, snow settling on the digits (glass, tube and LED styles)"
+   "doc": "on | off: rain beads and splashes, snow settling on the digits (glass, tube and LED styles)",
+   "requires": [
+    "gles3"
+   ],
+   "fallback": "off"
   },
   {
    "key": "windSway",
@@ -504,7 +571,11 @@
    "label": "Wind sway",
    "shareable": true,
    "preset": false,
-   "doc": "off | lean | full: the digits lean downwind like palm trees (steady lean, or lean and gusts)"
+   "doc": "off | lean | full: the digits lean downwind like palm trees (steady lean, or lean and gusts)",
+   "requires": [
+    "cores>=2"
+   ],
+   "fallback": "off"
   },
   {
    "key": "countdown",
@@ -723,6 +794,18 @@
    "shareable": false,
    "preset": false,
    "doc": "the place was typed or searched for (Settings -> Place): never replaced by GPS or the time-zone estimate"
+  },
+  {
+   "key": "timeZone",
+   "type": "text",
+   "default": "",
+   "max": 40,
+   "tab": "place",
+   "advanced": false,
+   "label": "Show the time in another time zone",
+   "shareable": false,
+   "preset": false,
+   "doc": "an IANA time zone name (\"America/New_York\"); empty = this device's own time. Share links carry it as their own field (version 2), like the place"
   },
   {
    "key": "gpsFrequency",

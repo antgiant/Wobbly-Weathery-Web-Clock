@@ -1040,6 +1040,44 @@ body[data-screen="led"] #alerts {
   display: none;
 }
 
+/* a shared link opened on an ordinary screen: it is showing that setup for now; the choice is the viewer's */
+#sharedBanner {
+  position: fixed;
+  z-index: 4;
+  left: 50%;
+  top: max(14px, env(safe-area-inset-top));
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 10px;
+  max-width: min(92vw, 560px);
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 18px;
+  background: rgba(10, 16, 32, 0.78);
+  color: #f2f5ff;
+  font: 500 13px/1.3 system-ui, sans-serif;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+#sharedBanner[hidden] { display: none; }
+#sharedBanner button {
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: 600 13px system-ui, sans-serif;
+  cursor: pointer;
+}
+#sharedBanner #sharedUse { background: rgba(255, 255, 255, 0.18); }
+
+#shareQr { display: inline-block; line-height: 0; border-radius: 6px; overflow: hidden; background: #fff; max-width: 100%; }
+#shareQr svg { display: block; width: min(240px, 100%); height: auto; }
+#shareQr:empty { display: none; }
+
 /* in the interactive view modes the page must never pan, zoom or pull-to-refresh under the finger */
 body[data-view="drag"],
 body[data-view="look"] {
@@ -1454,6 +1492,7 @@ html[data-kiosk] #settings,
 html[data-kiosk] .fab,
 html[data-kiosk] #wakeBanner,
 html[data-kiosk] #updateBanner,
+html[data-kiosk] #sharedBanner,
 html[data-kiosk] #welcome,
 html[data-kiosk] #toast,
 html[data-kiosk] #installModal,
