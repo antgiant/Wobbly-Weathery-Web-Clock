@@ -10,10 +10,13 @@
 //   shareable  carried by a share link (js/share.js keeps its own frozen copy of version 1: this list may grow, that one never changes)
 //   preset     set by the presets and by "Reset all settings"
 //
-// Added later by the native work: `requires` (what hardware an option needs, so the native program can switch off what a machine
-// cannot do and say why). Run `npm run schema` after changing this file: it rewrites schema/settings.json.
+//   requires   (added by the native work) what a machine needs for the option to work, a list of tokens: "gles3" (an OpenGL ES 3 GPU),
+//              "cores>=2", "ram>=1024" (megabytes), "hdmi" (a full-resolution screen output), "sensors" (motion/compass: a phone, never a Pi).
+//              The native program switches off what a machine cannot do and says why (native/cli/hardware.mjs). The web page ignores it.
+//   requiresValue  the same, for one value of an enum ({ glass: ["gles3"] }); the native program falls back to `fallback`.
+// Run `npm run schema` after changing this file: it rewrites schema/settings.json.
 
-export const SETTINGS = [
+const RAW = [
   { key: "twentyFourHourClock", type: "tri", default: null, tab: "clock", advanced: false, label: "24-hour time", shareable: true, preset: false, doc: "null = follow the browser's locale until the user chooses" },
   { key: "hideSeconds", type: "bool", default: false, tab: "clock", advanced: false, label: "Hide seconds", shareable: true, preset: true },
   { key: "clockMode", type: "enum", default: "time", options: ["time", "countdown"], tab: "clock", advanced: true, label: "The digits show", shareable: true, preset: false, doc: "time | countdown: the digits show the time, or the time left to timerTarget" },
@@ -68,5 +71,20 @@ export const SETTINGS = [
   { key: "coarseLookups", type: "bool", default: true, tab: "place", advanced: true, label: "Share only an approximate position", shareable: false, preset: false, doc: "weather / terrain lookups use a rounded position, never the exact one" },
 ];
 
+
+// What each option needs (see the header). Anything not listed runs on every machine. Kept as one table so it is easy to review as a whole.
+const NEEDS = {
+  clockStyle: { requiresValue: { auto: ["gles3"], glass: ["gles3"], stained: ["gles3"] }, fallback: "solid" },
+  glassFrost: { requires: ["gles3"] }, glassGlow: { requires: ["gles3"] }, glassGlowColor: { requires: ["gles3"] },
+  digitWeather: { requires: ["gles3"], fallback: "off" },
+  windSway: { requires: ["cores>=2"], fallback: "off" },
+  plants: { requires: ["gles3"], fallback: false },
+  holidayTree: { requires: ["gles3"], fallback: false },
+  quality: { requiresValue: { high: ["gles3", "cores>=2"], medium: ["gles3"] }, fallback: "low" },
+  viewMode: { requiresValue: { look: ["sensors"] }, fallback: "fixed" },
+  sensorRotation: { requires: ["sensors"] }, compassRef: { requires: ["sensors"] }, vrDebug: { requires: ["sensors"] },
+  cloudMotion: { requiresValue: { 1: ["cores>=2"], 0.25: ["cores>=2"] }, fallback: 0 },
+};
+export const SETTINGS = RAW.map((s) => ({ ...s, ...(NEEDS[s.key] || {}) }));
 export const SETTING_DEFAULTS = Object.fromEntries(SETTINGS.map((s) => [s.key, s.default]));
 export const PRESET_KEYS = SETTINGS.filter((s) => s.preset).map((s) => s.key);
