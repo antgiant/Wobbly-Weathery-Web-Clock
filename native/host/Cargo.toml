@@ -9,3 +9,5 @@ license = "MIT"
 rquickjs = { version = "0.9", features = ["loader", "macro"] }
 libloading = "0.8"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+tiny-skia = "0.11"
+serde_json = "1"

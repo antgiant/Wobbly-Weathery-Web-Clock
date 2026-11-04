@@ -1,6 +1,7 @@
 //! wobbly-host: runs the real sky engine (JavaScript + GLSL, the same files the web page uses) with no browser.
 //! Spike usage: wobbly-host <repo-root> <out.ppm> [width height] [time-iso] [state-json]
 
+mod canvas2d;
 mod egl;
 mod gl;
 
@@ -39,6 +40,14 @@ fn n_writeppm<'js>(ctx: Ctx<'js>, p: String, w: u32, h: u32, ab: ArrayBuffer<'js
     for y in (0..h as usize).rev() { for x in 0..w as usize { let i = (y * w as usize + x) * 4; o.extend_from_slice(&px[i..i + 3]); } }   // GL rows run bottom to top
     std::fs::write(&p, o).map_err(|e| throw(&ctx, e.to_string()))
 }
+
+fn n_c2d_new(w: u32, h: u32) -> usize { canvas2d::create(w, h) }
+fn n_c2d_resize(id: usize, w: u32, h: u32) { canvas2d::resize(id, w, h) }
+fn n_c2d_call<'js>(id: usize, op: String, arg: String, buf: Option<ArrayBuffer<'js>>) -> Result<()> {
+    let b = buf.and_then(|b| b.as_bytes().map(|x| x.to_vec()));
+    canvas2d::call(id, &op, &arg, b); Ok(())
+}
+fn n_c2d_read<'js>(ctx: Ctx<'js>, id: usize, x: i32, y: i32, w: u32, h: u32) -> Result<ArrayBuffer<'js>> { ArrayBuffer::new_copy(ctx.clone(), canvas2d::read(id, x, y, w, h)) }
 
 struct Res { root: PathBuf }
 impl Resolver for Res {
@@ -94,6 +103,10 @@ fn main() {
         g.set("__readtext", Function::new(ctx.clone(), n_readtext)).unwrap();
         g.set("__decode", Function::new(ctx.clone(), n_decode)).unwrap();
         g.set("__writeppm", Function::new(ctx.clone(), n_writeppm)).unwrap();
+        g.set("__c2d_new", Function::new(ctx.clone(), n_c2d_new)).unwrap();
+        g.set("__c2d_resize", Function::new(ctx.clone(), n_c2d_resize)).unwrap();
+        g.set("__c2d_call", Function::new(ctx.clone(), n_c2d_call)).unwrap();
+        g.set("__c2d_read", Function::new(ctx.clone(), n_c2d_read)).unwrap();
         g.set("__done", Function::new(ctx.clone(), || DONE.with(|d| d.set(true)))).unwrap();
         g.set("__root", root.to_string_lossy().to_string()).unwrap();
         let args = Object::new(ctx.clone()).unwrap();
