@@ -3,6 +3,7 @@
 
 import { conf, use24h, tempUnit } from '../config.js';
 import { now, getSim } from '../simtime.js';
+import { zoneOptions } from '../timezone.js';
 import { countdownState } from './sunpath.js';
 import { assessRain, fetchRainHours } from './rain.js';
 import { engine, state, ov, num, coarse, histActive, cachedFetch } from './core.js';
@@ -17,7 +18,7 @@ const SVG_UMBRELLA = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12
 const SVG_SLICKER = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11a9 9 0 0 1 18 0z"/><path d="M12 11v4.5a2 2 0 0 0 4 0"/><path d="M5 15l-1 2.5M9 17l-1 2.5M18 17l-1 2.5M7 21l-.6 1.5"/></svg>';
 
 export function rainText(a) {
-  const at = (ms) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', ...(use24h() ? { hour12: false, minute: '2-digit' } : { hour12: true }) });
+  const at = (ms) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', ...zoneOptions(), ...(use24h() ? { hour12: false, minute: '2-digit' } : { hour12: true }) });
   const what = a.kind === 'snow' ? 'snow' : 'rain';
   const amount = a.totalMm == null ? '' : tempUnit() === 'f' ? ` · ${(a.totalMm / 25.4).toFixed(a.totalMm / 25.4 < 1 ? 2 : 1)} in` : ` · ${a.totalMm < 10 ? a.totalMm.toFixed(1) : Math.round(a.totalMm)} mm`;
   const span = a.from == null ? '' : a.raining ? `, until ${at(a.to)}` : `, ${at(a.from)} to ${at(a.to)}`;

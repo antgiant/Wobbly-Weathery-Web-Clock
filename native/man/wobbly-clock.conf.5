@@ -1,4 +1,4 @@
-.TH WOBBLY-CLOCK.CONF 5 "" "Wobbly Weathery Web Clock" "File Formats"
+.TH WOBBLY-CLOCK.CONF 5 "2026-11-04" "Wobbly Weathery Web Clock" "File Formats"
 .SH NAME
 wobbly\-clock.conf \- settings for wobbly\-clock
 .SH DESCRIPTION
@@ -160,6 +160,9 @@ Use precise location. Values: on | off. Default: off.
 .TP
 .B manualLocation
 Set the place myself. Values: on | off. Default: off. the place was typed or searched for (Settings \-> Place): never replaced by GPS or the time\-zone estimate.
+.TP
+.B timeZone
+Show the time in another time zone. Values: text, up to 40 characters. Default: . an IANA time zone name ("America/New_York"); empty = this device's own time. Share links carry it as their own field (version 2), like the place.
 .TP
 .B gpsFrequency
 Location update frequency (advanced). Values: \-1 | 1 | 5 | 15 | 30 | 60 | 120 | 720 | 1440 | \-2. Default: \-1.

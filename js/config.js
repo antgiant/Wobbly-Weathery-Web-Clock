@@ -24,7 +24,7 @@ function createPersistentConfig(key, initialValue = {}, shared = null) {
   if (shared) {
     // A shared link (share.js): this setup for this load only. Nothing is read from or written to storage, so it never overwrites
     // anyone's own settings, and a sign that has nothing stored comes up exactly as the link says.
-    data = { ...initialValue, ...shared.settings, kiosk: shared.kiosk, confVersion: 99, locationChoice: shared.place ? 'manual' : 'estimated', manualLocation: !!shared.place, preciseLocation: false };
+    data = { ...initialValue, ...shared.settings, kiosk: shared.kiosk, confVersion: 99, locationChoice: shared.place ? 'manual' : 'estimated', manualLocation: !!shared.place, preciseLocation: false, timeZone: shared.timeZone || '' };
     if (shared.place) { data.location_latitude = shared.place.lat; data.location_longitude = shared.place.lon; }
     if (shared.kiosk) data.viewMode = 'fixed';                      // nobody can drag a sign
     return new Proxy(data, { set(target, property, value) { target[property] = value; return true; }, deleteProperty(target, property) { delete target[property]; return true; } });
@@ -98,7 +98,7 @@ export const DEFAULTS = {
   // weather & units
   confVersion: 0
 };
-const CONF_VERSION = 4;
+export const CONF_VERSION = 4;
 // A link made by "Share this setup" (?c=... or ?preset=...&...): applied for this load only, not saved (see share.js)
 export const shared = (typeof location !== 'undefined' && location.search) ? fromSearch(location.search) : null;
 export var conf = createPersistentConfig("conf", DEFAULTS, shared);

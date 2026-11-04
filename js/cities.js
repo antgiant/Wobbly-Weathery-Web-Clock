@@ -1,0 +1,78 @@
+// A short list of large cities, so a place can be found with no connection (Settings -> Place -> search falls back to it when the free
+// online search cannot be reached). [name, country, latitude, longitude, IANA time zone]; coordinates to 0.01 degree (about 1 km), which is
+// far finer than the sky or the weather needs. Kept small on purpose (see tests/unit/weight.test.mjs).
+export const CITIES = [
+  ['New York', 'United States', 40.71, -74.01, 'America/New_York'], ['Los Angeles', 'United States', 34.05, -118.24, 'America/Los_Angeles'],
+  ['Chicago', 'United States', 41.88, -87.63, 'America/Chicago'], ['Houston', 'United States', 29.76, -95.37, 'America/Chicago'],
+  ['Phoenix', 'United States', 33.45, -112.07, 'America/Phoenix'], ['Philadelphia', 'United States', 39.95, -75.17, 'America/New_York'],
+  ['San Antonio', 'United States', 29.42, -98.49, 'America/Chicago'], ['San Diego', 'United States', 32.72, -117.16, 'America/Los_Angeles'],
+  ['Dallas', 'United States', 32.78, -96.8, 'America/Chicago'], ['San Francisco', 'United States', 37.77, -122.42, 'America/Los_Angeles'],
+  ['Seattle', 'United States', 47.61, -122.33, 'America/Los_Angeles'], ['Denver', 'United States', 39.74, -104.99, 'America/Denver'],
+  ['Boston', 'United States', 42.36, -71.06, 'America/New_York'], ['Washington', 'United States', 38.91, -77.04, 'America/New_York'],
+  ['Atlanta', 'United States', 33.75, -84.39, 'America/New_York'], ['Miami', 'United States', 25.76, -80.19, 'America/New_York'],
+  ['Minneapolis', 'United States', 44.98, -93.27, 'America/Chicago'], ['Detroit', 'United States', 42.33, -83.05, 'America/Detroit'],
+  ['Las Vegas', 'United States', 36.17, -115.14, 'America/Los_Angeles'], ['Portland', 'United States', 45.52, -122.68, 'America/Los_Angeles'],
+  ['Salt Lake City', 'United States', 40.76, -111.89, 'America/Denver'], ['Anchorage', 'United States', 61.22, -149.9, 'America/Anchorage'],
+  ['Honolulu', 'United States', 21.31, -157.86, 'Pacific/Honolulu'], ['New Orleans', 'United States', 29.95, -90.07, 'America/Chicago'],
+  ['Toronto', 'Canada', 43.65, -79.38, 'America/Toronto'], ['Montreal', 'Canada', 45.5, -73.57, 'America/Toronto'],
+  ['Vancouver', 'Canada', 49.28, -123.12, 'America/Vancouver'], ['Calgary', 'Canada', 51.05, -114.07, 'America/Edmonton'],
+  ['Winnipeg', 'Canada', 49.9, -97.14, 'America/Winnipeg'], ['Halifax', 'Canada', 44.65, -63.58, 'America/Halifax'],
+  ['Mexico City', 'Mexico', 19.43, -99.13, 'America/Mexico_City'], ['Guadalajara', 'Mexico', 20.66, -103.35, 'America/Mexico_City'],
+  ['Havana', 'Cuba', 23.11, -82.37, 'America/Havana'], ['Panama City', 'Panama', 8.98, -79.52, 'America/Panama'],
+  ['Bogota', 'Colombia', 4.71, -74.07, 'America/Bogota'], ['Lima', 'Peru', -12.05, -77.04, 'America/Lima'],
+  ['Quito', 'Ecuador', -0.18, -78.47, 'America/Guayaquil'], ['Caracas', 'Venezuela', 10.48, -66.9, 'America/Caracas'],
+  ['Santiago', 'Chile', -33.45, -70.67, 'America/Santiago'], ['Buenos Aires', 'Argentina', -34.6, -58.38, 'America/Argentina/Buenos_Aires'],
+  ['Montevideo', 'Uruguay', -34.9, -56.16, 'America/Montevideo'], ['Sao Paulo', 'Brazil', -23.55, -46.63, 'America/Sao_Paulo'],
+  ['Rio de Janeiro', 'Brazil', -22.91, -43.17, 'America/Sao_Paulo'], ['Brasilia', 'Brazil', -15.79, -47.88, 'America/Sao_Paulo'],
+  ['La Paz', 'Bolivia', -16.5, -68.15, 'America/La_Paz'], ['Reykjavik', 'Iceland', 64.15, -21.94, 'Atlantic/Reykjavik'],
+  ['London', 'United Kingdom', 51.51, -0.13, 'Europe/London'], ['Edinburgh', 'United Kingdom', 55.95, -3.19, 'Europe/London'],
+  ['Dublin', 'Ireland', 53.35, -6.26, 'Europe/Dublin'], ['Lisbon', 'Portugal', 38.72, -9.14, 'Europe/Lisbon'],
+  ['Madrid', 'Spain', 40.42, -3.7, 'Europe/Madrid'], ['Barcelona', 'Spain', 41.39, 2.17, 'Europe/Madrid'],
+  ['Paris', 'France', 48.86, 2.35, 'Europe/Paris'], ['Marseille', 'France', 43.3, 5.37, 'Europe/Paris'],
+  ['Brussels', 'Belgium', 50.85, 4.35, 'Europe/Brussels'], ['Amsterdam', 'Netherlands', 52.37, 4.9, 'Europe/Amsterdam'],
+  ['Berlin', 'Germany', 52.52, 13.41, 'Europe/Berlin'], ['Munich', 'Germany', 48.14, 11.58, 'Europe/Berlin'],
+  ['Hamburg', 'Germany', 53.55, 9.99, 'Europe/Berlin'], ['Zurich', 'Switzerland', 47.38, 8.54, 'Europe/Zurich'],
+  ['Vienna', 'Austria', 48.21, 16.37, 'Europe/Vienna'], ['Rome', 'Italy', 41.9, 12.5, 'Europe/Rome'],
+  ['Milan', 'Italy', 45.46, 9.19, 'Europe/Rome'], ['Prague', 'Czechia', 50.08, 14.44, 'Europe/Prague'],
+  ['Warsaw', 'Poland', 52.23, 21.01, 'Europe/Warsaw'], ['Budapest', 'Hungary', 47.5, 19.04, 'Europe/Budapest'],
+  ['Copenhagen', 'Denmark', 55.68, 12.57, 'Europe/Copenhagen'], ['Stockholm', 'Sweden', 59.33, 18.07, 'Europe/Stockholm'],
+  ['Oslo', 'Norway', 59.91, 10.75, 'Europe/Oslo'], ['Helsinki', 'Finland', 60.17, 24.94, 'Europe/Helsinki'],
+  ['Tallinn', 'Estonia', 59.44, 24.75, 'Europe/Tallinn'], ['Athens', 'Greece', 37.98, 23.73, 'Europe/Athens'],
+  ['Istanbul', 'Turkey', 41.01, 28.98, 'Europe/Istanbul'], ['Kyiv', 'Ukraine', 50.45, 30.52, 'Europe/Kyiv'],
+  ['Moscow', 'Russia', 55.76, 37.62, 'Europe/Moscow'], ['Saint Petersburg', 'Russia', 59.93, 30.34, 'Europe/Moscow'],
+  ['Cairo', 'Egypt', 30.04, 31.24, 'Africa/Cairo'], ['Casablanca', 'Morocco', 33.57, -7.59, 'Africa/Casablanca'],
+  ['Lagos', 'Nigeria', 6.52, 3.38, 'Africa/Lagos'], ['Accra', 'Ghana', 5.6, -0.19, 'Africa/Accra'],
+  ['Nairobi', 'Kenya', -1.29, 36.82, 'Africa/Nairobi'], ['Addis Ababa', 'Ethiopia', 9.03, 38.74, 'Africa/Addis_Ababa'],
+  ['Johannesburg', 'South Africa', -26.2, 28.05, 'Africa/Johannesburg'], ['Cape Town', 'South Africa', -33.92, 18.42, 'Africa/Johannesburg'],
+  ['Tel Aviv', 'Israel', 32.09, 34.78, 'Asia/Jerusalem'], ['Jerusalem', 'Israel', 31.77, 35.21, 'Asia/Jerusalem'],
+  ['Riyadh', 'Saudi Arabia', 24.71, 46.68, 'Asia/Riyadh'], ['Dubai', 'United Arab Emirates', 25.2, 55.27, 'Asia/Dubai'],
+  ['Tehran', 'Iran', 35.69, 51.39, 'Asia/Tehran'], ['Karachi', 'Pakistan', 24.86, 67.01, 'Asia/Karachi'],
+  ['Delhi', 'India', 28.61, 77.21, 'Asia/Kolkata'], ['Mumbai', 'India', 19.08, 72.88, 'Asia/Kolkata'],
+  ['Bengaluru', 'India', 12.97, 77.59, 'Asia/Kolkata'], ['Kolkata', 'India', 22.57, 88.36, 'Asia/Kolkata'],
+  ['Chennai', 'India', 13.08, 80.27, 'Asia/Kolkata'], ['Kathmandu', 'Nepal', 27.72, 85.32, 'Asia/Kathmandu'],
+  ['Dhaka', 'Bangladesh', 23.81, 90.41, 'Asia/Dhaka'], ['Colombo', 'Sri Lanka', 6.93, 79.86, 'Asia/Colombo'],
+  ['Bangkok', 'Thailand', 13.76, 100.5, 'Asia/Bangkok'], ['Hanoi', 'Vietnam', 21.03, 105.85, 'Asia/Bangkok'],
+  ['Ho Chi Minh City', 'Vietnam', 10.82, 106.63, 'Asia/Ho_Chi_Minh'], ['Singapore', 'Singapore', 1.35, 103.82, 'Asia/Singapore'],
+  ['Kuala Lumpur', 'Malaysia', 3.14, 101.69, 'Asia/Kuala_Lumpur'], ['Jakarta', 'Indonesia', -6.21, 106.85, 'Asia/Jakarta'],
+  ['Manila', 'Philippines', 14.6, 120.98, 'Asia/Manila'], ['Hong Kong', 'China', 22.32, 114.17, 'Asia/Hong_Kong'],
+  ['Shanghai', 'China', 31.23, 121.47, 'Asia/Shanghai'], ['Beijing', 'China', 39.91, 116.4, 'Asia/Shanghai'],
+  ['Shenzhen', 'China', 22.54, 114.06, 'Asia/Shanghai'], ['Taipei', 'Taiwan', 25.03, 121.57, 'Asia/Taipei'],
+  ['Seoul', 'South Korea', 37.57, 126.98, 'Asia/Seoul'], ['Tokyo', 'Japan', 35.68, 139.69, 'Asia/Tokyo'],
+  ['Osaka', 'Japan', 34.69, 135.5, 'Asia/Tokyo'], ['Sapporo', 'Japan', 43.06, 141.35, 'Asia/Tokyo'],
+  ['Ulaanbaatar', 'Mongolia', 47.89, 106.91, 'Asia/Ulaanbaatar'], ['Almaty', 'Kazakhstan', 43.24, 76.89, 'Asia/Almaty'],
+  ['Tashkent', 'Uzbekistan', 41.3, 69.24, 'Asia/Tashkent'], ['Vladivostok', 'Russia', 43.12, 131.89, 'Asia/Vladivostok'],
+  ['Perth', 'Australia', -31.95, 115.86, 'Australia/Perth'], ['Adelaide', 'Australia', -34.93, 138.6, 'Australia/Adelaide'],
+  ['Darwin', 'Australia', -12.46, 130.84, 'Australia/Darwin'], ['Brisbane', 'Australia', -27.47, 153.03, 'Australia/Brisbane'],
+  ['Sydney', 'Australia', -33.87, 151.21, 'Australia/Sydney'], ['Melbourne', 'Australia', -37.81, 144.96, 'Australia/Melbourne'],
+  ['Hobart', 'Australia', -42.88, 147.33, 'Australia/Hobart'], ['Auckland', 'New Zealand', -36.85, 174.76, 'Pacific/Auckland'],
+  ['Wellington', 'New Zealand', -41.29, 174.78, 'Pacific/Auckland'], ['Suva', 'Fiji', -18.14, 178.44, 'Pacific/Fiji'],
+];
+
+const plain = (s) => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+/** Up to `limit` cities whose name (or name and country) starts with or contains what was typed; names that start with it come first. */
+export function findCities(query, limit = 6) {
+  const q = plain(query).trim();
+  if (q.length < 2) return [];
+  const hits = CITIES.map((c) => { const n = plain(c[0]), full = plain(`${c[0]} ${c[1]}`); return { c, rank: n.startsWith(q) ? 0 : n.split(' ').some((w) => w.startsWith(q)) ? 1 : full.includes(q) ? 2 : 9 }; }).filter((x) => x.rank < 9);
+  return hits.sort((a, b) => a.rank - b.rank || a.c[0].localeCompare(b.c[0])).slice(0, limit).map((x) => x.c);
+}

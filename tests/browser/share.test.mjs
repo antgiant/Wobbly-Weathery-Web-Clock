@@ -46,6 +46,25 @@ export async function run(t) {
   t.check('an ordinary address (no link) stores settings as always', await h.page.evaluate(() => !!localStorage.getItem('conf')) && !(await cfg(h.page)).kiosk);
   await h.close();
 
+  // opened on an ordinary screen: a banner offers "Use this setup" or "Just look"
+  h = await open(t, `c=${S.encodeShort({ settings: { hideSeconds: true, quality: 'low', brightnessNight: 0.4 }, place: { lat: 48.8566, lon: 2.3522 }, timeZone: 'Europe/Paris' })}`);
+  t.check('a shared link on an ordinary screen shows a banner saying what it is, with Use this setup and Just look', await h.page.evaluate(() => { const b = document.getElementById('sharedBanner'); return !b.hidden && /Showing a shared setup/.test(b.textContent) && /48\.8566/.test(b.textContent) && /Paris/.test(b.textContent) && !!document.getElementById('sharedUse') && !!document.getElementById('sharedLook'); }));
+  t.check('and its time zone is applied: the digits show Paris time (12:00 UTC is 14:00 there)', (await cfg(h.page)).timeZone === 'Europe/Paris' && /^(14|2):/.test(await h.page.title()), await h.page.title());
+  await h.page.click('#sharedLook');
+  t.check('Just look hides the banner and keeps nothing', await h.page.evaluate(() => document.getElementById('sharedBanner').hidden && localStorage.getItem('conf') === null));
+  await h.page.reload(); await h.ready(); await h.page.waitForTimeout(500);
+  await h.page.click('#sharedUse');
+  await h.page.waitForURL((u) => !u.search || !/[?&]c=/.test(u.search), { timeout: 8000 }).catch(() => {});
+  await h.ready(); await h.page.waitForTimeout(600);
+  const kept = await h.page.evaluate(() => JSON.parse(localStorage.getItem('conf') || 'null'));
+  t.check('Use this setup saves it on this device (with the place and time zone) and goes to the plain address', kept && kept.hideSeconds === true && kept.quality === 'low' && kept.brightnessNight === 0.4 && kept.manualLocation === true && Math.abs(kept.location_latitude - 48.8566) < 1e-6 && kept.timeZone === 'Europe/Paris' && !/[?&]c=/.test(await h.page.evaluate(() => location.search)) && kept.confVersion >= 4, JSON.stringify(kept)?.slice(0, 200));
+  t.check('and the banner is gone, since the page is no longer showing a shared setup', await h.page.evaluate(() => document.getElementById('sharedBanner').hidden));
+  await h.close();
+  // a kiosk link never shows the banner (nobody can tap it)
+  h = await open(t, `c=${short}`);
+  t.check('a kiosk link shows no banner', await h.page.evaluate(() => getComputedStyle(document.getElementById('sharedBanner')).display === 'none'));
+  await h.close();
+
   if (t.quick) return;                                              // the quick check stops here
 
   // the Share this setup box: links made by the page open to the same setup
@@ -83,5 +102,35 @@ export async function run(t) {
   t.check('Copy says the link was copied', /copied/i.test(await h.page.evaluate(() => document.getElementById('toast').textContent)));
   t.check('no place set: the box says the screen will estimate it, and where to set one', /time zone/.test(await h.page.evaluate(() => document.getElementById('shareNote').textContent)));
   t.check('share: no errors', h.errors.length === 0, h.errors.join(' | '));
+  await h.close();
+
+  // the QR code, the length limit and the converter in the Share box
+  h = await t.open({ width: 420, height: 800, conf: { clockStyle: 'solid', hideSeconds: true }, query: 'lat=&t=2026-06-21T12:00:00Z&speed=0' });
+  await h.page.evaluate(() => document.getElementById('settings').dispatchEvent(new MouseEvent('click', { bubbles: true })));
+  await h.page.waitForTimeout(700);
+  let q = await h.page.evaluate(() => ({ svg: !!document.querySelector('#shareQr svg'), paths: document.querySelectorAll('#shareQr path').length, note: document.getElementById('shareQrNote').textContent }));
+  t.check('a QR code of the short link is drawn, with a note', q.svg && q.paths === 1 && /Scan it/.test(q.note), JSON.stringify(q));
+  const setv = (id, v, ev = 'input') => h.page.evaluate(([i, x, e]) => { const el = document.getElementById(i); el.value = x; el.dispatchEvent(new Event(e, { bubbles: true })); }, [id, v, ev]);
+  const drawn = await h.page.evaluate(() => document.querySelector('#shareQr path').getAttribute('d'));
+  t.check('the code drawn is the code of the link in the box (same modules)', drawn === await h.page.evaluate(async () => { const m = await import('/js/qr.js'); return new DOMParser().parseFromString(m.toSvg(document.getElementById('shareShort').value, 'M', 1), 'image/svg+xml').querySelector('path').getAttribute('d'); }));
+  await setv('shareQrForm', 'readable', 'change');
+  await h.page.waitForTimeout(300);
+  const readableLen = await h.page.evaluate(() => document.getElementById('shareReadable').value.length);
+  t.check('choosing the readable link redraws it, or says it is too long for a code', await h.page.evaluate(() => document.getElementById('shareQr').innerHTML !== '') === (readableLen <= 213) && (readableLen <= 213 || /too long for a QR code/.test(await h.page.evaluate(() => document.getElementById('shareQrNote').textContent))), String(readableLen));
+  await setv('shareLimit', '30'); await h.page.waitForTimeout(300);
+  t.check('a length limit is checked against both links, saying what fits', /too long/.test(await h.page.evaluate(() => document.getElementById('shareLimitNote').textContent)), await h.page.evaluate(() => document.getElementById('shareLimitNote').textContent));
+  await setv('shareLimit', '2000'); await h.page.waitForTimeout(300);
+  t.check('and says both fit when they do', /Both links fit/.test(await h.page.evaluate(() => document.getElementById('shareLimitNote').textContent)));
+  const sh = await h.page.evaluate(() => document.getElementById('shareShort').value);
+  await setv('shareConvert', sh); await h.page.waitForTimeout(200);
+  let conv = await h.page.evaluate(() => document.getElementById('shareConvertOut').textContent);
+  t.check('pasting a short link shows what it does and the readable form', /seconds hidden/.test(conv) && /Readable: .*\?v=1&preset=/.test(conv), conv);
+  const rd = await h.page.evaluate(() => document.getElementById('shareReadable').value);
+  await setv('shareConvert', rd.slice(rd.indexOf('?') + 1)); await h.page.waitForTimeout(200);
+  conv = await h.page.evaluate(() => document.getElementById('shareConvertOut').textContent);
+  t.check('pasting just the readable query (no address) shows the short form', /Short: .*\?c=/.test(conv), conv);
+  await setv('shareConvert', 'hello'); await h.page.waitForTimeout(200);
+  t.check('pasting something else says so', /not a link this clock understands/.test(await h.page.evaluate(() => document.getElementById('shareConvertOut').textContent)));
+  t.check('share box: no errors', h.errors.length === 0, h.errors.join(' | '));
   await h.close();
 }

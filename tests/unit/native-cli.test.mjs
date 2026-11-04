@@ -71,7 +71,7 @@ check('a missing file is an error', (await go(world(), 'import-matrix-cfg', '/no
 w = world(); w.files['/etc/wobbly-clock/matrix.cfg'] = SAMPLE; r = await go(w, 'test');
 check('test lists the four patterns and what each should look like', r.out.split('\n').length === 4 && /colour bars/.test(r.out) && /identify/.test(r.out));
 r = await go(w, 'install-service', '--print'); check('install-service --print shows the unit; without --print it writes it', /\[Service\]/.test(r.out) && (await go(w, 'install-service')).out.includes('systemctl enable') && '/etc/systemd/system/wobbly-clock.service' in w.files);
-r = await go(w, 'man'); check('man prints the manual page', /^\.TH WOBBLY-CLOCK 1/.test(r.out));
+r = await go(w, 'man'); check('man prints the manual page', /^\.TH WOBBLY-CLOCK 1 "2026-11-04"/.test(r.out));
 
 // a file with mistakes is reported but does not stop the program
 w = world(); w.files[CONF] = 'hideSeconds = maybe\nclockStyle = glass\n'; r = await go(w, 'get');

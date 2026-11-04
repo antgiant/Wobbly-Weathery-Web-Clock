@@ -43,7 +43,7 @@ for (const f of scripts.filter((f) => f !== 'sw.js')) {
   for (const m of read(f).matchAll(/\bconf\.([A-Za-z_]\w*)/g)) if (!known.has(m[1])) bad.push(`${f}: conf.${m[1]}`);
 }
 check('every setting read or written as conf.x is defined in DEFAULTS', bad.length === 0, [...new Set(bad)].join('; '));
-const controlsNoDefault = [...html.matchAll(/<(?:select|input)[^>]*\sid="([^"]+)"/g)].map((m) => m[1]).filter((id) => !(id in DEFAULTS) && !['simEnabled', 'simTime', 'simSpeed', 'ledPreset', 'easing', 'placeSearch', 'manualLat', 'manualLon', 'shareKiosk', 'shareShort', 'shareReadable'].includes(id));
+const controlsNoDefault = [...html.matchAll(/<(?:select|input)[^>]*\sid="([^"]+)"/g)].map((m) => m[1]).filter((id) => !(id in DEFAULTS) && !['simEnabled', 'simTime', 'simSpeed', 'ledPreset', 'easing', 'placeSearch', 'manualLat', 'manualLon', 'shareKiosk', 'shareShort', 'shareReadable', 'shareQrForm', 'shareLimit', 'shareConvert'].includes(id));
 check('every settings control is a saved setting (or one of the known exceptions)', controlsNoDefault.length === 0, controlsNoDefault.join(', '));
 const sels = [...html.matchAll(/<select id="([^"]+)">([\s\S]*?)<\/select>/g)];
 const badDefaults = sels.filter(([, id, body]) => id in DEFAULTS && DEFAULTS[id] !== null && body.includes('<option') && !new RegExp(`value="${String(DEFAULTS[id]).replace('.', '\\.')}"`).test(body)).map(([, id]) => `${id}=${DEFAULTS[id]}`);

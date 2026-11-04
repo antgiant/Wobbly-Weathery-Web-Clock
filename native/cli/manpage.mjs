@@ -9,7 +9,7 @@ const NEEDS = { gles3: 'an OpenGL ES 3 GPU (Pi 4, 5)', 'cores>=2': 'two or more 
 const needText = (t) => NEEDS[t] || t;
 const range = (s) => s.type === 'enum' ? s.options.join(' | ') : s.type === 'number' ? `${s.min} to ${s.max}` : s.type === 'bool' ? 'on | off' : s.type === 'tri' ? 'auto | on | off' : s.type === 'text' ? `text, up to ${s.max} characters` : 'yyyy-mm-ddThh:mm';
 
-const header = (name, sec, title) => `.TH ${name.toUpperCase()} ${sec} "" "Wobbly Weathery Web Clock" "${title}"\n`;
+const header = (name, sec, title) => `.TH ${name.toUpperCase()} ${sec} "2026-11-04" "Wobbly Weathery Web Clock" "${title}"\n`;
 
 function settingsSection() {
   const out = [];

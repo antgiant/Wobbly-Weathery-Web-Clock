@@ -1,5 +1,7 @@
 import Virgo from './virgo/virgo.js';
 import { conf } from './config.js';
+import { validZone } from './timezone.js';
+import { findCities } from './cities.js';
 const notifyLocation = () => window.dispatchEvent(new Event('locationchange'));
 
 let locationRefresh;
@@ -191,27 +193,57 @@ function initManual() {
     const q = search.value.trim();
     if (q.length < 2) { list.hidden = true; list.textContent = ''; return; }
     timer = setTimeout(async () => {
-      if (navigator.onLine === false) { hint.textContent = 'Searching needs a connection: type the coordinates instead.'; return; }
       const mine = ++seq;
+      const listPlaces = (found, note) => {
+        list.textContent = '';
+        for (const x of found) {
+          const li = document.createElement('li'), b = document.createElement('button');
+          b.type = 'button'; b.textContent = [x.name, x.admin1, x.country].filter(Boolean).join(', ');
+          b.addEventListener('click', () => { apply(Math.round(x.latitude * 1e4) / 1e4, Math.round(x.longitude * 1e4) / 1e4, [x.name, x.country].filter(Boolean).join(', ')); if (x.timezone && validZone(x.timezone)) { conf.timeZone = x.timezone; showZone(); } search.value = ''; list.hidden = true; hint.textContent = ''; });
+          li.appendChild(b); list.appendChild(li);
+        }
+        list.hidden = !found.length;
+        hint.textContent = note;
+      };
+      // with no connection (or no answer) the short list of large cities built into the page is used instead
+      const offline = (why) => {
+        const local = findCities(q).map((c) => ({ name: c[0], country: c[1], latitude: c[2], longitude: c[3], timezone: c[4] }));
+        listPlaces(local, local.length ? `${why} Showing large cities from the list built into the page.` : `${why} Only large cities are known without a connection: type the coordinates instead.`);
+      };
+      if (navigator.onLine === false) { offline('No connection.'); return; }
       try {
         const r = await fetch('https://geocoding-api.open-meteo.com/v1/search?count=6&language=en&format=json&name=' + encodeURIComponent(q));
         const j = await r.json();
         if (mine !== seq) return;
         const found = (j.results || []).filter((x) => Number.isFinite(x.latitude) && Number.isFinite(x.longitude));
-        list.textContent = '';
-        for (const x of found) {
-          const li = document.createElement('li'), b = document.createElement('button');
-          b.type = 'button'; b.textContent = [x.name, x.admin1, x.country].filter(Boolean).join(', ');
-          b.addEventListener('click', () => { apply(Math.round(x.latitude * 1e4) / 1e4, Math.round(x.longitude * 1e4) / 1e4, [x.name, x.country].filter(Boolean).join(', ')); search.value = ''; list.hidden = true; hint.textContent = ''; });
-          li.appendChild(b); list.appendChild(li);
-        }
-        list.hidden = !found.length;
-        hint.textContent = found.length ? '' : 'No place found: try another spelling, or type the coordinates.';
-      } catch (_) { hint.textContent = 'Could not reach the search service: type the coordinates instead.'; }
+        listPlaces(found, found.length ? '' : 'No place found: try another spelling, or type the coordinates.');
+      } catch (_) { if (mine === seq) offline('Could not reach the search service.'); }
     }, 400);
   });
   show();
 }
-document.addEventListener('DOMContentLoaded', initManual);
+
+// ---- "Show the time in another time zone": an IANA name typed or filled in by a place search ----
+function showZone() {
+  const box = document.getElementById('timeZone');
+  if (!box) return;
+  box.value = conf.timeZone || '';
+  box.setAttribute('aria-invalid', String(!!box.value && !validZone(box.value)));
+}
+function initZone() {
+  const box = document.getElementById('timeZone'), hint = document.getElementById('timeZoneHint'), list = document.getElementById('timeZoneList');
+  if (!box) return;
+  try { if (list && Intl.supportedValuesOf) for (const z of Intl.supportedValuesOf('timeZone')) { const o = document.createElement('option'); o.value = z; list.appendChild(o); } } catch (_) { /* a browser without the list: typing still works */ }
+  const plain = hint.textContent;
+  box.addEventListener('change', () => {
+    const v = box.value.trim();
+    if (v === '' || validZone(v)) { conf.timeZone = v; hint.textContent = v ? `Showing the time in ${v.replace(/_/g, ' ')}.` : plain; }
+    else hint.textContent = 'That is not a time zone name this browser knows. Names look like America/New_York or Europe/Paris.';
+    showZone();
+    window.dispatchEvent(new Event('timezonechange'));
+  });
+  showZone();
+}
+document.addEventListener('DOMContentLoaded', () => { initManual(); initZone(); });
 
 initalize();

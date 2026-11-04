@@ -89,4 +89,44 @@ check('setupFromConf: reads the settings, takes a place only when it was set by 
 const words = describe(live);
 check('describe: says the preset, the change, the place and kiosk mode in words', /preset/.test(words) && /seconds hidden/.test(words) && /41\.8781/.test(words) && /kiosk/.test(words), words);
 check('describe: a setup with no place says it is estimated from the time zone', /estimated from the time zone/.test(describe(setupFromConf({ ...DEFAULTS }))));
+
+// ---- version 2: a time zone to show the time in (version 1 links are untouched) ----
+const withZone = { settings: { hideSeconds: true }, place: { lat: 35.6762, lon: 139.6503 }, kiosk: true, timeZone: 'Asia/Tokyo' };
+const noZone = { ...withZone, timeZone: '' };
+check('a link without a time zone is still written as version 1 (the same bytes as before, so old links and golden links stay valid)', encodeShort(noZone) === encodeShort({ ...noZone, timeZone: undefined }) && decodeShort(encodeShort(noZone)).timeZone === '' && /^v=1&/.test(encodeReadable(noZone)) && !/tz=/.test(encodeReadable(noZone)));
+for (const form of ['short', 'readable']) {
+  const link = toLink(withZone, 'https://x.example/', form), back = fromSearch(link.slice(link.indexOf('?')));
+  check(`a ${form} link round-trips a time zone, with the place and kiosk mode`, back && back.timeZone === 'Asia/Tokyo' && back.kiosk && Math.abs(back.place.lat - 35.6762) < 1e-3 && back.settings.hideSeconds === true, link);
+}
+check('a time zone costs 7 bits a letter plus 6 for its length: Asia/Tokyo adds 13 characters (a zone is optional, and rare)', encodeShort(withZone).length - encodeShort(noZone).length === Math.ceil((6 + 7 * 10) / 6) || Math.abs(encodeShort(withZone).length - encodeShort(noZone).length - 13) <= 1, `${encodeShort(noZone).length} -> ${encodeShort(withZone).length}`);
+check('zones with digits, plus signs and three parts survive; rubbish does not', ['Etc/GMT+5', 'America/Argentina/Buenos_Aires', 'America/Port-au-Prince', 'UTC'].every((z) => decodeShort(encodeShort({ ...noZone, timeZone: z })).timeZone === z) && ['', '../../etc', 'a b', '<script>', 'x'.repeat(41), '/Paris'].every((z) => S.cleanZone(z) === ''));
+check('a time zone in a link that is not valid is dropped, not trusted', fromSearch('?v=2&preset=standard&tz=%3Cb%3E').timeZone === '' && decodeShort(encodeShort({ ...noZone, timeZone: '<b>' })).timeZone === '');
+check('describe says which zone the time is shown for; setupFromConf carries the setting', /time shown for America\/New York/.test(describe({ ...noZone, timeZone: 'America/New_York' })) && setupFromConf({ ...DEFAULTS, timeZone: 'Europe/Paris' }).timeZone === 'Europe/Paris' && setupFromConf({ ...DEFAULTS, timeZone: 'nope nope' }).timeZone === '');
+check('the version after 2 is still refused, so a future format is never misread', decodeShort('Q') === null && fromSearch('?v=3&preset=standard') === null);
+
+// ---- the wall clock of a zone (js/timezone.js) ----
+const { wallTime, validZone } = await import('../../js/timezone.js');
+const at = new Date('2026-06-21T17:00:00Z');
+const w = (z) => { const r = wallTime(at, z); return `${r.h}:${r.m}:${r.s}`; };
+check('wallTime: 17:00 UTC is 2:00 in Tokyo, 19:00 in Paris, 13:00 in New York, 22:30 in Delhi (half-hour zone), 0:00 in Kathmandu-style quarter hours', w('Asia/Tokyo') === '2:0:0' && w('Europe/Paris') === '19:0:0' && w('America/New_York') === '13:0:0' && w('Asia/Kolkata') === '22:30:0' && w('Asia/Kathmandu') === '22:45:0');
+check('wallTime: midnight is hour 0, never 24', wallTime(new Date('2026-06-21T15:00:00Z'), 'Asia/Tokyo').h === 0);
+check('wallTime: daylight saving is applied (New York is 12:00 at 16:00 UTC in June, 11:00 in January)', wallTime(new Date('2026-06-21T16:00:00Z'), 'America/New_York').h === 12 && wallTime(new Date('2026-01-21T16:00:00Z'), 'America/New_York').h === 11);
+check('validZone: real names yes, rubbish and empty no', validZone('Pacific/Auckland') && !validZone('Mars/Olympus') && !validZone('') && !validZone(null) && !validZone(5));
+check('with no zone set, wallTime is the device\'s own clock', (() => { const d = new Date(); const r = wallTime(d, ''); return r.h === d.getHours() && r.m === d.getMinutes(); })());
+
+// ---- converting a pasted link, and the friendlier names a person may type ----
+const conv = S.convertLink;
+const sample = { settings: { hideSeconds: true, brightnessNight: 0.3 }, place: { lat: 41.8781, lon: -87.6298 }, kiosk: false, timeZone: '' };
+const shortLink = toLink(sample, 'https://clock.example/app/', 'short'), readLink = toLink(sample, 'https://clock.example/app/', 'readable');
+const c1 = conv(shortLink), c2 = conv(readLink);
+check('a pasted short link gives the readable form with the same address, and says what it does', c1.form === 'short' && c1.readable === readLink && c1.short === shortLink && /seconds hidden/.test(c1.describe));
+check('a pasted readable link gives the short form', c2.form === 'readable' && c2.short === shortLink && c2.readable === readLink);
+check('just the query, with or without the question mark, works (the address then comes from the page)', conv('c=' + encodeShort(sample), 'https://p/').short === 'https://p/?c=' + encodeShort(sample) && conv('?preset=bedside&kiosk=1', 'https://p/').short.startsWith('https://p/?c=') && conv('preset=bedside', 'https://p/') !== null);
+check('rubbish, an empty string and an ordinary address all give null', conv('hello') === null && conv('') === null && conv(null) === null && conv('https://clock.example/') === null && conv('https://x/?c=!!!') === null);
+check('converting back and forth is stable', conv(conv(shortLink).readable).short === shortLink);
+const alias = (q) => fromSearch('?preset=standard&' + q);
+check('friendly names are understood: weather, style, night, day, sign, timezone', alias('weather=rain').settings.weatherMode === 'rain' && alias('style=solid').settings.clockStyle === 'solid' && alias('night=0.3').settings.brightnessNight === 0.3 && alias('day=0.8').settings.brightnessDay === 0.8 && alias('sign=1').kiosk === true && alias('timezone=Asia/Tokyo').timeZone === 'Asia/Tokyo');
+check('seconds=off means hideSeconds on, led=on means the LED look', alias('seconds=off').settings.hideSeconds === true && alias('seconds=on').settings.hideSeconds === false && alias('led=on').settings.screenMode === 'led' && alias('led=off').settings.screenMode === 'normal');
+check('the real name wins when both are given, and a wrong value is cleaned like any other', alias('weather=rain&weatherMode=snow').settings.weatherMode === 'snow' && alias('weather=hurricane').settings.weatherMode === 'live');
+check('the readable form still always writes the real names', !/[?&](weather|style|night|day|sign|seconds|led)=/.test(encodeReadable({ settings: { weatherMode: 'rain', clockStyle: 'solid', brightnessNight: 0.3, hideSeconds: true, screenMode: 'led' }, kiosk: true })));
 done();

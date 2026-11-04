@@ -67,6 +67,7 @@ const RAW = [
   { key: "antiBurnIn", type: "enum", default: "auto", options: ["auto", "on", "off"], tab: "extras", advanced: true, label: "Anti burn-in", shareable: true, preset: false, doc: "auto (while the screen is kept on) | on | off: step the digits a few pixels round a small square, once a minute" },
   { key: "preciseLocation", type: "bool", default: false, tab: "place", advanced: false, label: "Use precise location", shareable: false, preset: false },
   { key: "manualLocation", type: "bool", default: false, tab: "place", advanced: false, label: "Set the place myself", shareable: false, preset: false, doc: "the place was typed or searched for (Settings -> Place): never replaced by GPS or the time-zone estimate" },
+  { key: "timeZone", type: "text", default: "", max: 40, tab: "place", advanced: false, label: "Show the time in another time zone", shareable: false, preset: false, doc: "an IANA time zone name (\"America/New_York\"); empty = this device's own time. Share links carry it as their own field (version 2), like the place" },
   { key: "gpsFrequency", type: "enum", default: -1, options: ["-1", "1", "5", "15", "30", "60", "120", "720", "1440", "-2"], tab: "place", advanced: true, label: "Location update frequency", shareable: false, preset: false },
   { key: "coarseLookups", type: "bool", default: true, tab: "place", advanced: true, label: "Share only an approximate position", shareable: false, preset: false, doc: "weather / terrain lookups use a rounded position, never the exact one" },
 ];
