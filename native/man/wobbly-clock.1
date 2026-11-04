@@ -47,7 +47,7 @@ Write and enable a systemd service so the clock starts on boot.
 Look after the service.
 .TP
 .B update
-Check for a new release now. Releases are checked against a checksum and a signature and rolled back if they do not start.
+Check for a new release now (\fBwobbly\-clock\-update\fR). A release is checked against its checksum and, when a release key is installed, its signature; the previous program is kept and put back if the new one does not start. \fBsystemctl enable \-\-now wobbly\-clock\-update.timer\fR does it every night at about 3.
 .TP
 .BR \-\-help ", " \-\-version
 Short help; the version.

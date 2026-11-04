@@ -39,3 +39,29 @@ fn the_stride_pads_rows_and_bad_input_is_refused() {
     assert_eq!(parse_virtual_size("1920,1080\n"), Some((1920, 1080)));
     assert_eq!(parse_virtual_size("nonsense"), None);
 }
+
+#[test]
+fn enlarging_keeps_size_colour_and_corners() {
+    let small = vec![10u8, 20, 30, 200, 100, 50, 90, 80, 70, 1, 2, 3];       // 2 x 2
+    let big = upscale(&small, 2, 2, 6, 6);
+    assert_eq!(big.len(), 6 * 6 * 3);
+    assert_eq!(&big[0..3], &[10, 20, 30], "the top-left corner is the top-left pixel");
+    assert_eq!(&big[(5 * 6 + 5) * 3..(5 * 6 + 5) * 3 + 3], &[1, 2, 3], "and the bottom-right corner is the bottom-right pixel");
+    assert_eq!(upscale(&small, 2, 2, 2, 2), small, "no change at the same size");
+    let flat = vec![77u8; 4 * 4 * 3];
+    assert!(upscale(&flat, 4, 4, 16, 9).iter().all(|v| *v == 77), "a flat picture stays flat");
+    let mid = &big[(3 * 6 + 2) * 3..(3 * 6 + 2) * 3 + 3];
+    assert!(mid[0] > 1 && mid[0] < 200, "between the corners the colours blend: {mid:?}");
+}
+
+#[test]
+fn the_render_size_follows_how_long_a_frame_takes() {
+    assert_eq!(next_scale(1, 0.2, 0.4, 1), 1, "fast enough: stay");
+    assert_eq!(next_scale(1, 0.8, 0.4, 1), 2, "twice too slow: half size gives a quarter of the work");
+    assert_eq!(next_scale(1, 4.0, 0.4, 1), 4, "ten times too slow: a quarter size is 1/16 of the work, so 4");
+    assert!(next_scale(1, 400.0, 0.4, 1) <= 8, "never smaller than an eighth");
+    assert_eq!(next_scale(2, 0.5, 0.4, 1), 3, "already at 2 and still slow: go on");
+    assert_eq!(next_scale(1, 0.01, 0.4, 3), 3, "the user's minimum wins");
+    assert_eq!(scaled_size(1920, 1080, 4), (480, 270));
+    assert_eq!(scaled_size(40, 30, 8), (32, 18), "never absurdly small");
+}

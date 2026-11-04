@@ -12,6 +12,7 @@ export const EXTRA = {
   kiosk: { type: 'bool', default: false, label: 'Sign mode' },
   output: { type: 'enum', default: 'hdmi', options: ['hdmi', 'matrix'], label: 'Output' },
   matrixConfig: { type: 'text', default: '', max: 120, label: 'Panel layout file (matrix.cfg)' },
+  renderScale: { type: 'number', default: 0, min: 0, max: 8, step: 1, label: 'Draw HDMI this many times smaller (0 = automatic: smaller when a frame takes too long)' },
   gamma: { type: 'number', default: 2.2, min: 1, max: 3, step: 0.1, label: 'Gamma for LED panels' },
   ledGpioMapping: { type: 'enum', default: 'regular', options: ['regular', 'adafruit-hat', 'adafruit-hat-pwm'], label: 'How the panels are wired to the Pi (led-gpio-mapping)' },
   ledSlowdownGpio: { type: 'number', default: 1, min: 0, max: 4, step: 1, label: 'GPIO slowdown (led-slowdown-gpio): 1 to 4 on a Pi 3 and later' },
@@ -64,6 +65,7 @@ export function applyLink(config, link) {
   const setup = fromSearch(q);
   if (!setup) throw new Error('that is not a link this version understands');
   const out = { ...config, ...setup.settings, kiosk: !!setup.kiosk };
+  if (setup.timeZone) out.timeZone = setup.timeZone;                 // a link made for a sign in another city carries that city's time zone
   if (setup.place) { out.manualLocation = true; out.location_latitude = setup.place.lat; out.location_longitude = setup.place.lon; }
   return out;
 }

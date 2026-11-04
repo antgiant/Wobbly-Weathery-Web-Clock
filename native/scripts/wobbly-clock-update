@@ -1,0 +1,76 @@
+#!/bin/sh
+# wobbly-clock-update: look for a new release of the renderer, check it, swap it in, and put the old one back if the new one does not start.
+#
+# Steps: read LATEST (the newest version) from the release; stop if that is what is installed; download the program for this machine; check its SHA-256
+# against SHA256SUMS; check the signature against the release key (when the key is installed, a missing or wrong signature stops the update; with no key
+# installed only the checksum is checked and the log says so); keep the running program as <program>.previous; move the new one in with an atomic rename;
+# restart the service; if the service is not running ten seconds later, put the previous program back, restart, and exit with an error.
+#
+# Environment (all optional): WOBBLY_RELEASE_BASE (default: the GitHub "latest release" download address), WOBBLY_BIN (/usr/bin/wobbly-clock-run),
+# WOBBLY_PUBKEY (/usr/share/wobbly-clock/release-key.pem), WOBBLY_SERVICE (wobbly-clock), SYSTEMCTL, CURL, WOBBLY_SETTLE (seconds to wait, 10),
+# WOBBLY_ARCH (armv6 or aarch64: detected from `uname -m`), WOBBLY_DRY_RUN=1 (check everything, install nothing).
+set -eu
+
+BASE="${WOBBLY_RELEASE_BASE:-https://github.com/antgiant/Wobbly-Weathery-Web-Clock/releases/latest/download}"
+BIN="${WOBBLY_BIN:-/usr/bin/wobbly-clock-run}"
+PUB="${WOBBLY_PUBKEY:-/usr/share/wobbly-clock/release-key.pem}"
+SERVICE="${WOBBLY_SERVICE:-wobbly-clock}"
+SYSTEMCTL="${SYSTEMCTL:-systemctl}"
+CURL="${CURL:-curl}"
+SETTLE="${WOBBLY_SETTLE:-10}"
+say() { echo "wobbly-clock-update: $*"; }
+die() { say "$*" >&2; exit 1; }
+
+case "${WOBBLY_ARCH:-$(uname -m)}" in
+  armv6l|armv6|arm) ARCH=armv6 ;;                       # 32-bit Pis (the ARMv6 program runs on all of them)
+  armv7l|armv7) ARCH=armv6 ;;
+  aarch64|arm64) ARCH=aarch64 ;;
+  *) die "no program for this machine type ($(uname -m))" ;;
+esac
+
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+fetch() { "$CURL" -sS --fail -m 120 -o "$2" "$BASE/$1" || die "could not download $1 from $BASE"; }
+
+fetch LATEST "$TMP/LATEST"
+LATEST="$(tr -d ' \r\n' < "$TMP/LATEST")"
+[ -n "$LATEST" ] || die "the release has an empty LATEST"
+HAVE="$("$BIN" --version 2>/dev/null | awk '{print $NF}' || true)"
+say "installed: ${HAVE:-unknown}, newest: $LATEST"
+
+# versions compare as numbers, not text (0.10.0 is newer than 0.9.0)
+newer() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)" = "$1" ] && [ "$1" != "$2" ]; }
+if [ -n "$HAVE" ] && ! newer "$LATEST" "$HAVE"; then say "already up to date"; exit 0; fi
+
+ASSET="wobbly-clock-run-$ARCH"
+fetch "$ASSET" "$TMP/$ASSET"
+fetch SHA256SUMS "$TMP/SHA256SUMS"
+WANT="$(awk -v a="$ASSET" '$2==a || $2=="*"a {print $1}' "$TMP/SHA256SUMS" | head -1)"
+[ -n "$WANT" ] || die "SHA256SUMS has no entry for $ASSET"
+GOT="$(sha256sum "$TMP/$ASSET" | awk '{print $1}')"
+[ "$GOT" = "$WANT" ] || die "the download is corrupt or has been tampered with (checksum $GOT, expected $WANT): nothing was changed"
+
+if [ -f "$PUB" ]; then
+  "$CURL" -sS --fail -m 120 -o "$TMP/$ASSET.sig" "$BASE/$ASSET.sig" 2>/dev/null || true
+  [ -s "$TMP/$ASSET.sig" ] || die "the release has no signature for $ASSET and a release key is installed: nothing was changed"
+  openssl base64 -d -A -in "$TMP/$ASSET.sig" -out "$TMP/sig.bin" 2>/dev/null || die "the signature is not valid base64: nothing was changed"
+  openssl pkeyutl -verify -rawin -pubin -inkey "$PUB" -sigfile "$TMP/sig.bin" -in "$TMP/$ASSET" >/dev/null 2>&1 || die "the signature does not match the release key: nothing was changed"
+  say "signature ok"
+else
+  say "no release key installed ($PUB): only the checksum was checked"
+fi
+
+[ "${WOBBLY_DRY_RUN:-0}" = 1 ] && { say "dry run: would install $LATEST"; exit 0; }
+
+chmod 755 "$TMP/$ASSET"
+"$TMP/$ASSET" --help >/dev/null 2>&1 || die "the new program does not run on this machine: nothing was changed"
+NEW="$BIN.new"
+cp "$TMP/$ASSET" "$NEW"
+[ -f "$BIN" ] && cp -p "$BIN" "$BIN.previous"
+mv -f "$NEW" "$BIN"                                       # an atomic rename: the program is never half written
+say "installed $LATEST; restarting $SERVICE"
+"$SYSTEMCTL" restart "$SERVICE" || true
+sleep "$SETTLE"
+if "$SYSTEMCTL" is-active --quiet "$SERVICE"; then say "$SERVICE is running the new version"; exit 0; fi
+say "the new version did not start: putting the previous one back" >&2
+if [ -f "$BIN.previous" ]; then mv -f "$BIN.previous" "$BIN"; "$SYSTEMCTL" restart "$SERVICE" || true; fi
+exit 1

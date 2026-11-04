@@ -12,12 +12,26 @@
 // entry in the next version). Old links decode with the table they were made with, and settings added later keep their defaults.
 // tests/unit/share.test.mjs holds golden links that must keep decoding to the same setups.
 
+import { CITIES } from './cities.js';
+
 export const VERSION = 1;
 /** Version 2 is version 1 plus one optional field at the end: the time zone to show the time in. A link without it is still written as version 1,
  *  so every link ever made (and the golden links in the tests) is unchanged; only a link that carries a time zone says 2. */
 export const VERSION_TZ = 2;
+/** Version 3: a place picked from the built-in city list (js/cities.js) travels as the city's number (8 bits instead of 45), and its time zone comes with it.
+ *  The list is FROZEN in order: entries 0 to CITIES_FROZEN-1 never change or move (tests/unit/share.test.mjs pins them); new cities are only appended. */
+export const VERSION_CITY = 3;
+export const CITIES_FROZEN = 128;
 const ZONE = /^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+){0,2}$/;
 export const cleanZone = (z) => (typeof z === 'string' && z.length <= 40 && ZONE.test(z) ? z : '');
+
+/** The number of a frozen-list city whose name ("Chicago, United States") is `name` and which lies within 0.2 degree of `place`, or -1. */
+export function cityIndex(name, place) {
+  if (!name || !place) return -1;
+  const i = CITIES.findIndex((c, k) => k < CITIES_FROZEN && `${c[0]}, ${c[1]}` === name);
+  return i >= 0 && Math.abs(CITIES[i][2] - place.lat) < 0.2 && Math.abs(CITIES[i][3] - place.lon) < 0.2 ? i : -1;
+}
+const cityPlace = (i) => ({ lat: CITIES[i][2], lon: CITIES[i][3] });
 
 /** The settings a link can carry: [key, type, default, ...]. b: on/off. tri: auto/on/off. e: one of the options. n: a number (min, max, step). t: text. d: a date and time. */
 export const SETTINGS_V1 = [
@@ -163,6 +177,13 @@ export function encodeShort(setup) {
   const w = new Writer(); w.bits = best; return w.text();
 }
 function writeSetup(w, base, diffs, s, setup) {
+  const city = cityIndex(setup.placeName, setup.place), usable = city >= 0 && (!cleanZone(setup.timeZone) || setup.timeZone === CITIES[city][4]);
+  if (usable) {                                                        // version 3: the place is a city of the frozen list
+    w.put(VERSION_CITY, 4); w.put(setup.kiosk ? 1 : 0, 1); w.put(1, 1); w.put(base, 4); w.put(diffs.length, 7);
+    for (const i of diffs) { w.put(i, 7); putValue(w, SETTINGS_V1[i], s[SETTINGS_V1[i][0]]); }
+    w.put(city, 8);
+    return;
+  }
   w.put(cleanZone(setup.timeZone) ? VERSION_TZ : VERSION, 4); w.put(setup.kiosk ? 1 : 0, 1); w.put(setup.place ? 1 : 0, 1); w.put(base, 4); w.put(diffs.length, 7);
   for (const i of diffs) { w.put(i, 7); putValue(w, SETTINGS_V1[i], s[SETTINGS_V1[i][0]]); }
   if (setup.place) { w.put(Math.round((Math.min(90, Math.max(-90, setup.place.lat)) + 90) / 180 * 4194303), 22); w.put(Math.round((Math.min(180, Math.max(-180, setup.place.lon)) + 180) / 360 * 8388607), 23); }
@@ -176,12 +197,16 @@ export function decodeShort(str) {
     if (typeof str !== 'string' || !str || str.length > 4000) return null;
     const rd = new Reader(str);
     const version = rd.get(4);
-    if (version !== VERSION && version !== VERSION_TZ) return null;  // a newer version than this page knows: not understood
+    if (version !== VERSION && version !== VERSION_TZ && version !== VERSION_CITY) return null;  // a newer version than this page knows: not understood
     const kiosk = rd.get(1) === 1, hasPlace = rd.get(1) === 1, base = rd.get(4), count = rd.get(7);
     if (base >= BASES_V1.length) return null;
     const settings = baseSettings(base);
     for (let k = 0; k < count; k++) { const i = rd.get(7); if (i >= SETTINGS_V1.length) return null; settings[SETTINGS_V1[i][0]] = getValue(rd, SETTINGS_V1[i]); }
     let place = null;
+    if (version === VERSION_CITY) {
+      const c = rd.get(8); if (c >= CITIES_FROZEN || !CITIES[c]) return null;
+      return { settings, place: cityPlace(c), kiosk, base: BASES_V1[base][0], timeZone: CITIES[c][4], placeName: `${CITIES[c][0]}, ${CITIES[c][1]}` };
+    }
     if (hasPlace) { const la = rd.get(22) / 4194303 * 180 - 90, lo = rd.get(23) / 8388607 * 360 - 180; place = { lat: Math.round(la * 1e4) / 1e4, lon: Math.round(lo * 1e4) / 1e4 }; }
     let timeZone = '';
     if (version === VERSION_TZ) { const n = rd.get(6); let z = ''; for (let i = 0; i < n; i++) z += String.fromCharCode(rd.get(7)); timeZone = cleanZone(z); }
@@ -231,7 +256,13 @@ export function decodeReadable(search) {
     let place = null;
     const m = PLACE.exec((q.get('place') || '').trim());
     if (m && Math.abs(+m[1]) <= 90 && Math.abs(+m[2]) <= 180) place = { lat: Math.round(+m[1] * 1e4) / 1e4, lon: Math.round(+m[2] * 1e4) / 1e4 };
-    return { settings, place, kiosk: q.get('kiosk') === '1' || q.get('kiosk') === 'on' || q.get('kiosk') === 'true', base: BASES_V1[bi][0], timeZone: cleanZone(q.get('tz') || '') };
+    // a person can name a city instead (?city=Chicago, or city=Chicago,United States): its place and time zone come from the built-in list
+    let cityZone = '', cityName = '';
+    if (q.has('city')) {
+      const want = q.get('city').trim().toLowerCase(), k = CITIES.findIndex((c, i) => i < CITIES_FROZEN && (c[0].toLowerCase() === want || `${c[0]}, ${c[1]}`.toLowerCase() === want || `${c[0]},${c[1]}`.toLowerCase() === want));
+      if (k >= 0) { if (!place) place = cityPlace(k); cityZone = CITIES[k][4]; cityName = `${CITIES[k][0]}, ${CITIES[k][1]}`; }
+    }
+    return { settings, place, kiosk: q.get('kiosk') === '1' || q.get('kiosk') === 'on' || q.get('kiosk') === 'true', base: BASES_V1[bi][0], timeZone: cleanZone(q.get('tz') || '') || cityZone, ...(cityName ? { placeName: cityName } : {}) };
   } catch (_) { return null; }
 }
 
@@ -260,7 +291,7 @@ export function convertLink(text, fallbackBase = 'https://example.invalid/') {
 export function setupFromConf(conf, kiosk = false) {
   const settings = {}; for (const r of SETTINGS_V1) settings[r[0]] = conf[r[0]] === undefined ? r[2] : conf[r[0]];
   const place = conf.manualLocation && Number.isFinite(Number(conf.location_latitude)) && Number.isFinite(Number(conf.location_longitude)) ? { lat: Math.round(Number(conf.location_latitude) * 1e4) / 1e4, lon: Math.round(Number(conf.location_longitude) * 1e4) / 1e4 } : null;
-  return { settings: normalise(settings), place, kiosk: !!kiosk, timeZone: cleanZone(conf.timeZone) };
+  return { settings: normalise(settings), place, kiosk: !!kiosk, timeZone: cleanZone(conf.timeZone), ...(place && conf.location_name ? { placeName: String(conf.location_name) } : {}) };
 }
 
 /** @param {'short'|'readable'} form */
@@ -280,7 +311,7 @@ export function describe(setup) {
   if (s.clockMode === 'countdown') bits.push(`counting down to ${s.timerTarget.replace('T', ' ')}${s.timerLabel ? ` (${s.timerLabel})` : ''}`);
   if (s.screenMode === 'led') bits.push(`LED panel ${s.ledCols} x ${s.ledRows}`);
   if (!same(s.brightnessNight, base.brightnessNight) || !same(s.brightnessDay, base.brightnessDay)) bits.push(`brightness ${Math.round(s.brightnessDay * 100)}% by day, ${Math.round(s.brightnessNight * 100)}% at night`);
-  bits.push(setup.place ? `place ${setup.place.lat}, ${setup.place.lon}` : 'place estimated from the time zone');
+  bits.push(setup.place ? `place ${setup.placeName && cityIndex(setup.placeName, setup.place) >= 0 ? setup.placeName : `${setup.place.lat}, ${setup.place.lon}`}` : 'place estimated from the time zone');
   if (cleanZone(setup.timeZone)) bits.push(`time shown for ${setup.timeZone.replace(/_/g, ' ')}`);
   if (setup.kiosk) bits.push('kiosk mode (no controls)');
   return bits.join(', ');

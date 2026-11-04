@@ -1,0 +1,11 @@
+[Unit]
+Description=Look for a new Wobbly Weathery Web Clock in the quiet hours
+
+[Timer]
+# 3 o'clock at night by the Pi's own clock, spread over the next hour so a fleet of clocks does not all ask at once
+OnCalendar=*-*-* 03:00:00
+RandomizedDelaySec=3600
+Persistent=true
+
+[Install]
+WantedBy=timers.target

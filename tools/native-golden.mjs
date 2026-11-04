@@ -91,6 +91,73 @@ for (const z of ZONES) {
   if (keep === undefined) delete process.env.TZ; else process.env.TZ = keep;
 }
 
+// ---- weather: the page's presets, and how it maps an Open-Meteo "current" block (js/sky/weather.js) ----
+{
+  const W = await import('../js/sky/weather.js');
+  const f = (v) => (v === null || v === undefined ? 'nan' : Number(v).toFixed(6));
+  const row = (w) => [w.cover[0], w.cover[1], w.cover[2], w.precip, w.snowfall, w.cloudDark, w.visKm, w.fog, w.wind[0], w.wind[1], w.aod, w.snowCover, w.tempC].map(f).join('\t');
+  for (const [name, w] of Object.entries(W.PRESETS)) lines.push(['wpreset', name, row(w)].join('\t'));
+  const blocks = [
+    { cloud_cover: 80, cloud_cover_low: 60, cloud_cover_mid: 30, cloud_cover_high: 10, precipitation: 0, temperature_2m: 18.5, weather_code: 3, visibility: 24000, wind_speed_10m: 4.2, wind_direction_10m: 270 },
+    { cloud_cover: 100, cloud_cover_low: 100, cloud_cover_mid: 90, cloud_cover_high: 70, precipitation: 3.2, rain: 3.0, showers: 0.2, temperature_2m: 12, weather_code: 63, visibility: 8000, wind_speed_10m: 9.5, wind_direction_10m: 200 },
+    { cloud_cover: 100, cloud_cover_low: 100, cloud_cover_mid: 100, cloud_cover_high: 80, precipitation: 8, rain: 8, temperature_2m: 22, weather_code: 96, visibility: 3000, wind_speed_10m: 16, wind_direction_10m: 45 },
+    { cloud_cover: 95, cloud_cover_low: 90, cloud_cover_mid: 60, cloud_cover_high: 20, precipitation: 1.5, snowfall: 2.1, snow_depth: 0.05, temperature_2m: -3, weather_code: 73, visibility: 2000, wind_speed_10m: 3, wind_direction_10m: 350 },
+    { cloud_cover: 0, temperature_2m: 25, weather_code: 0, visibility: 60000, wind_speed_10m: 1, wind_direction_10m: 0 },
+    { cloud_cover: 40, precipitation: 0, temperature_2m: 5, weather_code: 45, visibility: 300, wind_speed_10m: 0.5, wind_direction_10m: 90 },
+    { cloud_cover: 20, temperature_2m: 30, weather_code: 1, wind_speed_10m: 7, wind_direction_10m: 135 },
+  ];
+  blocks.forEach((b, i) => {
+    const fields = ['cloud_cover', 'cloud_cover_low', 'cloud_cover_mid', 'cloud_cover_high', 'precipitation', 'rain', 'showers', 'snowfall', 'snow_depth', 'temperature_2m', 'weather_code', 'visibility', 'wind_speed_10m', 'wind_direction_10m'];
+    const json = '{"latitude":40.7,"current":{' + fields.filter((k) => k in b).map((k) => `"${k}":${b[k]}`).join(',') + ',"time":"2026-06-21T12:00"}}';
+    lines.push(['wlive', i, json, row(W.mapOpenMeteo(b, null))].join('\t'));
+  });
+}
+
+// ---- wind sway (js/wind.js): strength, lean, gusts, and a bent digit ----
+{
+  const Wd = await import('../js/wind.js');
+  for (const speed of [0, 0.5, 2, 5, 9, 14, 18, 25]) for (const [toAz, heading] of [[90, 180], [270, 180], [180, 180], [0, 180], [45, 300], [330, 20]]) {
+    const r = Wd.swayFor(speed, toAz, heading);
+    lines.push(['sway', speed, toAz, heading, f6(Wd.strength(speed)), f6(r.lean), f6(r.gust)].join('\t'));
+  }
+  for (const [t, ph] of [[0, 0], [1000, 0.8], [5000, 2.1], [12345, 4.4], [60000, 1.2]]) lines.push(['flutter', t, ph, f6(Wd.flutter(t, ph))].join('\t'));
+  for (const d of [0, 1, 4, 8]) for (const dx of [-90, -20, 0, 35, 108]) lines.push(['bend', d, dx, Wd.bend(dd[d], dx).map((v) => v.toFixed(1)).join(',')].join('\t'));
+  for (const y of [0, 30, 100, 240, 450, 500]) lines.push(['weight', y, f6(Wd.weight(y))].join('\t'));
+  function f6(v) { return Number(v).toFixed(9); }
+}
+
+// ---- follow the sun: the heading the page turns the camera to (js/sky/sunpath.js followHeading) ----
+{
+  const { followHeading, headingForSunAt } = await import('../js/sky/sunpath.js');
+  const view = { pitch: 6.9, tanX: Math.tan(40 * Math.PI / 180) };
+  for (const [az, alt, x] of [[85, 30, 0.75], [267, 10, 0.25], [180, 60, 0.5], [120, 5, 0.7], [300, 25, 0.3]]) lines.push(['headfor', az, alt, x, headingForSunAt(az, alt, x, view.pitch, view.tanX).toFixed(5)].join('\t'));
+  for (const [lat, lon] of [[40.7, -74], [-33.9, 151.2], [51.5, -0.13], [1.35, 103.8], [64.15, -21.94]]) {
+    for (const iso of ['2026-03-20T09:00:00Z', '2026-03-20T20:00:00Z', '2026-06-21T05:00:00Z', '2026-06-21T14:00:00Z', '2026-06-21T23:30:00Z', '2026-09-23T03:00:00Z', '2026-12-21T08:00:00Z', '2026-12-21T17:30:00Z', '2026-12-22T01:00:00Z', '2026-11-18T02:00:00Z', '2026-11-18T03:00:00Z']) {
+      const d = new Date(iso);
+      lines.push(['follow', lat, lon, +d, followHeading(d, lat, lon, 0, view).toFixed(4)].join('\t'));
+    }
+  }
+}
+
+// ---- the moon: height, bearing and the lit fraction, from the astronomy library ----
+{
+  for (const [lat, lon] of [[40.7, -74], [-33.9, 151.2], [64.15, -21.94], [1.35, 103.8], [51.5, -0.13]]) {
+    const obs = new Astronomy.Observer(lat, lon, 0);
+    for (const iso of ['2026-01-03T03:00:00Z', '2026-03-20T21:00:00Z', '2026-06-21T02:00:00Z', '2026-06-29T14:00:00Z', '2026-09-23T10:00:00Z', '2026-11-04T18:30:00Z', '2026-12-24T05:15:00Z', '2027-02-14T23:00:00Z']) {
+      const d = new Date(iso), t = Astronomy.MakeTime(d), eq = Astronomy.Equator('Moon', t, obs, true, true), hz = Astronomy.Horizon(t, obs, eq.ra, eq.dec, null);
+      const ill = Astronomy.Illumination('Moon', t);
+      lines.push(['moonpos', lat, lon, +d, hz.altitude.toFixed(4), hz.azimuth.toFixed(4), ill.phase_fraction.toFixed(5)].join('\t'));
+    }
+  }
+}
+
+// ---- the Christmas season (js/season.js): Thanksgiving to December 25, for every day of several years ----
+{
+  const { thanksgivingDay, isChristmasSeason } = await import('../js/season.js');
+  for (const year of [2024, 2025, 2026, 2027, 2028, 2031]) lines.push(['thanksgiving', year, thanksgivingDay(year)].join('\t'));
+  for (const [y, m, d] of [[2026, 11, 25], [2026, 11, 26], [2026, 11, 27], [2026, 12, 1], [2026, 12, 25], [2026, 12, 26], [2026, 10, 31], [2027, 1, 1], [2025, 11, 26], [2025, 11, 27], [2028, 11, 22], [2028, 11, 23]]) lines.push(['season', y, m, d, isChristmasSeason(new Date(y, m - 1, d)) ? 1 : 0].join('\t'));
+}
+
 // ---- panel layouts written by the Node command line (native/cli/panel.mjs), which the Rust side must read the same way ----
 const { fromAnswers, writeMatrixCfg } = await import('../native/cli/panel.mjs');
 const fixtures = {};

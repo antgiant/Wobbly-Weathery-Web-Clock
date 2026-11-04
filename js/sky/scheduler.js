@@ -10,6 +10,10 @@ const jobs = [];
 let timer = 0;
 const CAP_MS = 5000;
 
+// Tests only (the address has ?fastjobs=1): the first run of a job that names one comes in 15% of the time, so a test need not wait seconds for the alert
+// pills and the like to appear. Never set by the page itself.
+const FIRST_SCALE = typeof location !== 'undefined' && /[?&]fastjobs=1(&|$)/.test(location.search) ? 0.15 : 1;
+
 const periodOf = (j) => (typeof j.period === 'function' ? j.period() : j.period);
 const active = (p) => Number.isFinite(p) && p > 0;
 
@@ -49,7 +53,7 @@ function run() {
  */
 export function every(name, fn, period, first) {
   const p = typeof period === 'function' ? period() : period;
-  const f = first ?? (active(p) ? p : 0);
+  const f = first === undefined ? (active(p) ? p : 0) : first * FIRST_SCALE;
   jobs.push({ name, fn, period, last: performance.now() - (active(p) ? p : 0) + f });
   arm();
 }

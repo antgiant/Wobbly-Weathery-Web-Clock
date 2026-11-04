@@ -67,3 +67,58 @@ pub fn draw_digit_stroked(cov: &mut Coverage, d: &[f64; POINTS], x0: f64, y0: f6
         }
     }
 }
+
+/// For every pixel near a stroke: the distance to the stroke's centreline and the direction (unit vector) from the nearest centreline point to the pixel.
+/// This is what a tube needs: the distance says how far across the tube the pixel is, the direction which way its surface faces.
+pub struct Field { pub w: usize, pub h: usize, pub dist: Vec<f32>, pub ux: Vec<f32>, pub uy: Vec<f32> }
+
+impl Field {
+    pub fn new(w: usize, h: usize) -> Self { Field { w, h, dist: vec![f32::MAX; w * h], ux: vec![0.0; w * h], uy: vec![0.0; w * h] } }
+
+    fn offer(&mut self, x: usize, y: usize, d: f64, ux: f64, uy: f64) {
+        let i = y * self.w + x;
+        if (d as f32) < self.dist[i] { self.dist[i] = d as f32; self.ux[i] = ux as f32; self.uy[i] = uy as f32; }
+    }
+
+    /// Coverage 0..1 of a stroke of `half` pixels each side, anti-aliased over one pixel.
+    pub fn coverage(&self, x: usize, y: usize, half: f64) -> f64 { (half + 0.5 - self.dist[y * self.w + x] as f64).clamp(0.0, 1.0) }
+    pub fn any(&self, x: usize, y: usize) -> bool { self.dist[y * self.w + x] != f32::MAX }
+}
+
+fn nearest_on_segment(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> ((f64, f64), f64) {
+    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+    let len2 = dx * dx + dy * dy;
+    let t = if len2 == 0.0 { 0.0 } else { (((p.0 - a.0) * dx + (p.1 - a.1) * dy) / len2).clamp(0.0, 1.0) };
+    let c = (a.0 + t * dx, a.1 + t * dy);
+    (c, ((p.0 - c.0).powi(2) + (p.1 - c.1).powi(2)).sqrt())
+}
+
+/// Add a digit's strokes to a field (`reach` pixels around each segment are looked at: use at least half the stroke width plus a pixel).
+pub fn field_digit(f: &mut Field, d: &[f64; POINTS], x0: f64, y0: f64, scale: f64, reach: f64) {
+    let pts: Vec<(f64, f64)> = flatten(d, 24).into_iter().map(|(x, y)| (x0 + x * scale, y0 + y * scale)).collect();
+    for w in pts.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        let xa = (a.0.min(b.0) - reach).floor().max(0.0) as usize;
+        let xb = ((a.0.max(b.0) + reach).ceil().min(f.w as f64)).max(0.0) as usize;
+        let ya = (a.1.min(b.1) - reach).floor().max(0.0) as usize;
+        let yb = ((a.1.max(b.1) + reach).ceil().min(f.h as f64)).max(0.0) as usize;
+        for y in ya..yb {
+            for x in xa..xb {
+                let p = (x as f64 + 0.5, y as f64 + 0.5);
+                let (c, dist) = nearest_on_segment(p, a, b);
+                if dist <= reach { let (ux, uy) = if dist > 1e-9 { ((p.0 - c.0) / dist, (p.1 - c.1) / dist) } else { (0.0, -1.0) }; f.offer(x, y, dist, ux, uy); }
+            }
+        }
+    }
+}
+
+/// A round dot (the colon): centre (cx, cy), reaching `reach` pixels.
+pub fn field_dot(f: &mut Field, cx: f64, cy: f64, reach: f64) {
+    for y in (cy - reach - 1.0).floor().max(0.0) as usize..((cy + reach + 1.0).ceil() as usize).min(f.h) {
+        for x in (cx - reach - 1.0).floor().max(0.0) as usize..((cx + reach + 1.0).ceil() as usize).min(f.w) {
+            let (dx, dy) = (x as f64 + 0.5 - cx, y as f64 + 0.5 - cy);
+            let d = (dx * dx + dy * dy).sqrt();
+            if d <= reach { let (ux, uy) = if d > 1e-9 { (dx / d, dy / d) } else { (0.0, -1.0) }; f.offer(x, y, d, ux, uy); }
+        }
+    }
+}

@@ -60,6 +60,12 @@ export async function run(t) {
   t.check('Use this setup saves it on this device (with the place and time zone) and goes to the plain address', kept && kept.hideSeconds === true && kept.quality === 'low' && kept.brightnessNight === 0.4 && kept.manualLocation === true && Math.abs(kept.location_latitude - 48.8566) < 1e-6 && kept.timeZone === 'Europe/Paris' && !/[?&]c=/.test(await h.page.evaluate(() => location.search)) && kept.confVersion >= 4, JSON.stringify(kept)?.slice(0, 200));
   t.check('and the banner is gone, since the page is no longer showing a shared setup', await h.page.evaluate(() => document.getElementById('sharedBanner').hidden));
   await h.close();
+  // a link that names a city of the built-in list: its place, its name and its time zone come with it (the digits show that city's time)
+  h = await open(t, `c=${S.encodeShort({ settings: { hideSeconds: true }, place: { lat: 35.68, lon: 139.69 }, placeName: 'Tokyo, Japan', timeZone: 'Asia/Tokyo', kiosk: true })}`);
+  c = await cfg(h.page);
+  t.check('a link by city number sets the place, the name and the time zone', c.manualLocation === true && Math.abs(c.location_latitude - 35.68) < 1e-6 && c.location_name === 'Tokyo, Japan' && c.timeZone === 'Asia/Tokyo', JSON.stringify([c.location_latitude, c.location_name, c.timeZone]));
+  t.check('and the digits show Tokyo time (12:00 UTC is 21:00 there, 9:00 on a 12-hour clock)', /^(21|9):00$/.test(await h.page.title()), await h.page.title());
+  await h.close();
   // a kiosk link never shows the banner (nobody can tap it)
   h = await open(t, `c=${short}`);
   t.check('a kiosk link shows no banner', await h.page.evaluate(() => getComputedStyle(document.getElementById('sharedBanner')).display === 'none'));

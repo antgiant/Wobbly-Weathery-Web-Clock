@@ -36,10 +36,12 @@ jobs:
       - name: Package
         run: |
           mkdir -p dist
-          cp native/target/arm-unknown-linux-musleabihf/release/wobbly-clock-run "dist/wobbly-clock-run-armv6-$VERSION"
-          cp native/target/aarch64-unknown-linux-musl/release/wobbly-clock-run "dist/wobbly-clock-run-aarch64-$VERSION"
-          native/scripts/make-deb.sh armhf dist/wobbly-clock-run-armv6-$VERSION "$VERSION" dist
-          native/scripts/make-deb.sh arm64 dist/wobbly-clock-run-aarch64-$VERSION "$VERSION" dist
+          # the names the update script looks for (wobbly-clock-run-armv6, -aarch64), LATEST, and a .deb each
+          cp native/target/arm-unknown-linux-musleabihf/release/wobbly-clock-run dist/wobbly-clock-run-armv6
+          cp native/target/aarch64-unknown-linux-musl/release/wobbly-clock-run dist/wobbly-clock-run-aarch64
+          echo "$VERSION" > dist/LATEST
+          native/scripts/make-deb.sh armhf dist/wobbly-clock-run-armv6 "$VERSION" dist
+          native/scripts/make-deb.sh arm64 dist/wobbly-clock-run-aarch64 "$VERSION" dist
           (cd dist && sha256sum * > SHA256SUMS)
       - name: Sign (when a key is configured)
         env:
@@ -47,7 +49,7 @@ jobs:
         run: |
           if [ -n "$KEY" ]; then
             printf '%s\n' "$KEY" > "$RUNNER_TEMP/key.pem"
-            for f in dist/*; do openssl pkeyutl -sign -rawin -inkey "$RUNNER_TEMP/key.pem" -in "$f" | base64 -w0 > "$f.sig"; done
+            for f in dist/wobbly-clock-run-armv6 dist/wobbly-clock-run-aarch64 dist/*.deb; do openssl pkeyutl -sign -rawin -inkey "$RUNNER_TEMP/key.pem" -in "$f" | base64 -w0 > "$f.sig"; done
             rm -f "$RUNNER_TEMP/key.pem"
           else
             echo "No NATIVE_SIGNING_KEY secret: publishing checksums only."
@@ -57,4 +59,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* --title "Native $VERSION" \
-            --notes "Static Raspberry Pi programs. wobbly-clock-run for ARMv6 (every 32-bit Pi) and aarch64, with a .deb each. Verify with SHA256SUMS." 
+            --notes "Static Raspberry Pi programs. wobbly-clock-run for ARMv6 (every 32-bit Pi) and aarch64, with a .deb each. Verify with SHA256SUMS (and the .sig files with the release key). wobbly-clock-update, installed by the .deb, reads LATEST and these files." 

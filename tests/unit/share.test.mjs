@@ -129,4 +129,28 @@ check('friendly names are understood: weather, style, night, day, sign, timezone
 check('seconds=off means hideSeconds on, led=on means the LED look', alias('seconds=off').settings.hideSeconds === true && alias('seconds=on').settings.hideSeconds === false && alias('led=on').settings.screenMode === 'led' && alias('led=off').settings.screenMode === 'normal');
 check('the real name wins when both are given, and a wrong value is cleaned like any other', alias('weather=rain&weatherMode=snow').settings.weatherMode === 'snow' && alias('weather=hurricane').settings.weatherMode === 'live');
 check('the readable form still always writes the real names', !/[?&](weather|style|night|day|sign|seconds|led)=/.test(encodeReadable({ settings: { weatherMode: 'rain', clockStyle: 'solid', brightnessNight: 0.3, hideSeconds: true, screenMode: 'led' }, kiosk: true })));
+
+// ---- version 3: a place from the built-in city list travels as its number ----
+const { CITIES } = await import('../../js/cities.js');
+const crypto = await import('crypto');
+check('the first 128 cities of the built-in list are frozen: their order and values never change (new ones are only appended)', S.CITIES_FROZEN === 128 && crypto.createHash('sha256').update(JSON.stringify(CITIES.slice(0, S.CITIES_FROZEN))).digest('hex') === 'd7310b0d1f10c37a5549bfea817f484ddaed4ef212add3632c2e9193c6807e40', 'if this fails the list was edited: revert the edit, and append instead');
+check('a link for a city of the list uses version 3, with no coordinates and no zone text', (() => { const link = encodeShort({ settings: { hideSeconds: true }, place: { lat: 41.85, lon: -87.65 }, placeName: 'Chicago, United States', kiosk: true, timeZone: 'America/Chicago' }); const b = decodeShort(link); return b && b.placeName === 'Chicago, United States' && b.timeZone === 'America/Chicago' && Math.abs(b.place.lat - 41.88) < 1e-9 && b.kiosk && b.settings.hideSeconds === true; })());
+const chicagoByNumber = encodeShort({ settings: { hideSeconds: true }, place: { lat: 41.85, lon: -87.65 }, placeName: 'Chicago, United States', timeZone: 'America/Chicago' });
+const chicagoByCoordinates = encodeShort({ settings: { hideSeconds: true }, place: { lat: 41.85, lon: -87.65 }, timeZone: 'America/Chicago' });
+check('as a number the place and its zone cost about 19 characters less than coordinates and a zone name', chicagoByCoordinates.length - chicagoByNumber.length >= 15, `${chicagoByCoordinates.length} -> ${chicagoByNumber.length}`);
+check('every city of the list round-trips by number, with its own place and zone', CITIES.every((c, i) => { const b = decodeShort(encodeShort({ settings: {}, place: { lat: c[2], lon: c[3] }, placeName: `${c[0]}, ${c[1]}` })); return b && b.place.lat === c[2] && b.place.lon === c[3] && b.timeZone === c[4] && b.placeName === `${c[0]}, ${c[1]}`; }));
+check('a place that is not that city (more than 0.2 degree away, or another name, or a different zone chosen) is sent as coordinates, so nothing is changed silently', (() => {
+  const far = decodeShort(encodeShort({ settings: {}, place: { lat: 45.0, lon: -87.65 }, placeName: 'Chicago, United States' }));
+  const renamed = decodeShort(encodeShort({ settings: {}, place: { lat: 41.88, lon: -87.63 }, placeName: 'Somewhere else' }));
+  const zone = decodeShort(encodeShort({ settings: {}, place: { lat: 41.88, lon: -87.63 }, placeName: 'Chicago, United States', timeZone: 'Europe/Paris' }));
+  return Math.abs(far.place.lat - 45.0) < 1e-3 && !far.placeName && Math.abs(renamed.place.lat - 41.88) < 1e-3 && !renamed.placeName && zone.timeZone === 'Europe/Paris' && !zone.placeName;
+})());
+check('a city number outside the frozen list is not a link of ours (a future list cannot be misread)', (() => { const w = decodeShort('Q'); return w === null; })());
+check('old links are untouched: a link with coordinates and a zone is still version 2, one with neither still version 1', decodeShort(encodeShort({ settings: {}, place: { lat: 35.6762, lon: 139.6503 }, timeZone: 'Asia/Tokyo' })).timeZone === 'Asia/Tokyo' && decodeShort(encodeShort({ settings: {}, place: { lat: 35.68, lon: 139.65 } })).timeZone === '');
+check('the readable form takes a city by name: ?preset=bedside&city=Chicago gives its place and zone; the full name and a place parameter also work', (() => {
+  const a = fromSearch('?preset=bedside&city=Chicago'), b = fromSearch('?preset=bedside&city=chicago,united%20states'), c = fromSearch('?preset=bedside&city=Chicago&place=10,20');
+  return a.place.lat === 41.88 && a.timeZone === 'America/Chicago' && b.place.lon === -87.63 && c.place.lat === 10 && c.timeZone === 'America/Chicago' && fromSearch('?preset=bedside&city=Nowhereville').place === null;
+})());
+check('a link by city number says the city in words', /place Chicago, United States/.test(describe({ settings: {}, place: { lat: 41.88, lon: -87.63 }, placeName: 'Chicago, United States', timeZone: 'America/Chicago' })) && /place 41\.85, -87\.65/.test(describe({ settings: {}, place: { lat: 41.85, lon: -87.65 }, placeName: 'Chicago' })));
+check('setupFromConf carries the name of a place set by hand', setupFromConf({ ...DEFAULTS, manualLocation: true, location_latitude: 41.88, location_longitude: -87.63, location_name: 'Chicago, United States' }).placeName === 'Chicago, United States' && setupFromConf({ ...DEFAULTS }).placeName === undefined);
 done();

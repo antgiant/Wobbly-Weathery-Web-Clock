@@ -64,6 +64,52 @@ fn matches_the_web_code() {
                 }
                 n_cd += 1;
             }
+            "thanksgiving" => { assert_eq!(wobbly_core::season::thanksgiving_day(c[1].parse().unwrap()), c[2].parse::<i64>().unwrap(), "{at}"); n_cd += 1; }
+            "season" => { assert_eq!(wobbly_core::season::is_christmas_season(c[1].parse().unwrap(), c[2].parse().unwrap(), c[3].parse().unwrap()), c[4] == "1", "{at}"); n_cd += 1; }
+            "wpreset" => {
+                let want = [f(c[2]), f(c[3]), f(c[4]), f(c[5]), f(c[6]), f(c[7]), f(c[8]), f(c[9]), f(c[10]), f(c[11]), f(c[12]), f(c[13]), f(c[14])];
+                let w = wobbly_core::weather::Weather::preset(c[1]);
+                let got = [w.cover[0], w.cover[1], w.cover[2], w.precip, w.snowfall, w.cloud_dark, w.vis_km, w.fog, w.wind[0], w.wind[1], w.aod, w.snow_cover, w.temp_c];
+                for (i, (g, x)) in got.iter().zip(&want).enumerate() { assert!((g.is_nan() && x.is_nan()) || (g - x).abs() < 1e-5, "{at}: field {i}: got {g}, want {x}"); }
+                assert_eq!(w.mode(), c[1], "{at}: a preset must map back to its own name");
+                n_cd += 1;
+            }
+            "wlive" => {
+                let w = wobbly_core::weather::from_open_meteo(&wobbly_core::weather::current_block(c[2]));
+                let want = [f(c[3]), f(c[4]), f(c[5]), f(c[6]), f(c[7]), f(c[8]), f(c[9]), f(c[10]), f(c[11]), f(c[12]), f(c[13]), f(c[14]), f(c[15])];
+                let got = [w.cover[0], w.cover[1], w.cover[2], w.precip, w.snowfall, w.cloud_dark, w.vis_km, w.fog, w.wind[0], w.wind[1], w.aod, w.snow_cover, w.temp_c];
+                for (i, (g, x)) in got.iter().zip(&want).enumerate() { assert!((g.is_nan() && x.is_nan()) || (g - x).abs() < 1e-5, "{at}: field {i}: got {g}, want {x}"); }
+                n_cd += 1;
+            }
+            "sway" => {
+                let (lean, gust) = wobbly_core::wind::sway_for(f(c[1]), f(c[2]), f(c[3]));
+                assert!((wobbly_core::wind::strength(f(c[1])) - f(c[4])).abs() < 1e-8 && (lean - f(c[5])).abs() < 1e-6 && (gust - f(c[6])).abs() < 1e-6, "{at}");
+                n_cd += 1;
+            }
+            "flutter" => { assert!((wobbly_core::wind::flutter(f(c[1]), f(c[2])) - f(c[3])).abs() < 1e-8, "{at}"); n_cd += 1; }
+            "weight" => { assert!((wobbly_core::wind::weight(f(c[1])) - f(c[2])).abs() < 1e-8, "{at}"); n_cd += 1; }
+            "bend" => {
+                let got = wobbly_core::wind::bend(digit(c[1].parse().unwrap()), f(c[2]));
+                let want: Vec<f64> = c[3].split(',').map(|x| x.parse().unwrap()).collect();
+                for (i, (g, w)) in got.iter().zip(&want).enumerate() { assert!((g - w).abs() < 0.051, "{at}: point {i}: got {g}, want {w}"); }
+                n_cd += 1;
+            }
+            "moonpos" => {
+                let (alt, az) = wobbly_core::moon::position(f(c[3]), f(c[1]), f(c[2]));
+                assert!((alt - f(c[4])).abs() < 0.6, "{at}: moon altitude {alt}");
+                let d = ((az - f(c[5]) + 540.0).rem_euclid(360.0) - 180.0).abs();
+                if f(c[1]).abs() < 60.0 && f(c[4]).abs() < 80.0 { assert!(d < 1.0, "{at}: moon azimuth {az}"); }
+                assert!((wobbly_core::moon::illumination(f(c[3])) - f(c[6])).abs() < 0.02, "{at}: lit fraction {}", wobbly_core::moon::illumination(f(c[3])));
+                n_cd += 1;
+            }
+            "headfor" => { let g = wobbly_core::follow::heading_for_sun_at(f(c[1]), f(c[2]), f(c[3]), 6.9, (40.0f64).to_radians().tan()); assert!(((g - f(c[4]) + 540.0).rem_euclid(360.0) - 180.0).abs() < 1e-3, "{at}: {g}"); n_cd += 1; }
+            "follow" => {
+                let g = wobbly_core::follow::follow_heading(f(c[3]), f(c[1]), f(c[2]), 6.9, (40.0f64).to_radians().tan());
+                let d = ((g - f(c[4]) + 540.0).rem_euclid(360.0) - 180.0).abs();
+                // events differ by up to a minute between the two programs, which moves the night interpolation by a small fraction of a degree
+                assert!(d < 0.3, "{at}: heading {g}, the page's {} ({d} degrees apart)", f(c[4]));
+                n_cd += 1;
+            }
             "tz" => {}                       // read by tests/tz.rs
             other => panic!("unknown vector kind {other} at {at}"),
         }

@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { check, done } from '../lib/check.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const BUDGET = { precacheKB: 1500, ownScriptKB: 420, largestFileKB: 130, cssKB: 80 };
+const BUDGET = { precacheKB: 1500, ownScriptKB: 450,   // was 420; the QR code, the city list, time zones and share links v2/v3 added about 45 KB of features
+   largestFileKB: 130, cssKB: 80 };
 
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
 const list = sw.slice(sw.indexOf('const PRECACHE = ['), sw.indexOf('];', sw.indexOf('const PRECACHE')));

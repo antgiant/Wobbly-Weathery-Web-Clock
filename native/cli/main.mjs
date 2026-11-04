@@ -2,12 +2,13 @@
 // wobbly-clock: the command line. `run(argv, io)` does the work with everything outside it passed in (files, questions, machine), so it is
 // tested with scripted answers and fake hardware (tests/unit/native-cli.test.mjs). The renderer itself is not here yet (see TODO.md).
 import fs from 'fs';
+import { spawnSync } from 'child_process';
 import path from 'path';
 import { DEFAULT_CONFIG, parseFile, serialize, setValue, applyPreset, applyLink, diff, showValue, spec } from './config.mjs';
 import { probe, fit, unavailable } from './hardware.mjs';
 import { PANEL_SIZES, WIRINGS, fromAnswers, validate, totals, draw, parseMatrixCfg, writeMatrixCfg } from './panel.mjs';
 import { sequence } from './patterns.mjs';
-import { unit } from './service.mjs';
+import { unit, status as statusText } from './service.mjs';
 import { manCommand, manConfig, help } from './manpage.mjs';
 import { PRESET_LIST } from '../../schema/presets.js';
 
@@ -21,6 +22,9 @@ export function realIO() {
     write: (f, t) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, t); },
     profile: (output) => probe(output),
     ask: null,
+    // run a program and wait (the clock itself, the update); and run one and keep what it prints (systemctl)
+    exec: (cmd, args) => { const r = spawnSync(cmd, args, { stdio: 'inherit' }); return r.error ? 127 : r.status ?? 1; },
+    capture: (cmd, args) => { const r = spawnSync(cmd, args, { encoding: 'utf8' }); return { code: r.error ? 127 : r.status ?? 1, out: (r.stdout || '').trim() }; },
   };
 }
 
@@ -134,6 +138,15 @@ export async function run(argv, io = realIO()) {
         if (args.includes('--print')) say(text); else { io.write('/etc/systemd/system/wobbly-clock.service', text); say('wrote /etc/systemd/system/wobbly-clock.service; enable it with: systemctl enable --now wobbly-clock'); }
         return done();
       }
+      case 'run': { const code = io.exec('wobbly-clock-run', ['--config', CONF, ...args]); return code === 0 ? done() : fail(code === 127 ? 3 : 1, code === 127 ? 'wobbly-clock-run is not installed (install the .deb, or build native/core)' : `wobbly-clock-run stopped with status ${code}`); }
+      case 'status': {
+        const v = io.capture('wobbly-clock-run', ['--version']), active = io.capture('systemctl', ['is-active', 'wobbly-clock']), enabled = io.capture('systemctl', ['is-enabled', 'wobbly-clock']);
+        say(statusText({ version: v.code === 0 && v.out ? v.out.split(' ').pop() : 'not installed', output: config.output, layout: io.read(MATRIX(config)) ? 'see matrix.cfg' : 'no layout yet', machine: profile.name, active: active.out === 'active', enabled: enabled.out === 'enabled' }));
+        return done();
+      }
+      case 'logs': { const code = io.exec('journalctl', ['-u', 'wobbly-clock', args.length ? '' : '-n', args.length ? '' : '50', '--no-pager', ...args].filter((x) => x !== '')); return code === 0 ? done() : fail(1, 'journalctl failed (is this a systemd machine?)'); }
+      case 'restart': { const code = io.exec('systemctl', ['restart', 'wobbly-clock']); return code === 0 ? (say('restarted'), done()) : fail(1, 'could not restart the service (are you root? is it installed?)'); }
+      case 'update': { const code = io.exec('wobbly-clock-update', args); return code === 0 ? done() : fail(1, `the update did not finish (status ${code})`); }
       case 'capabilities': for (const u of unavailable(profile)) say(`${u.key}${u.value !== undefined ? '=' + u.value : ''}: ${u.reason}`); return done();
       default: return fail(2, `unknown command "${cmd}". Try: wobbly-clock --help`);
     }

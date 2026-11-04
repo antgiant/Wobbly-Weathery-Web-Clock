@@ -37,4 +37,14 @@ for (const form of ['short', 'readable']) {
 }
 check('a link given as just its query (c=...) also works, and rubbish is refused', C.applyLink(D, 'c=' + S.encodeShort(setup)).hideSeconds === true && !!throws(() => C.applyLink(D, 'https://x/?c=!!!')));
 check('a link sets what links carry (even back to a default) and leaves what they never carry alone', (() => { const r = C.applyLink({ ...D, tempUnit: 'f', showLabels: true, preciseLocation: true }, S.toLink(setup, 'https://x/', 'short')); return r.tempUnit === 'auto' && r.showLabels === true && r.preciseLocation === true; })());
+
+// a link that names a city of the built-in list carries its place and its time zone
+{
+  const cityLink = S.toLink({ settings: S.normalise({ ...Object.fromEntries(S.SETTINGS_V1.map((x) => [x[0], x[2]])), hideSeconds: true }), place: { lat: 41.88, lon: -87.63 }, placeName: 'Chicago, United States', timeZone: 'America/Chicago', kiosk: true }, 'https://clock.wooleys.us/', 'short');
+  const r = C.applyLink(D, cityLink);
+  check('a share link for a city sets the place and the time zone', r.timeZone === 'America/Chicago' && r.location_latitude === 41.88 && r.location_longitude === -87.63 && r.manualLocation === true && r.hideSeconds === true && r.kiosk === true, cityLink);
+  const byName = C.applyLink(D, 'https://x/?preset=bedside&city=Tokyo');
+  check('and so does a readable link that just names the city', byName.timeZone === 'Asia/Tokyo' && Math.abs(byName.location_latitude - 35.68) < 1e-9 && byName.manualLocation === true);
+  check('the zone survives the file', C.parseFile(C.serialize(r)).config.timeZone === 'America/Chicago');
+}
 done();
