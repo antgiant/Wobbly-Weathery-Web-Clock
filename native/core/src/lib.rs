@@ -5,5 +5,6 @@
 pub mod countdown;
 pub mod digits;
 pub mod dim;
+pub mod frame;
 pub mod morph;
 pub mod raster;
