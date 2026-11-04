@@ -118,3 +118,25 @@ fn a_missing_panel_program_says_how_to_get_it() {
     let out = Command::new(BIN).env("WOBBLY_MATRIX_BIN", "/nonexistent/wobbly-matrix").args(["--config", conf.to_str().unwrap(), "--frames", "1"]).output().unwrap();
     assert!(!out.status.success() && String::from_utf8_lossy(&out.stderr).contains("native/matrix-sink"), "{}", String::from_utf8_lossy(&out.stderr));
 }
+
+#[test]
+fn countdown_mode_in_the_config() {
+    use wobbly_core::clock::{display_text, phase_of, target_ms, Phase};
+    let zone = Zone::fixed(0);
+    let base = Config { clock_mode: "countdown".into(), twenty_four_hour: Some(true), ..Config::default() };
+    let c = Config { timer_target: "2026-12-25T08:00".into(), ..base.clone() };
+    let t = target_ms(&c, &zone).unwrap();
+    assert_eq!(t, 1_798_185_600_000.0);
+    assert_eq!(display_text(&c, &zone, t - 3661_000.0), "1:01:01");
+    assert_eq!(display_text(&Config { hide_seconds: true, ..c.clone() }, &zone, t - 3661_000.0), "1:01");
+    assert_eq!(display_text(&c, &zone, t - 86400_000.0 * 9.0 - 3600_000.0 * 7.0 - 65_000.0), "9:07:01", "a day or more left: days:hours:minutes, the seconds do not fit");
+    assert_eq!(display_text(&c, &zone, t), "00:00", "the day itself shows 00:00");
+    assert_eq!(phase_of(t, t + 15.0 * 3600_000.0, &zone), Phase::Done);
+    let after = display_text(&c, &zone, t + 17.0 * 3600_000.0);
+    assert_eq!(after, "01:00:00", "after the day the clock shows the time again: {after}");
+    assert_eq!(display_text(&Config { timer_target: String::new(), ..base.clone() }, &zone, 3600_000.0), "01:00:00", "no target: just the time");
+    let bad = parse("clockMode = countdown\ntimerTarget = tomorrow\nclockMode = soon\n");
+    assert_eq!(bad.errors.len(), 2, "{:?}", bad.errors);
+    let ok = parse("clockMode = countdown\ntimerTarget = 2026-12-25T08:00\n");
+    assert!(ok.errors.is_empty() && ok.clock_mode == "countdown" && ok.timer_target == "2026-12-25T08:00");
+}

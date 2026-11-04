@@ -44,7 +44,7 @@ fn parse_rule(s: &str) -> Option<Rule> {
     Some(Rule { std, dst: Some((dst, parse_change(a)?, parse_change(b)?)) })
 }
 
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+pub fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     let y = if m <= 2 { y - 1 } else { y }; let era = y.div_euclid(400); let yoe = y - era * 400;
     let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1; let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     era * 146097 + doe - 719468
@@ -107,6 +107,18 @@ impl Zone {
             }
             None => match &self.rule { Some(r) => r.offset_at(utc_secs), None => self.types.first().map(|t| t.0).unwrap_or(0) },
         }
+    }
+
+    /// The UTC moment (epoch ms) of a wall-clock time in this zone: a "datetime-local" value like 2026-12-25T08:00. In the hour that repeats when the
+    /// clocks go back this is the first of the two; in the hour that does not exist (clocks forward) it is read with the offset from before the change,
+    /// which is what a browser does.
+    pub fn local_to_utc_ms(&self, y: i64, mo: i64, d: i64, h: i64, mi: i64) -> f64 {
+        let naive = days_from_civil(y, mo, d) * 86400 + h * 3600 + mi * 60;
+        let guess = naive - self.offset_at(naive) as i64;               // right except near a change
+        let t = naive - self.offset_at(guess) as i64;
+        let earlier = naive - self.offset_at(t - 86400) as i64;       // the offset from the day before: tells which side of a change this wall time is on
+        let pick = if self.offset_at(earlier) == self.offset_at(t - 86400) && earlier < t { earlier } else { t };
+        (pick * 1000) as f64
     }
 
     /// (hour, minute, second) on the local wall clock.

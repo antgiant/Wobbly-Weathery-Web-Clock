@@ -76,6 +76,21 @@ for (const z of ZONES) {
   for (const iso of WHEN) { const d = new Date(iso), p = Object.fromEntries(f.formatToParts(d).map((x) => [x.type, Number(x.value)])); lines.push(['tz', z, Math.floor(+d / 1000), `${p.hour % 24},${p.minute},${p.second}`].join('\t')); }
 }
 
+// ---- countdown mode as the page runs it (js/countdown.js, in New York time): which phase, and the digits shown ----
+{
+  const keep = process.env.TZ; process.env.TZ = 'America/New_York';
+  const targets = ['2026-12-25T08:00', '2026-03-08T01:30', '2026-11-01T00:00', '2026-06-21T23:59', '2027-01-01T00:00'];
+  for (const target of targets) {
+    const tgt = C.parseTarget(target);
+    for (const delta of [-90 * 86400e3, -86400e3 - 3661e3, -3600e3, -61e3, -1e3, 0, 1e3, 3600e3, 12 * 3600e3, 23 * 3600e3 + 59 * 60e3, 24 * 3600e3, 30 * 3600e3, 3 * 86400e3]) {
+      const now = tgt + delta, phase = C.phaseOf(tgt, now), left = C.secondsLeft(tgt, now);
+      const show = (sec) => (phase === 'counting' ? C.textOf(C.groupsFor(left, sec)) : phase === 'done' ? '00:00' : 'time');
+      lines.push(['countdown', target, now, phase, show(true), show(false)].join('\t'));
+    }
+  }
+  if (keep === undefined) delete process.env.TZ; else process.env.TZ = keep;
+}
+
 // ---- panel layouts written by the Node command line (native/cli/panel.mjs), which the Rust side must read the same way ----
 const { fromAnswers, writeMatrixCfg } = await import('../native/cli/panel.mjs');
 const fixtures = {};

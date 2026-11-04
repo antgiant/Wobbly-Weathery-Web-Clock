@@ -16,10 +16,12 @@ pub struct Scene {
     pub brightness_day: f64,
     pub brightness_night: f64,
     pub transition_minutes: f64,
+    /// a manual weather setting ("clear", "overcast", ...); anything else is clear
+    pub weather: String,
 }
 
 impl Default for Scene {
-    fn default() -> Self { Scene { lat: 40.7, lon: -74.0, horizon: 0.63, brightness_day: 1.0, brightness_night: 1.0, transition_minutes: 45.0 } }
+    fn default() -> Self { Scene { lat: 40.7, lon: -74.0, horizon: 0.63, brightness_day: 1.0, brightness_night: 1.0, transition_minutes: 45.0, weather: "clear".into() } }
 }
 
 const WHITE: Rgb = [255.0, 255.0, 255.0];
@@ -55,17 +57,23 @@ pub fn brightness(scene: &Scene, t_ms: f64) -> f64 {
 /// RGB bytes, `w` x `h`: the sky for the sun's height, the time over it, dimmed by the day/night brightness.
 pub fn render(scene: &Scene, t_ms: f64, text: &str, w: usize, h: usize) -> Vec<u8> {
     let alt = sun::altitude(t_ms, scene.lat, scene.lon);
-    let colors = colors_at(alt);
+    let colors = crate::weather::apply(&colors_at(alt), &scene.weather, alt);
     let (ink, halo) = legibility(&colors, scene.horizon);
     let cov = draw_text(text, w, h, 0.9);
     let halo_cov = halo.map(|_| draw_text_stroked(text, w, h, 0.9, STROKE * 1.45));
     let level = brightness(scene, t_ms);
+    // stars: in the dark sky, fewer through cloud, never over the ground or under the time
+    let sky_px = (scene.horizon * h as f64) as usize;
+    let seen = crate::stars::visibility(alt) * crate::weather::star_visibility(&scene.weather);
+    let mut starlight = vec![0.0f64; if seen > 0.02 { w * h } else { 0 }];
+    if seen > 0.02 { for s in crate::stars::field(w, h, sky_px) { starlight[s.y * w + s.x] = s.brightness * seen; } }
     let mut out = Vec::with_capacity(w * h * 3);
     for y in 0..h {
         let bg = at_row(&colors, y as f64 + 0.5, h as f64, scene.horizon);
         for x in 0..w {
             let c = cov.at(x, y) as f64;
             let mut base = bg;
+            if !starlight.is_empty() { let a = starlight[y * w + x]; if a > 0.0 { base = [0, 1, 2].map(|k| bg[k] + (235.0 - bg[k]).max(0.0) * a); } }
             if let (Some(hc), Some(hv)) = (&halo_cov, halo) { let a = hc.at(x, y) as f64 * 0.75; base = [0, 1, 2].map(|k| bg[k] + (hv[k] - bg[k]) * a); }
             for k in 0..3 { out.push(((base[k] + (ink[k] - base[k]) * c) * level).round().clamp(0.0, 255.0) as u8); }
         }
