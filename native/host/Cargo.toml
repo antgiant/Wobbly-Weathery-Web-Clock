@@ -1,0 +1,11 @@
+[package]
+name = "wobbly-host"
+version = "0.1.0"
+edition = "2021"
+description = "Runs the web page's own sky engine (JavaScript and GLSL, unmodified) without a browser: QuickJS, the Pi's GPU through EGL/GLES, direct display"
+license = "MIT"
+
+[dependencies]
+rquickjs = { version = "0.9", features = ["loader", "macro"] }
+libloading = "0.8"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
