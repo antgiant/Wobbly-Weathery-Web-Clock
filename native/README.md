@@ -49,15 +49,19 @@ wobbly-clock-run --config my.conf --sink ppm:/tmp/frames --size 960x540 --frames
 ```
 
 * **HDMI**: frames are read back from the GPU and written to the kernel framebuffer (`/dev/fb0`, 32, 24 or 16 bits). The page's own
-  night dimming is applied to the pixels. (Direct scan-out through KMS/GBM, with no read-back, is the next step; see `../TODO.md`.)
+  night dimming is applied to the pixels. (A clock draws about once a second, so copying a 1080p frame, 8 MB, costs a few milliseconds
+  a second; scanning out directly through KMS/GBM would save that and nothing visible, so it is not built.)
 * **LED panel**: the page's LED look is rendered at four pixels per LED, the middle of each cell is read back, mapped onto the chain by
   `matrix.cfg`, gamma-corrected and streamed to `wobbly-matrix`; the brightness goes to the panel's own PWM.
 * **Live weather** and the other network lookups are the page's own, through `curl`.
 
 **Limits today:** the pills (sunrise countdown, rain alert, countdown name) and the settings drawer are page furniture made of DOM elements
-and are not drawn natively; the LED card's bitmap font is (it is drawn into the canvas). The Raspberry Pi 3 and Zero have OpenGL ES 2.0 only
-and cannot yet run the shaders (they need OpenGL ES 3.0, which the Pi 4 and 5 have); an ES 2.0 profile of the shaders is under way, see
-`../TODO.md`. **Not verified on a real Pi:** speed, the drivers, the framebuffer, a real panel.
+and are not drawn natively; the LED card's bitmap font is (it is drawn into the canvas). **Which Pis:** the Pi 4 and 5 have OpenGL ES 3 in hardware and draw on the GPU. The
+Pi 3, Zero 2 and Zero have OpenGL ES 2 only, and the page's shaders need ES 3 (float render targets, integer arithmetic, instancing), so there
+the program notices (`no OpenGL ES 3 on this GPU`), restarts itself with Mesa's software renderer (llvmpipe, on the CPU; `--software` forces it)
+and draws the same picture more slowly, at a smaller internal size when frames take too long (the page's own adaptive scale). A GPU-accelerated
+ES 2 version of the shaders would need float-free packing of every texture and a rewrite of the integer noise; it is left until a Pi 3 shows that the
+CPU path is too slow (`../TODO.md`). **Not verified on a real Pi:** speed, the drivers, the framebuffer, a real panel.
 
 ## Builds, releases and CI
 

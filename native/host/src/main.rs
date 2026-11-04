@@ -138,12 +138,21 @@ impl Loader for Load {
     }
 }
 
+/// Start this program again with Mesa's software renderer (the environment must be set before the driver loads).
+fn reexec_software() -> ! {
+    use std::os::unix::process::CommandExt;
+    let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("wobbly-clock-run"));
+    let err = std::process::Command::new(exe).args(std::env::args().skip(1)).env("WOBBLY_SOFTWARE", "1").env("LIBGL_ALWAYS_SOFTWARE", "1").env("GALLIUM_DRIVER", std::env::var("GALLIUM_DRIVER").unwrap_or_else(|_| "llvmpipe".into())).exec();
+    eprintln!("wobbly-clock-run: cannot restart with software rendering: {err}"); std::process::exit(1)
+}
+
 fn usage(code: i32) -> ! {
     let text = format!("wobbly-clock-run: shows the clock (the web page's own code, run without a browser)\n\
 usage: wobbly-clock-run [--config FILE] [--web DIR] [--sink fb[:DEV]|ppm:DIR|matrix] [--size WxH] [--frames N] [--at EPOCH_MS]\n\
   --config FILE   the settings file (default /etc/wobbly-clock/wobbly-clock.conf)\n\
   --web DIR       use the page's files from this folder instead of the copy inside the program (for working on the page)\n\
   --sink          where frames go (default: the config's output: hdmi = fb, matrix = the LED panel)\n\
+  --software      draw on the CPU (Mesa llvmpipe), as a Pi 3 or Zero must; chosen automatically when the GPU has no OpenGL ES 3\n\
   --size WxH      the picture size for the ppm sink; --frames N stop after N frames; --at EPOCH_MS pretend it is this moment\n\
 tests: wobbly-clock-run <repo-root> <out.ppm> [--app] [--w=N --h=N --search=... --conf=JSON ...]");
     if code == 0 { println!("{text}"); } else { eprintln!("{text}"); }
@@ -197,7 +206,18 @@ fn main() {
         for e in &OUT.with(|x| x.borrow().as_ref().map(|o| o.cfg.errors.clone()).unwrap_or_default()) { eprintln!("wobbly-clock-run: {e}"); }
     }
 
-    let egl = egl::Egl::open(3).unwrap_or_else(|e| { eprintln!("{e}"); std::process::exit(1) });
+    // The page's shaders need OpenGL ES 3. The Raspberry Pi 4 and 5 have it in hardware; the Pi 3, the Zero 2 and the Zero have only ES 2, and for them
+    // Mesa's software renderer (llvmpipe) provides ES 3 on the CPU: slower, but the same picture. Software rendering is also chosen with --software.
+    let force_software = flags.iter().any(|(k, _)| k == "software");
+    if force_software && std::env::var("WOBBLY_SOFTWARE").is_err() { reexec_software(); }
+    let opened = if std::env::var("WOBBLY_FAKE_NO_ES3").is_ok() && std::env::var("WOBBLY_SOFTWARE").is_err() { Err("simulated: no EGL configuration for OpenGL ES 3".to_string()) } else { egl::Egl::open(3) };   // (the variable is for the test of the fallback)
+    let egl = match opened {
+        Ok(e) => e,
+        Err(e) => {
+            if std::env::var("WOBBLY_SOFTWARE").is_err() && !e.contains("libEGL") { eprintln!("wobbly-clock-run: no OpenGL ES 3 on this GPU ({e}): drawing on the CPU instead (slower)"); reexec_software(); }
+            eprintln!("wobbly-clock-run: {e}"); std::process::exit(1)
+        }
+    };
     let gl = Rc::new(gl::Gl::new(egl));
     let rt = Runtime::new().unwrap();
     rt.set_memory_limit(512 << 20);
