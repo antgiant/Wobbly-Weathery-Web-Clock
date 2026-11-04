@@ -10,8 +10,10 @@ rm -rf "$OUT"; mkdir -p "$OUT"
 printf 'location_latitude = 40.7\nlocation_longitude = -74\nweatherMode = clear\n' > "$OUT/c.conf"
 for triple in "arm-unknown-linux-gnueabihf:qemu-arm:/usr/arm-linux-gnueabihf" "aarch64-unknown-linux-gnu:qemu-aarch64:/usr/aarch64-linux-gnu"; do
   target="${triple%%:*}"; rest="${triple#*:}"; emu="${rest%%:*}"; libs="${rest#*:}"
-  cargo build --release -q --target "$target"
+  WOBBLY_NO_LIBATOMIC=1 cargo zigbuild --release -q --target "$target.2.31"
   bin="target/$target/release/wobbly-clock-run"
+  newest="$(readelf --version-info "$bin" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -uV | tail -1)"
+  [ "$(printf '%s\n2.31\n' "$newest" | sort -V | tail -1)" = "2.31" ] || { echo "FAIL: $target needs glibc $newest (Raspberry Pi OS Bullseye has 2.31)"; exit 1; }
   "$emu" -L "$libs" "$bin" --version | grep '^wobbly-clock-run ' >/dev/null || { echo "FAIL: $target does not report its version"; exit 1; }
   "$emu" -L "$libs" "$bin" --help | grep -- '--sink' >/dev/null || { echo "FAIL: $target does not print its help"; exit 1; }
   # no GPU driver in the emulator: it has to say so plainly and stop (not crash)
