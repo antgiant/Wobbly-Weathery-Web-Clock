@@ -89,5 +89,5 @@ Description: a clock in front of a real-time sky, for a Raspberry Pi
  Lite. Settings are the web page's, in /etc/wobbly-clock/wobbly-clock.conf.
 CTRL
 mkdir -p "$out"
-dpkg-deb --root-owner-group --build "$pkg" "$out/wobbly-clock_${version}_${arch}.deb" >/dev/null
+dpkg-deb -Zxz --root-owner-group --build "$pkg" "$out/wobbly-clock_${version}_${arch}.deb" >/dev/null
 echo "$out/wobbly-clock_${version}_${arch}.deb"
