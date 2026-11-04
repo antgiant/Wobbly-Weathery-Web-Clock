@@ -117,6 +117,7 @@ if (A.present) {
     const dim = $('dimmer'), level = dim && !dim.hidden ? Math.max(0, 1 - (parseFloat(dim.style.opacity) || 0)) : 1;
     __present(w, h, px.buffer, level); presented++;
     if (A.timing) __print('[' + Math.round(performance.now()) + ' ms] frame ' + presented + ' presented');
+    if (A.profile && G.__profDump) G.__profDump();
   };
   await until(() => !!G.__sky, 30000);
   if (A.ledCols && G.__sky) G.__sky.glass.led.gap = 0;                 // the panel needs the cells' own colours, with no dark lines between
