@@ -12,6 +12,7 @@
 // the display rate with the render scale adapting to hold the frame rate.
 
 import { Governor } from './governor.js';
+import { VERT_STROKE, FRAG_STROKE, VERT_LIGHT, FRAG_LIGHT } from './glsl-mask.js';
 import {
   VERT_FULLSCREEN, FRAG_TRANSMITTANCE, FRAG_MULTISCATTER, FRAG_SKYVIEW,
 } from './glsl-atmosphere.js';
@@ -263,7 +264,8 @@ export class SkyEngine {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    this.maskTex = gl.createTexture();
+    this.canDrawMask = true;                       // setGlassGeometry works (glass.js uses it unless told not to)
+    this.maskTex = this.maskTexCanvas = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.maskTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
     this._applySkyline();
@@ -818,6 +820,7 @@ export class SkyEngine {
   /** Clock glyph mask (alpha channel) covering rect = [x, y, w, h] in canvas uv, y down. */
   setGlassMask(canvas, rect, strokeCssPx) {
     const gl = this.gl, g = this.glass;
+    this.maskTex = this.maskTexCanvas;                  // (setGlassGeometry draws into a texture of its own)
     gl.bindTexture(gl.TEXTURE_2D, this.maskTex);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
@@ -827,6 +830,57 @@ export class SkyEngine {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     g.rect = rect; g.maskW = canvas.width; g.maskH = canvas.height; g.stroke = strokeCssPx; g.hasMask = true;
+    this.redrawGlass();
+  }
+
+  /**
+   * The glass mask drawn on the GPU (glsl-mask.js) from the digits' geometry, instead of a 2D canvas stroked by the CPU and uploaded.
+   * `strokes`: 6 vertices per segment, 7 floats each (x, y, ax, ay, bx, by, r); `lights`: 6 vertices per light, 8 floats each (x, y, cx, cy, radius, r, g, b);
+   * all in mask pixels. `black` strokes (the coloured tube) are black, the glass styles white. Same arguments as setGlassMask otherwise.
+   */
+  setGlassGeometry({ w, h, rect, strokeCssPx, strokes, lights, black }) {
+    const gl = this.gl, g = this.glass;
+    if (!this.pStroke) {                                                    // compiled the first time it is needed (a slow machine need not wait for it at start-up)
+      this.pStroke = this._program(VERT_STROKE, FRAG_STROKE, { aPos: 0, aSeg: 1, aR: 2 });
+      this.pLight = this._program(VERT_LIGHT, FRAG_LIGHT, { aPos: 0, aLight: 1, aCol: 2 });
+      this.maskBuf = gl.createBuffer();
+      this.vaoStroke = gl.createVertexArray(); this.vaoLight = gl.createVertexArray();
+    }
+    if (!this.maskTarget || this.maskTarget.w !== w || this.maskTarget.h !== h) {
+      if (this.maskTarget) { gl.deleteTexture(this.maskTarget.tex); gl.deleteFramebuffer(this.maskTarget.fbo); }
+      this.maskTarget = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.LINEAR_MIPMAP_LINEAR, gl.CLAMP_TO_EDGE);
+      this.maskTex = this.maskTarget.tex;
+    }
+    const T = this.maskTarget;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, T.fbo);
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.maskBuf);
+    if (strokes.length) {                                                  // the strokes: the union (MAX) of every segment's capsule
+      gl.blendEquation(gl.MAX); gl.blendFunc(gl.ONE, gl.ONE);
+      this._use(this.pStroke); this._2f('uSize', w, h); this._3f('uCol', black ? [0, 0, 0] : [1, 1, 1]);
+      gl.bindVertexArray(this.vaoStroke);
+      gl.bufferData(gl.ARRAY_BUFFER, strokes, gl.DYNAMIC_DRAW);
+      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 28, 0);
+      gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 28, 8);
+      gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 28, 24);
+      gl.drawArrays(gl.TRIANGLES, 0, strokes.length / 7);
+    }
+    if (lights && lights.length) {                                         // the tube's lights, only where the tube is (source-atop)
+      gl.blendEquation(gl.FUNC_ADD); gl.blendFuncSeparate(gl.DST_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
+      this._use(this.pLight); this._2f('uSize', w, h);
+      gl.bindVertexArray(this.vaoLight);
+      gl.bufferData(gl.ARRAY_BUFFER, lights, gl.DYNAMIC_DRAW);
+      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 32, 0);
+      gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 32, 8);
+      gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 32, 20);
+      gl.drawArrays(gl.TRIANGLES, 0, lights.length / 8);
+    }
+    gl.bindVertexArray(null);
+    gl.blendEquation(gl.FUNC_ADD); gl.disable(gl.BLEND);
+    gl.bindTexture(gl.TEXTURE_2D, T.tex); gl.generateMipmap(gl.TEXTURE_2D);
+    g.rect = rect; g.maskW = w; g.maskH = h; g.stroke = strokeCssPx; g.hasMask = true;
     this.redrawGlass();
   }
 
