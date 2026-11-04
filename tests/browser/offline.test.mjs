@@ -76,7 +76,8 @@ export async function run(t) {
   t.check('Settings -> Presets -> About says the version number, the hash and the build date', new RegExp(`Version ${file.number} \\(${file.hash}\\), built \\d{4}-\\d{2}-\\d{2}`).test(ver.line), ver.line);
   await g.page.evaluate(() => document.getElementById('settings').dispatchEvent(new MouseEvent('click', { bubbles: true })));
   await g.page.waitForFunction(() => /up to date|newer|differs|Could not/.test(document.getElementById('versionNewest').textContent), null, { timeout: 15000 }).catch(() => {});
-  t.check('and it checks the server: "the server has the same version: you are up to date"', /same version \(\d+\): you are up to date/.test(await g.page.evaluate(() => document.getElementById('versionNewest').textContent)));
+  const newestText = await g.page.evaluate(() => document.getElementById('versionNewest').textContent);
+  t.check('and it checks the server: "the server has the same version: you are up to date"', /same version \(\d+\): you are up to date/.test(newestText), `${newestText} | page ${JSON.stringify(ver.v)} | file ${JSON.stringify(file)}`);
   // the server moves on (a newer number): About says so, and offers the update
   await g.page.evaluate((n) => { const real = window.fetch.bind(window); window.fetch = (u, o) => (/js\/version\.js/.test(String(u)) ? Promise.resolve(new Response(`globalThis.APP_VERSION = { number: ${n}, hash: 'deadbeef', built: '2099-01-01' };`)) : real(u, o)); }, file.number + 5);   // the server has moved on
   await g.page.evaluate(() => document.getElementById('settings').dispatchEvent(new MouseEvent('click', { bubbles: true })));
