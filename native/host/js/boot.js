@@ -43,6 +43,8 @@ G.location = { search, hash: '', href: doc.baseURI + search, origin: 'file://', 
   const mem = {}; G.sessionStorage = { getItem: (k) => (k in mem ? mem[k] : null), setItem(k, v) { mem[k] = String(v); }, removeItem(k) { delete mem[k]; }, clear() { for (const k in mem) delete mem[k]; }, key: (i) => Object.keys(mem)[i] || null, get length() { return Object.keys(mem).length; } };
 }
 
+if (A.conf) localStorage.setItem('conf', String(A.conf));
+
 // ---- fetch: local files, and the network through curl ----
 G.fetch = (url, init = {}) => new Promise((resolve, reject) => {
   const href = String(url), sig = init.signal;
@@ -56,6 +58,10 @@ G.fetch = (url, init = {}) => new Promise((resolve, reject) => {
   }
   try { reply(200, __readfile(href.replace(/^file:\/\//, '').replace(/[?#].*$/, ''))); } catch (e) { reply(404, new ArrayBuffer(0)); }
 });
+
+// ---- repeatable runs: a seeded Math.random (the same generator is installed in the browser by tests/app-chromium.mjs) and no network ----
+if (A.seed) { let a = A.seed >>> 0; Math.random = () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+if (A.offline) { const f = G.fetch; G.fetch = (u, i) => (/^https?:/i.test(String(u)) ? Promise.reject(new TypeError('Failed to fetch')) : f(u, i)); }
 
 // ---- the page's boxes ----
 const $ = (id) => doc.getElementById(id);

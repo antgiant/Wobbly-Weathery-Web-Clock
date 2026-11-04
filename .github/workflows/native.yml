@@ -70,6 +70,14 @@ jobs:
           WOBBLY_SCRIPT=native/host/tests/canvas-host.js native/target/release/wobbly-host . "$RUNNER_TEMP/c2d-host.ppm"
           node native/host/tests/chromium-canvas.mjs "$RUNNER_TEMP/c2d-chrome.ppm"
           node native/host/tests/ppm-diff.mjs "$RUNNER_TEMP/c2d-host.ppm" "$RUNNER_TEMP/c2d-chrome.ppm" 8 "$RUNNER_TEMP/c2d-diff.ppm" --max-mean 0.5 --max-over 1
+      - name: The whole page (sky, ground, Liquid Glass digits), run by the host and by Chromium
+        env:
+          GALLIUM_DRIVER: softpipe
+        run: |
+          CONF='{"plants":false,"landscape":"hills"}'
+          WOBBLY_STORE="$RUNNER_TEMP/store.json" WOBBLY_SCRIPT=native/host/js/boot.js native/target/release/wobbly-host . "$RUNNER_TEMP/app-host.ppm" --w=480 --h=270 "--search=t=2026-06-21T17:00:00Z&speed=0&lat=40.7&lon=-74&weather=clear" --out="$RUNNER_TEMP/app-host.ppm" --frames=2 --tz=UTC --seed=1 --offline=1 "--conf=$CONF"
+          node native/host/tests/app-chromium.mjs "$RUNNER_TEMP/app-chrome.ppm" 480 270 "t=2026-06-21T17:00:00Z&speed=0&lat=40.7&lon=-74&weather=clear" "$CONF"
+          node native/host/tests/ppm-diff.mjs "$RUNNER_TEMP/app-host.ppm" "$RUNNER_TEMP/app-chrome.ppm" 12 "$RUNNER_TEMP/app-diff.ppm" --max-mean 6 --max-over 12
       - name: The pictures
         if: always()
         uses: actions/upload-artifact@v4
