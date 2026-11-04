@@ -37,9 +37,10 @@ const norm3 = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0]
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 
 export class SkyEngine {
-  constructor(canvas, { baseUrl = '.' } = {}) {
+  constructor(canvas, { baseUrl = '.', lutScale = 1 } = {}) {
     this.canvas = canvas;
     this.baseUrl = baseUrl;
+    this.lutScale = Math.min(1, Math.max(0.1, lutScale));       // the sky tables' size: 1 is full; a slow machine (a CPU doing the drawing) asks for less, at the cost of finer detail in the sky's colour gradients
     const gl = canvas.getContext('webgl2', {
       alpha: false, antialias: false, depth: false, stencil: false,
       powerPreference: 'high-performance', preserveDrawingBuffer: false,
@@ -160,10 +161,11 @@ export class SkyEngine {
     this.pPlants = this._program(VERT_PLANTS, FRAG_PLANTS, { aInst: 0, aSeed: 1 });
 
     const F = gl.RGBA16F, RGBA = gl.RGBA, HF = gl.HALF_FLOAT;
-    this.tTrans = this._target(TRANS_W, TRANS_H, F, RGBA, HF);
-    this.tMS = this._target(MS_SIZE, MS_SIZE, F, RGBA, HF);
-    this.tSkySun = this._target(SKY_W, SKY_H, F, RGBA, HF);
-    this.tSkyMoon = this._target(SKY_W, SKY_H, F, RGBA, HF);
+    const ls = this.lutScale, sc = (v, min) => Math.max(min, Math.round(v * ls));
+    this.tTrans = this._target(sc(TRANS_W, 64), sc(TRANS_H, 16), F, RGBA, HF);
+    this.tMS = this._target(sc(MS_SIZE, 8), sc(MS_SIZE, 8), F, RGBA, HF);
+    this.tSkySun = this._target(sc(SKY_W, 64), sc(SKY_H, 48), F, RGBA, HF);
+    this.tSkyMoon = this._target(sc(SKY_W, 64), sc(SKY_H, 48), F, RGBA, HF);
     this.tAdapt = [this._target(1, 1, F, RGBA, HF, gl.NEAREST), this._target(1, 1, F, RGBA, HF, gl.NEAREST)];
     this.adaptIdx = 0;
 

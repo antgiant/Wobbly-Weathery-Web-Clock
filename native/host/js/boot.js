@@ -35,6 +35,14 @@ G.history = { state: null, length: 1, replaceState() {}, pushState() {}, back() 
 G.navigator = { onLine: true, language: 'en-US', languages: ['en-US'], userAgent: 'wobbly-host (Linux)', platform: 'Linux', hardwareConcurrency: 4, maxTouchPoints: 0, cookieEnabled: false, standalone: false, vibrate() { return false; } };
 let searchText = A.search || '';
 if (A.at) { const q = new URLSearchParams(searchText); q.set('t', new Date(A.at).toISOString()); q.set('speed', '1'); searchText = q.toString(); }     // --at: pretend it is this moment (and let time run on)
+// a CPU doing the drawing (no usable GPU): smaller sky tables (js/sky/engine.js lutScale), unless --lut says otherwise
+if (A.present) {
+  const renderer = String(__gl('getString', 0x1F01));
+  const soft = /llvmpipe|softpipe|swrast/i.test(renderer);
+  const q = new URLSearchParams(searchText);
+  if (!q.has('lut') && (A.lut || soft)) { q.set('lut', String(A.lut || 0.25)); searchText = q.toString(); }
+  __print('drawing with: ' + renderer + (q.has('lut') ? ' (sky tables at ' + q.get('lut') + ' of full size)' : ''));
+}
 const search = searchText ? (searchText[0] === '?' ? searchText : '?' + searchText) : '';
 G.location = { search, hash: '', href: doc.baseURI + search, origin: 'file://', protocol: 'file:', host: '', hostname: '', pathname: '/index.html', reload() {}, assign() {}, replace() {} };
 
