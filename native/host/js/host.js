@@ -119,6 +119,7 @@ const C = { DEPTH_BUFFER_BIT: 0x100, COLOR_BUFFER_BIT: 0x4000, POINTS: 0, TRIANG
   REPEAT: 0x2901, CLAMP_TO_EDGE: 0x812F, TEXTURE0: 0x84C0, ARRAY_BUFFER: 0x8892, STATIC_DRAW: 0x88E4, DYNAMIC_DRAW: 0x88E8, STREAM_READ: 0x88E1,
   PIXEL_PACK_BUFFER: 0x88EB, FRAMEBUFFER: 0x8D40, READ_FRAMEBUFFER: 0x8CA8, DRAW_FRAMEBUFFER: 0x8CA9, COLOR_ATTACHMENT0: 0x8CE0, FRAMEBUFFER_COMPLETE: 0x8CD5,
   FRAGMENT_SHADER: 0x8B30, VERTEX_SHADER: 0x8B31, COMPILE_STATUS: 0x8B81, LINK_STATUS: 0x8B82, SYNC_GPU_COMMANDS_COMPLETE: 0x9117, TIMEOUT_EXPIRED: 0x911B,
+  MAX: 0x8008, MIN: 0x8007, FUNC_ADD: 0x8006, SRC_COLOR: 0x300, ONE_MINUS_DST_ALPHA: 0x305,
   UNPACK_FLIP_Y_WEBGL: 0x9240, UNPACK_PREMULTIPLY_ALPHA_WEBGL: 0x9241 };
 const idOf = (o) => (o ? o.id : 0);
 const buf = (v) => (v && v.buffer ? v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength) : v);
@@ -170,6 +171,7 @@ function makeGL(canvas) {
     bindVertexArray: (o) => call('bindVertexArray', idOf(o)),
     enableVertexAttribArray: (i) => call('enableVertexAttribArray', i), vertexAttribPointer: (...a) => call('vertexAttribPointer', ...a), vertexAttribDivisor: (i, d) => call('vertexAttribDivisor', i, d),
     drawArrays: (...a) => call('drawArrays', ...a), drawArraysInstanced: (...a) => call('drawArraysInstanced', ...a), viewport: (...a) => call('viewport', ...a),
+    blendEquation: (m) => call('blendEquation', m), blendFunc: (a, b) => call('blendFunc', a, b), clearColor: (r, g, b, a) => call('clearColor', r, g, b, a), clear: (m) => call('clear', m),
     enable: (c) => call('enable', c), disable: (c) => call('disable', c), blendFuncSeparate: (...a) => call('blendFuncSeparate', ...a), pixelStorei: (p, v) => call('pixelStorei', p, v),
     readPixels(x, y, w, h, fmt, type, dst) {
       if (typeof dst === 'number') return call('readPixels', x, y, w, h, fmt, type, dst);

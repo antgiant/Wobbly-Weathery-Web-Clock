@@ -77,7 +77,7 @@ jobs:
           CONF='{"plants":false,"landscape":"hills"}'
           WOBBLY_STORE="$RUNNER_TEMP/store.json" native/target/release/wobbly-clock-run . "$RUNNER_TEMP/app-host.ppm" --app --w=480 --h=270 "--search=t=2026-06-21T17:00:00Z&speed=0&lat=40.7&lon=-74&weather=clear" --out="$RUNNER_TEMP/app-host.ppm" --frames=2 --tz=UTC --seed=1 --offline=1 "--conf=$CONF"
           node native/host/tests/app-chromium.mjs "$RUNNER_TEMP/app-chrome.ppm" 480 270 "t=2026-06-21T17:00:00Z&speed=0&lat=40.7&lon=-74&weather=clear" "$CONF"
-          node native/host/tests/ppm-diff.mjs "$RUNNER_TEMP/app-host.ppm" "$RUNNER_TEMP/app-chrome.ppm" 12 "$RUNNER_TEMP/app-diff.ppm" --max-mean 6 --max-over 12
+          node native/host/tests/ppm-diff.mjs "$RUNNER_TEMP/app-host.ppm" "$RUNNER_TEMP/app-chrome.ppm" 12 "$RUNNER_TEMP/app-diff.ppm" --max-mean 1.5 --max-over 1
       - name: The GPU test runs (on the CPU renderer here; it is for the Pi)
         run: native/target/release/wobbly-clock-run --gpu-test 2>&1 | tee "$RUNNER_TEMP/gputest.log" | tail -5; grep -q "=== done ===" "$RUNNER_TEMP/gputest.log"
       - name: "A GPU without OpenGL ES 3 (Pi 3, Zero): the program restarts with software rendering and still draws"

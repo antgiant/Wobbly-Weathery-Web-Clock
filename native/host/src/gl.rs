@@ -112,6 +112,8 @@ impl Gl {
             "viewport" => { gl!(self, "glViewport", (i32, i32, i32, i32), s(0), s(1), s(2), s(3)); undef() }
             "enable" => { gl!(self, "glEnable", (u32), u(0)); undef() }
             "disable" => { gl!(self, "glDisable", (u32), u(0)); undef() }
+            "blendEquation" => { gl!(self, "glBlendEquation", (u32), u(0)); undef() }
+            "blendFunc" => { gl!(self, "glBlendFunc", (u32, u32), u(0), u(1)); undef() }
             "blendFuncSeparate" => { gl!(self, "glBlendFuncSeparate", (u32, u32, u32, u32), u(0), u(1), u(2), u(3)); undef() }
             "pixelStorei" => { if u(0) < 0x9240 { gl!(self, "glPixelStorei", (u32, i32), u(0), s(1)); } undef() }
             "readPixels" => {
