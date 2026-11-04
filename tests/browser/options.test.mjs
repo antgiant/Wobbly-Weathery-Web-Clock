@@ -33,6 +33,27 @@ export async function run(t) {
   t.check('all the weather is on the Weather tab: weather, temperature units, cloud and water motion, umbrella alert, rain and snow on the digits, wind sway', ['weatherMode', 'tempUnit', 'cloudMotion', 'rainAlert', 'digitWeather', 'windSway'].every((id) => home[id] === 'weather'), JSON.stringify(home));
   t.check('the View settings are in Scene, with the landscape and the sky', ['viewMode', 'followSun', 'showLabels', 'viewHeading', 'sensorRotation', 'landscape', 'plants', 'quality'].every((id) => home[id] === 'scene'), JSON.stringify(home));
   t.check('Extras has the sunrise / sunset countdown, brightness and the screen', ['countdown', 'brightnessNight', 'screenMode', 'keepAwake'].every((id) => home[id] === 'extras'), JSON.stringify(home));
+  // the schema (schema/settings.js) and the page agree about every setting: tab, Simple / Advanced, type, options and ranges
+  const audit = await h.page.evaluate(async () => {
+    const { SETTINGS } = await import('/schema/settings.js'), { DEFAULTS } = await import('/js/config.js');
+    const bad = [], known = new Set(SETTINGS.map((x) => x.key));
+    for (const s of SETTINGS) {
+      const e = document.getElementById(s.key);
+      if (!e) { bad.push(`${s.key}: no control in the page`); continue; }
+      const panel = e.closest('[data-panel]')?.dataset.panel, adv = !!e.closest('.adv');
+      if (panel !== s.tab) bad.push(`${s.key}: on the ${panel} tab, the schema says ${s.tab}`);
+      if (adv !== s.advanced) bad.push(`${s.key}: advanced ${adv}, the schema says ${s.advanced}`);
+      const ty = e.tagName === 'SELECT' ? 'select' : e.type;
+      if (s.type === 'enum' && (ty !== 'select' || [...e.options].map((o) => o.value).join('|') !== s.options.map(String).join('|'))) bad.push(`${s.key}: options differ (${[...e.options || []].map((o) => o.value).join(',')})`);
+      if ((s.type === 'bool' || s.type === 'tri') && ty !== 'checkbox') bad.push(`${s.key}: not a switch`);
+      if (s.type === 'number' && !((ty === 'range' || ty === 'number') && +e.min === s.min && +e.max === s.max && +(e.step || 1) === s.step)) bad.push(`${s.key}: range differs (${e.min}..${e.max} step ${e.step})`);
+      if (s.type === 'text' && !['text', 'search'].includes(ty)) bad.push(`${s.key}: not a text box`);
+      if (s.type === 'datetime' && ty !== 'datetime-local') bad.push(`${s.key}: not a date box`);
+    }
+    for (const e of document.querySelectorAll('#settingsModal select, #settingsModal input')) if (e.id && e.id in DEFAULTS && !known.has(e.id) && !['easing', 'simSpeed'].includes(e.id)) bad.push(`${e.id}: a saved setting with a control that is not in the schema`);
+    return bad;
+  });
+  t.check('the schema and the settings panel agree on every setting (tab, Simple/Advanced, type, options, ranges), and no saved setting has a control the schema does not know', audit.length === 0, audit.slice(0, 6).join('; '));
   t.check('the Text tab has only the digits (no weather settings left on it)', ['clockStyle', 'hideSeconds'].every((id) => home[id] === 'clock') && !['digitWeather', 'windSway'].some((id) => home[id] === 'clock'));
   await h.page.click('.seg__btn[data-level="simple"]');
   await h.page.click('.tab[data-tab="presets"]');

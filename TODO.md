@@ -24,6 +24,8 @@ the CI machine, so we can see where the 7 minutes go and what to cut or move.
 
 ## Raspberry Pi targets: a range of Pis, full-resolution HDMI and LED panels of any size
 
+**Decided 2026-11-03: it lives in this repository, in `native/`** (see `native/README.md`). **First step done:** the settings schema (`schema/settings.js`, `schema/presets.js`, generated `schema/settings.json`) is now the single source for the page's defaults, the presets and a settings-panel audit test, and a test keeps the frozen share-link table compatible with it. Still to do from the requirements below: `requires` (hardware needs) on schema entries, then the native workspace itself.
+
 (Replaces the earlier "original Pi Zero" entry; updated 2026-11-02.) **Goals:** run the clock on **a range of Raspberry Pis**, from the
 original Zero up to a 4, in **two output modes**: (1) **full resolution over HDMI**, and (2) **an LED matrix panel of configurable
 size**, driven through **[hzeller/rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix)** (the standard hub75 library) so any

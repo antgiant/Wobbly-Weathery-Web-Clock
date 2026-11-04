@@ -3,41 +3,21 @@
 // and the other tabs stay in step.
 
 import { conf, DEFAULTS, use24h } from '../config.js';
+import { PRESET_KEYS } from '../../schema/settings.js';
+import { PRESET_LIST } from '../../schema/presets.js';
 import { toast } from './core.js';
 
 /**
- * The settings that "Standard" sets and that a reset restores. Location, first-run choice and panel state are never touched.
- * Left out on purpose, because they are personal or debugging choices and no preset should change them: the labels on the
- * sun, moon and planets (showLabels), what the countdown counts down to (countdownKind), units and 24-hour time.
+ * The settings that "Standard" sets and that a reset restores (the ones the schema marks `preset`). Location, first-run choice and
+ * panel state are never touched. Left out on purpose, because they are personal or debugging choices no preset should change: the
+ * labels on the sun, moon and planets (showLabels), what the countdown counts down to (countdownKind), units and 24-hour time.
  */
-export const APPEARANCE_KEYS = ['clockStyle', 'glassFrost', 'glassGlow', 'glassGlowColor', 'legibility', 'clockColor', 'hideSeconds',
-  'quality', 'cloudMotion', 'plants', 'holidayTree', 'countdown', 'countdownLead', 'screenMode', 'ledCols', 'ledRows', 'ledTurn', 'rainAlert',
-  'brightnessDay', 'brightnessNight', 'brightnessTransition', 'followSun', 'viewMode', 'keepAwake', 'weatherMode', 'landscape'];
+export const APPEARANCE_KEYS = PRESET_KEYS;
 
 const standard = Object.fromEntries(APPEARANCE_KEYS.map((k) => [k, DEFAULTS[k]]));
 
-// Bedside calm + weather watch: what the clock is normally set to.
-const everyday = { ...standard, hideSeconds: true, clockStyle: 'auto', glassFrost: 0.55, glassGlow: 0.35, cloudMotion: 0.25, quality: 'medium', brightnessNight: 0.25, keepAwake: true, rainAlert: true, countdown: 'both', countdownLead: 20 };
-
-export const PRESETS = [
-  { id: 'standard', name: 'Standard', note: 'The default look: liquid glass, a live sky, following the sun.', patch: standard },
-  { id: 'bedside', name: 'Bedside', note: 'Calm and dim at night: no seconds, soft glow, slow clouds, screen stays on.',
-    patch: { ...standard, hideSeconds: true, clockStyle: 'glass', glassFrost: 0.55, glassGlow: 0.35, cloudMotion: 0.25, quality: 'medium', brightnessNight: 0.25, keepAwake: true } },
-  { id: 'sunwatch', name: 'Sunset watcher', note: 'Countdowns to sunrise and sunset, with a touch more glow.',
-    patch: { ...standard, countdown: 'both', countdownLead: 20, glassGlow: 0.2 } },
-  { id: 'led', name: 'LED panel', note: '64 × 32 LED matrix with the countdown in pixels. Light on the battery.',
-    patch: { ...standard, screenMode: 'led', countdown: 'both', quality: 'low', cloudMotion: 0.25, brightnessNight: 0.5 } },
-  { id: 'weather', name: 'Weather watch', note: 'Umbrella alert and sunrise / sunset countdowns.',
-    patch: { ...standard, rainAlert: true, countdown: 'both', countdownLead: 20 } },
-  { id: 'everyday', name: 'Everyday', note: 'Bedside calm plus the weather watch: no seconds, soft glow, dims at night, screen on, umbrella alert, sunrise and sunset countdowns.',
-    patch: everyday },
-  { id: 'everyday-saver', name: 'Everyday, power saver', note: 'Everyday as an LED panel with every battery-saver setting: still sky, flat colour, no plants, low quality, dimmer at night. The screen stays on, because it is a clock.',
-    patch: { ...everyday, screenMode: 'led', quality: 'low', cloudMotion: 0, plants: false, clockStyle: 'auto', glassGlow: 0, brightnessNight: 0.3 } },
-  { id: 'showcase', name: 'Showcase', note: 'Everything turned up: high quality, glowing glass, moving clouds.',
-    patch: { ...standard, quality: 'high', clockStyle: 'glass', glassFrost: 0.25, glassGlow: 0.45, cloudMotion: 1 } },
-  { id: 'saver', name: 'Battery saver', note: 'Still sky, flat ink, no plants, dimmed at night, screen not forced on.',
-    patch: { ...standard, quality: 'low', cloudMotion: 0, plants: false, clockStyle: 'solid', glassGlow: 0, keepAwake: false, brightnessNight: 0.3 } },
-];
+// each preset sets everything Standard sets, then what differs (schema/presets.js)
+export const PRESETS = PRESET_LIST.map((p) => ({ id: p.id, name: p.name, note: p.note, patch: { ...standard, ...p.set } }));
 
 const same = (a, b) => (typeof a === 'number' || typeof b === 'number' ? Math.abs(Number(a) - Number(b)) < 1e-9 : a === b);
 

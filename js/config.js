@@ -2,6 +2,7 @@ import { hour24, unitFor, formatTempIn } from './units.js'
 import { isChristmasSeason } from './season.js'
 import { now as simNow } from './simtime.js'
 import { fromSearch } from './share.js'
+import { SETTING_DEFAULTS } from '../schema/settings.js'
 
 export function adjustTimeSize() {
   if (conf.hideSeconds) {
@@ -69,81 +70,32 @@ function createPersistentConfig(key, initialValue = {}, shared = null) {
   });
 }
 
+// The settings that have a control (and their defaults) are in schema/settings.js; what is here is state: where you are, what was
+// asked, the panel's last tab, the time travel, and a few internals.
 export const DEFAULTS = {
+  ...SETTING_DEFAULTS,
   steps: 15,
   easing: 'easeInOutBack',
-  twentyFourHourClock: null,  // null = follow the browser's locale until the user chooses
-  hideSeconds: false,
-  preciseLocation: false,
-  gpsFrequency: -1,
   location_latitude: -1,
   location_longitude: -1,
   location_accuracy: -1,
   location_altitude: -1,
   location_altitudeAccuracy: -1,
   // sky
-  quality: 'auto',            // auto | low | medium | high
-  landscape: 'auto',          // auto (real terrain when available) | flat | ocean | hills | mountains | desert | city
-  weatherMode: 'live',        // live | clear | partly | cloudy | overcast | rain | storm | snow | fog | haze
-  lightPollution: 'auto',     // auto (by time zone) | off | 1..9 (Bortle)
-  bodySize: 2,                // sun & moon size multiplier
-  nightBrightness: 1.4,
-  cloudMotion: 1,             // 1 real time, 0.25 slow, 0 still
   // view
-  viewMode: 'drag',           // fixed | drag (look around) | look (gyro "VR" mode)
-  viewHeading: 180,
-  viewPitch: 12,
-  viewPitchAuto: true,        // keep the horizon on the clock digits
-  horizonInDigits: 0.3,       // how far up the digits the horizon sits (0 = bottom edge): ground shows through the lower part
-  viewFov: 80,
-  showLabels: false,
-  plants: true,               // grass, trees, cacti ... swaying in the wind
-  ledStars: 'auto',           // off | auto | always: stars, planets and the moon that show in the normal picture also light an LED on the LED panel
-  clockMode: 'time',          // time | countdown: the digits show the time, or the time left to timerTarget
-  timerTarget: '',            // countdown: a datetime-local value ("2026-12-25T08:00"), in the viewer's own time zone
-  timerLabel: '',             // countdown: a name shown with it
-  digitWeather: 'on',         // on | off: rain beads and splashes, snow settling on the digits (glass, tube and LED styles)
-  windSway: 'off',            // off | lean | full: the digits lean downwind like palm trees (steady lean, or lean and gusts)
-  antiBurnIn: 'auto',         // auto (while the screen is kept on) | on | off: step the digits a few pixels round a small square, once a minute
-  keepAwake: true,            // Screen Wake Lock
   // time travel (never persisted as "on" across reloads)
   simSpeed: 1,
   // clock
-  clockStyle: 'auto',         // auto (liquid glass; coloured tube from Thanksgiving to Christmas) | glass | stained (coloured tube) | solid
-  glassFrost: 0.35,           // 0 clear .. 1 heavily frosted
-  clockColor: 'auto',         // solid style only: auto | classic | white
-  legibility: 'auto',         // off | auto (3:1) | high (4.5:1): least brightness contrast between the time and the sky
-  glassGlow: 0,               // light from inside the glass, 0..1 (stained glass always glows a little)
-  glassGlowColor: 'follow',     // liquid glass: warm | white | cool | follow (the sun / moon light)
   // sun & screen
-  followSun: true,            // clock view only: sun rises on the right quarter, sets on the left, tilt never changes
-  countdown: 'off',           // off | both | sunrise | sunset
-  countdownKind: 'sun',       // sun | golden | civil | nautical | astro | moon: what the countdown counts down to (morning and evening events)
-  countdownLead: 20,          // minutes before the event the countdown appears
-  screenMode: 'normal',       // normal | led (LED panel simulator)
-  ledCols: 64,                // LEDs across the panel (64 x 32 is the classic panel)
-  ledRows: 32,                // LEDs down it
-  ledTurn: true,              // turn the panel on its side when the screen is the other way round
   // VR sensor overrides, for devices whose sensor frame is not what the spec says
-  sensorRotation: 'auto',     // auto | ignore
-  compassRef: 'auto',         // auto | cam | top (iOS compass heading reference)
-  vrDebug: false,
   // settings panel
   settingsTab: 'clock',
-  holidayTree: true,          // a lit Christmas tree in the scene from Thanksgiving to Christmas
-  brightnessDay: 1,           // 0.1 .. 1: how bright the screen is by day (1 = no veil)
-  brightnessNight: 1,         // 0.1 .. 1: how bright it is at night
-  brightnessTransition: 45,   // minutes the change takes, centred on sunset and on sunrise
-  rainAlert: false,           // show an umbrella / slicker indicator when enough rain is coming today
   settingsLevel: 'simple',    // simple | advanced
   // first-run choice
   kiosk: false,               // set by a shared link made with the kiosk switch: no controls, no questions, updates itself
-  manualLocation: false,      // the place was typed or searched for (Settings -> Place): never replaced by GPS or the time-zone estimate
   location_name: '',          // the name of the place when it was searched for
   locationChoice: null,       // null (not asked yet) | real | estimated
-  coarseLookups: true,        // weather / terrain lookups use a rounded position, never the exact one
   // weather & units
-  tempUnit: 'auto',           // auto (by region) | c | f
   confVersion: 0
 };
 const CONF_VERSION = 4;
