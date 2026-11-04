@@ -4,7 +4,7 @@ Things we know we want, not yet done. Newest first. (Items added 2026-11-02 and 
 
 ## CI performance breakdown: what is tested and how long each part takes
 
-**Progress (2026-11-03):** the recording is done: every run prints a "where the time went" table per suite (pages, opening, waiting, other), writes `timings*.json` (artifact) and a job summary table; each suite says what it covers (`covers`); `tools/tests-report.mjs` turns timings (or CI logs) into `docs/TESTS.md`. Still to do: generate `docs/TESTS.md` from a full CI run, then use it (fewer page opens, shorter waits, rebalanced shares).
+**Done 2026-11-04:** the recording (per-suite table on every run, `timings*.json`, job summary), each suite's `covers` line, and `docs/TESTS.md` generated from CI run 63 by `tools/tests-report.mjs --log` (what is tested, pages, opening/waiting/other seconds, where it could be faster). The three CI shares are now dealt by measured cost (`FULL_COST` in `tests/run.mjs`: about 372, 378, 369 s instead of 523, 333, 237 s, so CI takes about 6.5 minutes, not 9). **Still to do:** use the table to cut time: fewer page opens (opening is 47% of browser time: `christmas`, `digitweather`, `led` and `alerts` open 15 to 26 pages each), shorter waits (`perf`, `alerts`, `idle` are mostly deliberate waits: 34% of the total), and refresh `docs/TESTS.md` and `FULL_COST` from a new CI run after any big change (the numbers are from run 63; `share` and `place` have grown since). The README should show the breakdown with its date.
 
 A table of the **full** test run: every suite, what it covers (its checks, grouped), how many pages it opens, and how long it takes on
 the CI machine, so we can see where the 7 minutes go and what to cut or move.

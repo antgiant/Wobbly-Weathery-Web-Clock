@@ -37,6 +37,8 @@ const TIER = process.env.TIER === 'fast' ? 'fast' : 'full';
 const WORKERS = Math.max(1, Number(process.env.WORKERS) || 1);
 // rough seconds each suite takes in its tier: the longest start first, so the workers finish together
 const COST = { options: 30, alerts: 20, led: 18, startup: 14, sky: 14, clock: 12, wind: 12, settings: 12, offline: 13, digitweather: 10, smoke: 6 };
+// seconds each suite takes in the full run on a CI machine (docs/TESTS.md, GitHub Actions run 63; share and place re-measured after they grew)
+const FULL_COST = { alerts: 176, digitweather: 141, led: 125, options: 98, perf: 95, christmas: 86, countdown: 50, share: 50, wind: 43, startup: 42, visual: 40, idle: 38, clock: 29, place: 30, sky: 24, settings: 24, offline: 23, smoke: 5 };
 let failed = 0, passed = 0;
 const timings = { when: new Date().toISOString(), node: process.version, kind: '', unit: [], browser: [] };       // where the time goes (written to test-results/timings.json, summarised at the end)
 const started = Date.now();
@@ -58,7 +60,15 @@ if (kind === 'unit' || kind === 'all') {
 if (kind === 'browser' || kind === 'all') {
   console.log('\n== browser tests (headless Chromium, software WebGL) ==');
   const [shard, shards] = (process.env.SHARD || '1/1').split('/').map(Number);
-  let files = fs.readdirSync(path.join(here, 'browser')).filter((x) => x.endsWith('.test.mjs') && want(x) && wantSuite(x)).sort().filter((_, i) => i % shards === shard - 1);
+  // The shares are dealt by measured cost, the longest suite first to whichever share has the least so far (docs/TESTS.md), so the
+  // shares finish together. The dealing looks at every suite, whatever filter is given, so a suite is always in the same share.
+  const everySuite = fs.readdirSync(path.join(here, 'browser')).filter((x) => x.endsWith('.test.mjs')).sort();
+  const load = Array(shards).fill(0), mine = new Set();
+  for (const f of [...everySuite].sort((a, b) => (FULL_COST[b.replace('.test.mjs', '')] ?? 30) - (FULL_COST[a.replace('.test.mjs', '')] ?? 30) || a.localeCompare(b))) {
+    const k = load.indexOf(Math.min(...load)); load[k] += FULL_COST[f.replace('.test.mjs', '')] ?? 30;
+    if (k === shard - 1) mine.add(f);
+  }
+  let files = everySuite.filter((x) => mine.has(x) && want(x) && wantSuite(x));
   if (shards > 1) console.log(`  (share ${shard} of ${shards}: ${files.map((f) => f.replace('.test.mjs', '')).join(', ')})`);
   if (TIER === 'fast' && !SUITES) {                                // only the suites that are part of the quick check
     const keep = [];
