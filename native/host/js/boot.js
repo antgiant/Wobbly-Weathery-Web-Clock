@@ -40,8 +40,9 @@ if (A.present) {
   const renderer = String(__gl('getString', 0x1F01));
   const soft = /llvmpipe|softpipe|swrast/i.test(renderer);
   const q = new URLSearchParams(searchText);
-  if (!q.has('lut') && (A.lut || soft)) { q.set('lut', String(A.lut || 0.25)); searchText = q.toString(); }
-  __print('drawing with: ' + renderer + (q.has('lut') ? ' (sky tables at ' + q.get('lut') + ' of full size)' : ''));
+  if (!q.has('gov') && !A.nogov) { q.set('gov', '1'); q.set('minfps', String(A.minfps || 15)); q.set('maxfps', String(A.maxfps || 60)); if (soft && !q.has('level')) q.set('level', '1'); }   // the quality governor: 15 to 60 frames a second
+  searchText = q.toString();
+  __print('drawing with: ' + renderer + (q.has('gov') ? ' (quality governor: ' + (A.minfps || 15) + ' to ' + (A.maxfps || 60) + ' fps)' : ''));
 }
 const search = searchText ? (searchText[0] === '?' ? searchText : '?' + searchText) : '';
 G.location = { search, hash: '', href: doc.baseURI + search, origin: 'file://', protocol: 'file:', host: '', hostname: '', pathname: '/index.html', reload() {}, assign() {}, replace() {} };
@@ -115,7 +116,7 @@ doc.readyState = 'interactive'; doc.dispatchEvent(new Evt('DOMContentLoaded', { 
 doc.readyState = 'complete'; G.dispatchEvent(new Evt('load'));
 const until = async (f, ms) => { const s = performance.now(); while (!f() && performance.now() - s < ms) await new Promise((r) => setTimeout(r, 20)); return f(); };
 const sky = $('sky'), want = A.frames || 3;
-let presented = 0;
+let presented = 0; G.__govN = 0;
 if (A.present) {
   const gl = sky.getContext('webgl2');
   const send = () => {
@@ -136,7 +137,11 @@ if (A.present) {
     }
   }
   if (A.ledCols && G.__sky) G.__sky.glass.led.gap = 0;                 // the panel needs the cells' own colours, with no dark lines between
-  if (G.__sky) G.__sky.onFrame(send);
+  if (G.__sky) {                                      // every change to the picture, including a digit that only moved; several changes in one turn are one frame
+    let pending = false;
+    let t0 = 0, kind = 'glass';
+    G.__sky.onPresent((e, k) => { if (k === 'scene') kind = 'scene'; if (!pending) { pending = true; t0 = performance.now(); setTimeout(() => { pending = false; send(); G.__sky.reportFrame(performance.now() - t0, kind); kind = 'glass'; if (A.timing && G.__sky.gov) { const g = G.__sky.gov; if (++G.__govN % 20 === 0) __print('governor: level ' + g.level + ', frame cost ' + Math.round(g.cost || 0) + ' ms, tick ' + Math.round(g.tickMs) + ' ms, outScale ' + G.__sky.s.outScale.toFixed(2)); } }, 0); } });
+  }
 }
 if (A.present) {
   // the service: show frames until stopped, or until --frames have been presented

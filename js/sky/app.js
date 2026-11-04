@@ -6,7 +6,7 @@
 //   bindings.js    settings controls                 presets.js     presets, reset to defaults
 //   dim.js         night dimming                     scheduler.js   the single timer
 
-import { conf, clockStyleNow, lowPower } from '../config.js';
+import { conf, clockStyleNow, lowPower, vars } from '../config.js';
 import { getSim } from '../simtime.js';
 import { SkyEngine } from './engine.js';
 import { Controls } from './controls.js';
@@ -31,12 +31,17 @@ const simFast = () => (getSim()?.scale || 1) > 1;
 function init() {
   performance.mark('app:init');
   try {
-    setEngine(new SkyEngine(canvas, { baseUrl: '.', lutScale: Number(new URLSearchParams(location.search).get('lut')) || 1 }));
+    {
+      const qs = new URLSearchParams(location.search), n = (k, d) => (Number.isFinite(parseFloat(qs.get(k))) ? parseFloat(qs.get(k)) : d);
+      // ?gov=1 (the Pi's program sets it): the quality governor keeps frames between ?minfps (15) and ?maxfps (60); ?level= starts it somewhere
+      setEngine(new SkyEngine(canvas, { baseUrl: '.', lutScale: n('lut', 1), governor: qs.has('gov') ? { floorFps: n('minfps', 15), ceilFps: n('maxfps', 60), level: qs.has('level') ? n('level', 5) : undefined } : false }));
+    }
   } catch (e) {
     startFallback(e.message);
     return;
   }
   performance.mark('sky:engine-created');
+  engine.onTick = (ms) => { vars.tick = ms; };           // the clock ticks as fast as the governor says the frames allow
   window.__sky = engine;                         // handy for debugging / tests
   setControls(new Controls(engine, { onToast: toast, onChange: () => { glassRef?.updateLight(); }, onUserMove: () => updateHomeButton(), onReset: () => returnToDefaultView() }));
   window.__controls = controls;

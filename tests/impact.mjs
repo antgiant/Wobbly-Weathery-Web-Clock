@@ -21,6 +21,7 @@ export const RULES = [
   [/^js\/(install)\.js$/, ['options']],
   [/^js\/(offline|version)\.js$|^sw\.js$|^manifest\.webmanifest$|^icons\//, ['offline', 'smoke']],
   [/^js\/(wakelock|settings_gear)\.js$/, ['settings', 'options']],
+  [/^js\/sky\/governor\.js$/, ['sky', 'led', 'perf']],                         // the quality governor (off unless asked for; the Pi's program asks)
   [/^js\/sky\/glsl-scene\.js$/, ['sky', 'led', 'digitweather']],
   [/^js\/sky\/glass\.js$/, ['sky', 'led', 'digitweather', 'options']],
   [/^js\/sky\/(glsl-plants|plants|biome|landscape|lightpollution)\.js$/, ['sky', 'smoke']],

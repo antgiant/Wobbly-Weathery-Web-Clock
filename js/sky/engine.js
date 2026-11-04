@@ -11,6 +11,7 @@
 // one (drifting clouds, water, twinkle) ~15 fps, and look-around modes run at
 // the display rate with the render scale adapting to hold the frame rate.
 
+import { Governor } from './governor.js';
 import {
   VERT_FULLSCREEN, FRAG_TRANSMITTANCE, FRAG_MULTISCATTER, FRAG_SKYVIEW,
 } from './glsl-atmosphere.js';
@@ -37,9 +38,14 @@ const norm3 = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0]
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 
 export class SkyEngine {
-  constructor(canvas, { baseUrl = '.', lutScale = 1 } = {}) {
+  constructor(canvas, { baseUrl = '.', lutScale = 1, governor = false } = {}) {
     this.canvas = canvas;
     this.baseUrl = baseUrl;
+    // The quality governor (governor.js), when asked for: keeps frames between a floor and a ceiling by moving along a ladder of quality levels.
+    // Off by default (the page then behaves as it always did); the Pi's program switches it on.
+    this.gov = governor ? new Governor(typeof governor === 'object' ? governor : {}) : null;
+    this.onTick = null;                                   // (ms) => void: how long the clock should wait between frames while something moves
+    if (this.gov) lutScale = this.gov.knobs.lut;
     this.lutScale = Math.min(1, Math.max(0.1, lutScale));       // the sky tables' size: 1 is full; a slow machine (a CPU doing the drawing) asks for less, at the cost of finer detail in the sky's colour gradients
     const gl = canvas.getContext('webgl2', {
       alpha: false, antialias: false, depth: false, stencil: false,
@@ -78,8 +84,10 @@ export class SkyEngine {
     this.perf = { acc: 0, n: 0, last: 0 };
     this.fast = false;              // look-around / drag: render every display frame
     this.listeners = new Set();
+    this.presenters = new Set();
     this.exposure = { adaptSnap: true };
     this._init();
+    if (this.gov) this.applyKnobs();
   }
 
   // ------------------------------------------------------------- setup ----
@@ -346,7 +354,29 @@ export class SkyEngine {
 
   get now() { return simNow(); }
 
+  /**
+   * The host says what a frame cost to make and show (ms; a host that copies frames out measures this; a browser cannot). `kind` is 'glass' (only the
+   * digits moved) or 'scene' (the sky was redrawn too: it happens rarely, so a hitch of four frames' worth counts as one).
+   */
+  reportFrame(costMs, kind = 'glass') {
+    const g = this.gov; if (!g) return;
+    if (g.report(kind === 'scene' ? costMs * 0.25 : costMs, performance.now())) this.applyKnobs();
+    if (this.onTick) this.onTick(g.tickMs);
+  }
+  /** Puts the governor's current level into effect. */
+  applyKnobs() {
+    const g = this.gov; if (!g) return;
+    const k = g.knobs;
+    this.s.scale = k.scale;
+    this.s.outScale = this.glass.led.on ? 1 : k.outScale;          // an LED panel needs its cells at the size they are read back
+    this.starFrac = k.stars;
+    this.knobs = k;
+    this.dirty = true;
+  }
   onFrame(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
+  /** Called after anything changed what is on the canvas: a full render, or only the glass pass (a digit moved). A host that has to copy frames somewhere (the Pi) listens to this. */
+  onPresent(fn) { this.presenters.add(fn); return () => this.presenters.delete(fn); }
+  _presented(kind) { for (const fn of this.presenters) fn(this, kind); }
 
   // ----------------------------------------------------------- astronomy ---
   _updateAstro(perfNow, force) {
@@ -459,6 +489,7 @@ export class SkyEngine {
   interval() {
     const sim = getSim();
     if (this.fast || (sim && sim.scale > 1)) return 0;
+    if (this.gov) { const k = this.gov.knobs; return this._animated() ? Math.max(1000 / this.s.fps, k.skyMs * 0.25) : k.skyMs; }     // the governor decides how often the sky is redrawn
     if (this._animated()) return this.s.lowPower ? 900 : 1000 / this.s.fps;    // saving power: an animated scene (the sea) redraws only with the clock's tick, once a second
     return 1000;
   }
@@ -523,8 +554,9 @@ export class SkyEngine {
 
     // canvas / scene size
     const dpr = Math.min(window.devicePixelRatio || 1, s.maxDpr);
-    const cw = Math.max(2, Math.floor(this.canvas.clientWidth * dpr));
-    const ch = Math.max(2, Math.floor(this.canvas.clientHeight * dpr));
+    const out = this.glass.led.on || this.s.outScale == null ? 1 : this.s.outScale;       // the output's own size, below 1 when the governor saves work (the screen enlarges it)
+    const cw = Math.max(2, Math.floor(this.canvas.clientWidth * dpr * out));
+    const ch = Math.max(2, Math.floor(this.canvas.clientHeight * dpr * out));
     if (this.canvas.width !== cw || this.canvas.height !== ch) { this.canvas.width = cw; this.canvas.height = ch; }
     const rw = Math.max(2, Math.round(cw * s.scale)), rh = Math.max(2, Math.round(ch * s.scale));
     this._ensureScene(rw, rh);
@@ -658,6 +690,7 @@ export class SkyEngine {
     }
     this._autoScale(perfNow);
     for (const fn of this.listeners) fn(this);
+    this._presented('scene');
   }
 
   /** Scene -> canvas, with the glass clock. `scene` is true right after the scene was redrawn. */
@@ -840,6 +873,7 @@ export class SkyEngine {
     if (!this.sceneTarget) { this.dirty = true; return; }
     this._blit(!this._mipsValid && this.glass.mode > 0);
     if (this.glass.mode > 0) this._mipsValid = true;
+    this._presented('glass');
   }
 
   _bindSkyUniforms(sky, sunAz, sunAlt, sunLux, moonAz, moonAlt, moonLux, natural, lp, camH) {
@@ -935,7 +969,7 @@ export class SkyEngine {
     this._1f('uExtraK', Math.max(0, (w.aod - 0.12) * 1.1));
     this._1f('uWorld', 0);
     gl.bindVertexArray(this.vaoStars);
-    gl.drawArrays(gl.POINTS, 0, this.starCount);
+    gl.drawArrays(gl.POINTS, 0, Math.max(1, Math.floor(this.starCount * (this.starFrac == null ? 1 : this.starFrac))));      // (the file is brightest first: fewer stars are the brightest ones)
 
     if (sky.planets.length) {
       const data = new Float32Array(sky.planets.length * 5);
@@ -953,7 +987,7 @@ export class SkyEngine {
   // ------------------------------------------------ adaptive resolution ----
   _autoScale(perfNow) {
     const s = this.s, p = this.perf;
-    if (s.quality !== 'auto') return;
+    if (s.quality !== 'auto' || this.gov) return;           // (the governor, when there is one, owns the scale)
     if (p.last) {
       const dt = perfNow - p.last;
       const target = this.fast ? 1000 / 58 : this.interval() || 16.7;
