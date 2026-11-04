@@ -94,6 +94,22 @@ fn matches_the_web_code() {
                 for (i, (g, w)) in got.iter().zip(&want).enumerate() { assert!((g - w).abs() < 0.051, "{at}: point {i}: got {g}, want {w}"); }
                 n_cd += 1;
             }
+            "moonpos" => {
+                let (alt, az) = wobbly_core::moon::position(f(c[3]), f(c[1]), f(c[2]));
+                assert!((alt - f(c[4])).abs() < 0.6, "{at}: moon altitude {alt}");
+                let d = ((az - f(c[5]) + 540.0).rem_euclid(360.0) - 180.0).abs();
+                if f(c[1]).abs() < 60.0 && f(c[4]).abs() < 80.0 { assert!(d < 1.0, "{at}: moon azimuth {az}"); }
+                assert!((wobbly_core::moon::illumination(f(c[3])) - f(c[6])).abs() < 0.02, "{at}: lit fraction {}", wobbly_core::moon::illumination(f(c[3])));
+                n_cd += 1;
+            }
+            "headfor" => { let g = wobbly_core::follow::heading_for_sun_at(f(c[1]), f(c[2]), f(c[3]), 6.9, (40.0f64).to_radians().tan()); assert!(((g - f(c[4]) + 540.0).rem_euclid(360.0) - 180.0).abs() < 1e-3, "{at}: {g}"); n_cd += 1; }
+            "follow" => {
+                let g = wobbly_core::follow::follow_heading(f(c[3]), f(c[1]), f(c[2]), 6.9, (40.0f64).to_radians().tan());
+                let d = ((g - f(c[4]) + 540.0).rem_euclid(360.0) - 180.0).abs();
+                // events differ by up to a minute between the two programs, which moves the night interpolation by a small fraction of a degree
+                assert!(d < 0.3, "{at}: heading {g}, the page's {} ({d} degrees apart)", f(c[4]));
+                n_cd += 1;
+            }
             "tz" => {}                       // read by tests/tz.rs
             other => panic!("unknown vector kind {other} at {at}"),
         }

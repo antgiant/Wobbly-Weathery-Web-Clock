@@ -77,13 +77,17 @@ pub fn background(scene: &Scene, t_ms: f64, w: usize, h: usize) -> (Vec<f32>, Sk
     let mut starlight = vec![0.0f64; if seen > 0.02 { w * h } else { 0 }];
     if seen > 0.02 { for s in crate::stars::field(w, h, sky_px) { starlight[s.y * w + s.x] = s.brightness * seen; } }
     // the sun: a small warm disc with a glow, in the sky only
-    let sun_disc = crate::disc::sun_position(t_ms, scene.lat, scene.lon, scene.horizon).map(|(x, y)| (x * w as f64, y * h as f64, (0.006 * w as f64).max(1.0)));
+    let sun_disc = crate::disc::sun_position_in(t_ms, scene.lat, scene.lon, scene.horizon, w as f64 / h as f64).map(|(x, y)| (x * w as f64, y * h as f64, (0.006 * w as f64).max(1.0)));
+    // the moon: a disc, lit as much as it is, its bright side towards the sun; faint by day
+    let moon = crate::disc::moon_position(t_ms, scene.lat, scene.lon, scene.horizon, w as f64 / h as f64).map(|(x, y, dir, k)| (x * w as f64, y * h as f64, (0.006 * w as f64).max(1.5), dir, k));
+    let day = crate::weather::daylight(alt);
     let mut out = Vec::with_capacity(w * h * 3);
     for y in 0..h {
         let bg = at_row(&colors, y as f64 + 0.5, h as f64, scene.horizon);
         for x in 0..w {
             let mut base = bg;
             if let Some((cx, cy, r)) = sun_disc { if y < sky_px { let a = crate::disc::weight(x as f64 + 0.5 - cx, y as f64 + 0.5 - cy, r); if a > 0.0 { base = [0, 1, 2].map(|k| bg[k] + ([255.0, 248.0, 225.0][k] - bg[k]) * a); } } }
+            if let Some((cx, cy, r, dir, k)) = moon { if y < sky_px + 2 { let (edge, lit) = crate::moon::disc(x as f64 + 0.5 - cx, y as f64 + 0.5 - cy, r, dir.0, dir.1, k); if edge > 0.0 { let a = (lit * (1.0 - 0.55 * day)).clamp(0.0, 1.0); let under = base; base = [0, 1, 2].map(|c| under[c] + ([232.0, 234.0, 240.0][c] - under[c]) * a); } } }
             if !starlight.is_empty() { let a = starlight[y * w + x]; if a > 0.0 { let under = base; base = [0, 1, 2].map(|k| under[k] + (235.0 - under[k]).max(0.0) * a); } }
             out.extend(base.iter().map(|v| *v as f32));
         }
@@ -127,7 +131,7 @@ fn glass_style(scene: &Scene, alt: f64, centers: Vec<f64>) -> GlassStyle {
 pub fn bends_for(scene: &Scene, t_ms: f64, text: &str) -> Vec<f64> {
     if scene.sway != "lean" && scene.sway != "full" { return vec![]; }
     let (speed, to_az) = scene.wx.ground_wind();
-    let heading = crate::disc::follow_heading(t_ms, scene.lat, scene.lon);
+    let heading = crate::disc::heading_for(t_ms, scene.lat, scene.lon, scene.horizon, 16.0 / 9.0);
     let (lean, gust) = crate::wind::sway_for(speed, to_az, heading);
     const PHASE: [f64; 6] = [0.4, 2.1, 3.7, 5.2, 1.3, 4.4];                 // h0 h1 m0 m1 s0 s1
     let n = crate::frame::pieces(text).iter().filter(|p| p.is_some()).count();

@@ -126,6 +126,31 @@ for (const z of ZONES) {
   function f6(v) { return Number(v).toFixed(9); }
 }
 
+// ---- follow the sun: the heading the page turns the camera to (js/sky/sunpath.js followHeading) ----
+{
+  const { followHeading, headingForSunAt } = await import('../js/sky/sunpath.js');
+  const view = { pitch: 6.9, tanX: Math.tan(40 * Math.PI / 180) };
+  for (const [az, alt, x] of [[85, 30, 0.75], [267, 10, 0.25], [180, 60, 0.5], [120, 5, 0.7], [300, 25, 0.3]]) lines.push(['headfor', az, alt, x, headingForSunAt(az, alt, x, view.pitch, view.tanX).toFixed(5)].join('\t'));
+  for (const [lat, lon] of [[40.7, -74], [-33.9, 151.2], [51.5, -0.13], [1.35, 103.8], [64.15, -21.94]]) {
+    for (const iso of ['2026-03-20T09:00:00Z', '2026-03-20T20:00:00Z', '2026-06-21T05:00:00Z', '2026-06-21T14:00:00Z', '2026-06-21T23:30:00Z', '2026-09-23T03:00:00Z', '2026-12-21T08:00:00Z', '2026-12-21T17:30:00Z', '2026-12-22T01:00:00Z', '2026-11-18T02:00:00Z', '2026-11-18T03:00:00Z']) {
+      const d = new Date(iso);
+      lines.push(['follow', lat, lon, +d, followHeading(d, lat, lon, 0, view).toFixed(4)].join('\t'));
+    }
+  }
+}
+
+// ---- the moon: height, bearing and the lit fraction, from the astronomy library ----
+{
+  for (const [lat, lon] of [[40.7, -74], [-33.9, 151.2], [64.15, -21.94], [1.35, 103.8], [51.5, -0.13]]) {
+    const obs = new Astronomy.Observer(lat, lon, 0);
+    for (const iso of ['2026-01-03T03:00:00Z', '2026-03-20T21:00:00Z', '2026-06-21T02:00:00Z', '2026-06-29T14:00:00Z', '2026-09-23T10:00:00Z', '2026-11-04T18:30:00Z', '2026-12-24T05:15:00Z', '2027-02-14T23:00:00Z']) {
+      const d = new Date(iso), t = Astronomy.MakeTime(d), eq = Astronomy.Equator('Moon', t, obs, true, true), hz = Astronomy.Horizon(t, obs, eq.ra, eq.dec, null);
+      const ill = Astronomy.Illumination('Moon', t);
+      lines.push(['moonpos', lat, lon, +d, hz.altitude.toFixed(4), hz.azimuth.toFixed(4), ill.phase_fraction.toFixed(5)].join('\t'));
+    }
+  }
+}
+
 // ---- the Christmas season (js/season.js): Thanksgiving to December 25, for every day of several years ----
 {
   const { thanksgivingDay, isChristmasSeason } = await import('../js/season.js');
