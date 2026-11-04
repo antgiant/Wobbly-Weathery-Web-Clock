@@ -216,7 +216,7 @@ Not done:
 
 Decision: the web page and the Pi share ONE renderer, the JavaScript + GLSL under `js/sky/`. The browser is one host; `native/host` (Rust, QuickJS, EGL/OpenGL ES) is the other. The Rust re-implementation in `native/core` is to be retired once the host covers everything it does.
 
-- [x] Spike: the host runs the unmodified `SkyEngine` and renders a frame. Compared with Chromium at the same moment (`native/host/tests/chromium-frame.mjs`, `ppm-diff.mjs`): sky, sun, horizon and haze match; the ground differs because the ground texture comes from a 2D canvas the host does not draw yet.
+- [x] Spike: the host runs the unmodified `SkyEngine` and renders a frame. Compared with Chromium at the same moment (`native/host/tests/chromium-frame.mjs`, `ppm-diff.mjs`): with Mesa's exact software renderer (softpipe) the frames match: mean difference 0.5/255, 0.04% of pixels differ by more than 8. (Mesa's faster llvmpipe miscompiles some of the engine's noise arithmetic in this environment, giving a flat ground; the check therefore uses softpipe. The native workflow has a job that runs the comparison.) The 2D canvas is not needed for this frame; it is for the glass, LED card and favicon.
 - [ ] 2D canvas subset (Cairo) for `biome.js`, `appearance.js`, `glass.js`, `ledcard.js`; a DOM-free layout for the digits shared by both hosts.
 - [ ] Outputs: KMS/GBM direct display; LED panel via readback into `wobbly-matrix`.
 - [ ] OpenGL ES 2.0 shader profile (Pi 3); Pi Zero after that.

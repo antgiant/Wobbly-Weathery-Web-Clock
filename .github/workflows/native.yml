@@ -6,9 +6,9 @@ name: Native
 
 on:
   push:
-    paths: ['native/**', 'docs/LED-PANELS.md', 'schema/**', 'js/share.js', 'js/countdown.js', 'js/sky/dim.js', 'js/easing.js', 'js/config.js', 'tools/native-*.mjs', '.github/workflows/native.yml']
+    paths: ['native/**', 'js/sky/**', 'js/vendor/**', 'data/**', 'docs/LED-PANELS.md', 'schema/**', 'js/share.js', 'js/countdown.js', 'js/sky/dim.js', 'js/easing.js', 'js/config.js', 'tools/native-*.mjs', '.github/workflows/native.yml']
   pull_request:
-    paths: ['native/**', 'docs/LED-PANELS.md', 'schema/**', 'js/share.js', 'js/countdown.js', 'js/sky/dim.js', 'js/easing.js', 'js/config.js', 'tools/native-*.mjs', '.github/workflows/native.yml']
+    paths: ['native/**', 'js/sky/**', 'js/vendor/**', 'data/**', 'docs/LED-PANELS.md', 'schema/**', 'js/share.js', 'js/countdown.js', 'js/sky/dim.js', 'js/easing.js', 'js/config.js', 'tools/native-*.mjs', '.github/workflows/native.yml']
   workflow_dispatch:
 
 permissions:
@@ -40,6 +40,37 @@ jobs:
           node native/cli/main.mjs get
           node native/cli/main.mjs capabilities
           mandoc -Tutf8 native/man/wobbly-clock.conf.5 | head -40
+
+  host:
+    name: The native host draws what the browser draws
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Install the GPU libraries the host loads (Mesa)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libegl1 libgles2 libgl1-mesa-dri
+      - name: Build the host
+        run: cargo build --release -p wobbly-host --manifest-path native/Cargo.toml
+      - name: One sky, drawn by the host and by Chromium
+        # softpipe is Mesa's slow but exact software renderer: llvmpipe miscompiles some of the engine's integer noise code on some versions,
+        # which is a fault of that renderer, not of the shaders (the Raspberry Pi drivers are not affected: they are checked on real hardware)
+        env:
+          GALLIUM_DRIVER: softpipe
+        run: |
+          native/target/release/wobbly-host . "$RUNNER_TEMP/host.ppm" 480 270
+          node native/host/tests/chromium-frame.mjs "$RUNNER_TEMP/chrome.ppm"
+          node native/host/tests/ppm-diff.mjs "$RUNNER_TEMP/host.ppm" "$RUNNER_TEMP/chrome.ppm" 8 "$RUNNER_TEMP/diff.ppm" --max-mean 1.5 --max-over 1
+      - name: The pictures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-frames
+          path: ${{ runner.temp }}/*.ppm
 
   core:
     name: Rust core (tests, and builds for every Pi)

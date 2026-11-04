@@ -9,6 +9,7 @@ e.set(JSON.parse(__args.state));
 e.render(Date.parse(__args.time));
 e.render(Date.parse(__args.time));
 const gl = canvas.getContext('webgl2');
+console.log('GL error after render: 0x' + gl.getError().toString(16));
 gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 const px = new Uint8Array(W * H * 4);
 gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, px);
