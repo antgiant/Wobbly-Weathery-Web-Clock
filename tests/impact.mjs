@@ -13,6 +13,7 @@ export const RULES = [
   [/^js\/(wind\.js|sky\/windsway\.js)$/, ['wind', 'clock']],
   [/^js\/(clock|easing)\.js$/, ['clock', 'countdown', 'wind', 'led']],
   [/^js\/countdown\.js$/, ['countdown', 'clock']],
+  [/^js\/clocklayout\.js$/, ['clocklayout']],                               // the digits' boxes as a pure function (used by the native host); compared with the page
   [/^js\/(location)\.js$/, ['place', 'startup', 'settings']],
   [/^js\/(config|units|simtime|index)\.js$|^schema\//, 'ALL'],
   [/^native\/|^docs\//, []],                                              // the native version has its own checks; notes are only notes

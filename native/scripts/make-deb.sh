@@ -1,6 +1,7 @@
 #!/bin/sh
-# Builds a .deb of the static renderer: native/scripts/make-deb.sh <armhf|arm64> <path to wobbly-clock-run> <version> <output dir>
-# armhf carries the ARMv6 build, which runs on every 32-bit Pi (Zero to 4); arm64 the 64-bit one. No dependencies: the binary is static.
+# Builds a .deb of the clock program: native/scripts/make-deb.sh <armhf|arm64> <path to wobbly-clock-run> <version> <output dir>
+# armhf carries the ARMv6 build, which runs on every 32-bit Pi (Zero to 4); arm64 the 64-bit one. One program holds the page's own code and data; it loads
+# the GPU driver (Mesa) at run time, hence the Depends below.
 set -eu
 arch="$1"; bin="$2"; version="$3"; out="$4"
 here="$(cd "$(dirname "$0")/.." && pwd)"; root="$(cd "$here/.." && pwd)"
@@ -37,7 +38,7 @@ cat > "$pkg/etc/wobbly-clock/wobbly-clock.conf" <<'CONF'
 # For an LED panel: output = matrix, and matrixConfig = /etc/wobbly-clock/matrix.cfg (rpi-fb-matrix's format)
 CONF
 cp "$root/docs/LED-PANELS.md" "$pkg/usr/share/doc/wobbly-clock/LED-PANELS.md"
-# the command line (`wobbly-clock setup | get | set | ...`) runs on Node, which is recommended, not required: the renderer is a static program and works without it
+# the command line (`wobbly-clock setup | get | set | ...`) runs on Node, which is recommended, not required: the clock program works without it
 share="$pkg/usr/share/wobbly-clock"
 install -d "$share/native/cli" "$share/schema" "$share/js"
 cp "$root"/native/cli/*.mjs "$share/native/cli/"
@@ -77,12 +78,14 @@ Maintainer: Wobbly Weathery Web Clock <noreply@users.noreply.github.com>
 Installed-Size: $size
 Section: misc
 Priority: optional
-Recommends: nodejs (>= 18), curl, openssl
+Depends: libegl1, libgles2, libgl1-mesa-dri, libdrm2, libgbm1, libatomic1, curl
+Recommends: nodejs (>= 18), openssl
 Homepage: https://github.com/antgiant/Wobbly-Weathery-Web-Clock
 Description: a clock in front of a real-time sky, for a Raspberry Pi
- The native renderer of Wobbly Weathery Web Clock: shows the time over a sky
- computed for your place, on an HDMI screen or (with wobbly-matrix) an LED
- panel. One static program, no browser, no desktop; works on Raspberry Pi OS
+ Wobbly Weathery Web Clock without a browser: the web page's own code (the
+ same sky simulation, the same Liquid Glass digits) runs in a small program
+ that draws with the Pi's GPU straight to an HDMI screen or (with
+ wobbly-matrix) an LED panel. No browser, no desktop; works on Raspberry Pi OS
  Lite. Settings are the web page's, in /etc/wobbly-clock/wobbly-clock.conf.
 CTRL
 mkdir -p "$out"

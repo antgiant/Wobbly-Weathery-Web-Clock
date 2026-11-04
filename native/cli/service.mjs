@@ -22,6 +22,8 @@ ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/wobbly-clock
 StateDirectory=wobbly-clock
+# the GPU driver's shader cache and the page's saved state live in the service's own folder
+Environment=MESA_SHADER_CACHE_DIR=/var/lib/wobbly-clock/mesa WOBBLY_STORE=/var/lib/wobbly-clock/state.json
 
 [Install]
 WantedBy=multi-user.target

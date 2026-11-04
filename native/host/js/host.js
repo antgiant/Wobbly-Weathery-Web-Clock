@@ -40,8 +40,71 @@ G.document = {
 };
 G.addEventListener = () => {}; G.removeEventListener = () => {};
 
-// ---- 2D canvas: not yet (a later step draws it with Cairo); calls are accepted and ignored ---------------------------
-const noop2d = new Proxy({}, { get: (t, k) => k === 'canvas' ? undefined : (k in t ? t[k] : (...a) => (k.startsWith('create') ? { addColorStop() {} } : k === 'measureText' ? { width: 0 } : undefined)), set: (t, k, v) => { t[k] = v; return true; } });
+// ---- 2D canvas (drawn natively by tiny-skia; this keeps the style state and sends each drawing call with the style resolved) --------
+const NAMED = { white: [255, 255, 255, 1], black: [0, 0, 0, 1], transparent: [0, 0, 0, 0], red: [255, 0, 0, 1], green: [0, 128, 0, 1], blue: [0, 0, 255, 1] };
+function parseColor(c) {
+  if (Array.isArray(c)) return c;
+  c = String(c).trim().toLowerCase();
+  if (NAMED[c]) return NAMED[c];
+  let m = c.match(/^#([0-9a-f]{3,8})$/);
+  if (m) { let h = m[1]; if (h.length <= 4) h = h.split('').map(x => x + x).join(''); const n = (i) => parseInt(h.slice(i, i + 2), 16); return [n(0), n(2), n(4), h.length === 8 ? n(6) / 255 : 1]; }
+  m = c.match(/^rgba?\(([^)]*)\)$/);
+  if (m) { const p = m[1].split(/[,\s/]+/).filter(Boolean).map(x => x.endsWith('%') ? parseFloat(x) * 2.55 : parseFloat(x)); return [p[0], p[1], p[2], p.length > 3 ? p[3] / (m[1].includes('%') ? 2.55 : 1) : 1]; }
+  return [0, 0, 0, 1];
+}
+const c01 = (c) => [c[0] / 255, c[1] / 255, c[2] / 255, c[3]];
+class Gradient { constructor(o) { Object.assign(this, o); this.stops = []; } addColorStop(off, col) { this.stops.push([off, c01(parseColor(col))]); } }
+G.Path2D = class { constructor(d) { this.d = typeof d === 'string' ? d : null; this.cmds = []; } };
+const isCanvas = (o) => !!o && typeof o._ensure === 'function';
+const srcPixels = (im) => isCanvas(im) ? (im._ensure(), { w: im.width, h: im.height, data: __c2d_read(im._id, 0, 0, im.width, im.height) }) : { w: im.width, h: im.height, data: im._rgba };
+class Ctx2D {
+  constructor(canvas) {
+    this.canvas = canvas; this.fillStyle = '#000'; this.strokeStyle = '#000'; this.lineWidth = 1; this.lineCap = 'butt'; this.lineJoin = 'miter'; this.miterLimit = 10;
+    this.globalAlpha = 1; this.globalCompositeOperation = 'source-over'; this.font = '10px sans-serif'; this.textBaseline = 'alphabetic'; this.textAlign = 'start';
+    this.imageSmoothingEnabled = true; this._path = []; this._stack = [];
+  }
+  _c(op, arg, buf) { this.canvas._ensure(); __c2d_call(this.canvas._id, op, JSON.stringify(arg), buf); }
+  _paint(st) { if (st instanceof Gradient) return st.kind === 'lin' ? { k: 'lin', x0: st.x0, y0: st.y0, x1: st.x1, y1: st.y1, stops: st.stops } : { k: 'rad', x0: st.x0, y0: st.y0, r0: st.r0, x1: st.x1, y1: st.y1, r1: st.r1, stops: st.stops }; return { k: 'color', c: c01(parseColor(st)) }; }
+  save() { this._stack.push({ fs: this.fillStyle, ss: this.strokeStyle, lw: this.lineWidth, lc: this.lineCap, lj: this.lineJoin, ga: this.globalAlpha, gc: this.globalCompositeOperation }); this._c('save', {}); }
+  restore() { const s = this._stack.pop(); if (s) { this.fillStyle = s.fs; this.strokeStyle = s.ss; this.lineWidth = s.lw; this.lineCap = s.lc; this.lineJoin = s.lj; this.globalAlpha = s.ga; this.globalCompositeOperation = s.gc; } this._c('restore', {}); }
+  setTransform(a, b, c, d, e, f) { if (typeof a === 'object') ({ a, b, c, d, e, f } = a); this._c('setTransform', { a, b, c, d, e, f }); }
+  resetTransform() { this.setTransform(1, 0, 0, 1, 0, 0); }
+  transform(a, b, c, d, e, f) { this._c('transform', { a, b, c, d, e, f }); }
+  translate(x, y) { this.transform(1, 0, 0, 1, x, y); }
+  scale(x, y) { this.transform(x, 0, 0, y, 0, 0); }
+  rotate(r) { const c = Math.cos(r), s = Math.sin(r); this.transform(c, s, -s, c, 0, 0); }
+  clearRect(x, y, w, h) { this._c('clearRect', { x, y, w, h }); }
+  fillRect(x, y, w, h) { this._c('fillRect', { x, y, w, h, paint: this._paint(this.fillStyle), alpha: this.globalAlpha, op: this.globalCompositeOperation }); }
+  strokeRect(x, y, w, h) { this._c('stroke', { path: [['rect', x, y, w, h]], paint: this._paint(this.strokeStyle), alpha: this.globalAlpha, op: this.globalCompositeOperation, lineWidth: this.lineWidth, cap: this.lineCap, join: this.lineJoin }); }
+  beginPath() { this._path = []; }
+  closePath() { this._path.push(['Z']); }
+  moveTo(x, y) { this._path.push(['M', x, y]); }
+  lineTo(x, y) { this._path.push(['L', x, y]); }
+  bezierCurveTo(a, b, c, d, e, f) { this._path.push(['C', a, b, c, d, e, f]); }
+  quadraticCurveTo(a, b, c, d) { this._path.push(['Q', a, b, c, d]); }
+  arc(x, y, r, a0, a1, ccw) { this._path.push(['arc', x, y, r, a0, a1, !!ccw]); }
+  rect(x, y, w, h) { this._path.push(['rect', x, y, w, h]); }
+  roundRect(x, y, w, h, r) { this._path.push(['roundRect', x, y, w, h, Array.isArray(r) ? r[0] : r]); }
+  _draw(op, p, rule) {
+    const o = { paint: this._paint(op === 'fill' ? this.fillStyle : this.strokeStyle), alpha: this.globalAlpha, op: this.globalCompositeOperation, lineWidth: this.lineWidth, cap: this.lineCap, join: this.lineJoin, miter: this.miterLimit, rule };
+    if (p instanceof Path2D) { if (p.d) o.d = p.d; else o.path = p.cmds; } else o.path = this._path;
+    this._c(op, o);
+  }
+  fill(p, rule) { if (typeof p === 'string') { rule = p; p = undefined; } this._draw('fill', p, rule); }
+  stroke(p) { this._draw('stroke', p); }
+  createLinearGradient(x0, y0, x1, y1) { return new Gradient({ kind: 'lin', x0, y0, x1, y1 }); }
+  createRadialGradient(x0, y0, r0, x1, y1, r1) { return new Gradient({ kind: 'rad', x0, y0, r0, x1, y1, r1 }); }
+  drawImage(im, a, b, c, d, e, f, g, h) {
+    const s = srcPixels(im); let cx = 0, cy = 0, cw = s.w, ch = s.h, dx, dy, dw = s.w, dh = s.h;
+    if (g !== undefined) { [cx, cy, cw, ch, dx, dy, dw, dh] = [a, b, c, d, e, f, g, h]; } else if (c !== undefined) { [dx, dy, dw, dh] = [a, b, c, d]; } else { dx = a; dy = b; }
+    this._c('drawImage', { sw: s.w, sh: s.h, cx, cy, cw, ch, dx, dy, dw, dh, alpha: this.globalAlpha, op: this.globalCompositeOperation }, s.data);
+  }
+  getImageData(x, y, w, h) { this.canvas._ensure(); const id = new ImageData(w, h); id.data.set(new Uint8Array(__c2d_read(this.canvas._id, x, y, w, h))); return id; }
+  createImageData(w, h) { return new ImageData(w, h); }
+  putImageData(img, x, y) { this._c('putImageData', { w: img.width, h: img.height, x, y }, img.data.buffer.slice(img.data.byteOffset, img.data.byteOffset + img.data.byteLength)); }
+  measureText(t) { const m = /(\d+(?:\.\d+)?)px/.exec(this.font); return { width: String(t).length * (m ? +m[1] : 10) * 0.56 }; }   // no text engine yet: an estimate
+  fillText() {} strokeText() {} clip() {} setLineDash() {}
+}
 
 // ---- WebGL2 over the native dispatcher -----------------------------------------------------------------------------
 const C = { DEPTH_BUFFER_BIT: 0x100, COLOR_BUFFER_BIT: 0x4000, POINTS: 0, TRIANGLES: 4, ZERO: 0, ONE: 1, SRC_ALPHA: 0x302, ONE_MINUS_SRC_ALPHA: 0x303, DST_ALPHA: 0x304, BLEND: 0xBE2,
@@ -87,7 +150,8 @@ function makeGL(canvas) {
     uniformMatrix3fv: (l, t, m) => l && call('uniformMatrix3fv', l.loc, t, buf(m instanceof Float32Array ? m : new Float32Array(m))),
     texImage2D(target, level, internal, a, b, c, d, e, f) {
       if (f === undefined) {                       // (target, level, internal, format, type, source)
-        const src = c; if (src && src._rgba) return call('texImage2D', target, level, internal, src.width, src.height, 0, a, b, src._rgba);
+        const src = c; if (isCanvas(src)) { const p = srcPixels(src); return call('texImage2D', target, level, internal, p.w, p.h, 0, a, b, p.data); }
+        if (src && src._rgba) return call('texImage2D', target, level, internal, src.width, src.height, 0, a, b, src._rgba);
         return call('texImage2D', target, level, internal, 1, 1, 0, a, b, new Uint8Array(4).buffer);   // a canvas with no 2D pixels yet
       }
       return call('texImage2D', target, level, internal, a, b, c, d, e, f === null ? null : buf(f));
@@ -114,12 +178,17 @@ function makeGL(canvas) {
 }
 
 class Canvas {
-  constructor() { this.width = 300; this.height = 150; this.clientWidth = 300; this.clientHeight = 150; this.style = {}; }
+  constructor() { this._w = 300; this._h = 150; this._id = -1; this.clientWidth = 300; this.clientHeight = 150; this.style = {}; }
+  _ensure() { if (this._id < 0) this._id = __c2d_new(this._w, this._h); }
+  get width() { return this._w; } get height() { return this._h; }
+  set width(v) { this._w = v | 0; if (this._id >= 0) __c2d_resize(this._id, this._w, this._h); }
+  set height(v) { this._h = v | 0; if (this._id >= 0) __c2d_resize(this._id, this._w, this._h); }
   getContext(type) {
     if (type === 'webgl2') return (this._gl ||= makeGL(this));
-    if (type === '2d') return (this._2d ||= noop2d);
+    if (type === '2d') return (this._2d ||= new Ctx2D(this));
     return null;
   }
+  toDataURL() { return 'data:,'; }
 }
 G.HTMLCanvasElement = Canvas;
 
