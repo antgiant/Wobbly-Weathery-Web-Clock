@@ -31,7 +31,7 @@ const simFast = () => (getSim()?.scale || 1) > 1;
 function init() {
   performance.mark('app:init');
   try {
-    setEngine(new SkyEngine(canvas, { baseUrl: '.' }));
+    setEngine(new SkyEngine(canvas, { baseUrl: '.', lutScale: Number(new URLSearchParams(location.search).get('lut')) || 1 }));
   } catch (e) {
     startFallback(e.message);
     return;
