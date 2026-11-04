@@ -6,9 +6,9 @@ name: Native
 
 on:
   push:
-    paths: ['native/**', 'schema/**', 'js/share.js', 'tools/native-man.mjs', '.github/workflows/native.yml']
+    paths: ['native/**', 'schema/**', 'js/share.js', 'js/countdown.js', 'js/sky/dim.js', 'js/easing.js', 'js/config.js', 'tools/native-*.mjs', '.github/workflows/native.yml']
   pull_request:
-    paths: ['native/**', 'schema/**', 'js/share.js', 'tools/native-man.mjs', '.github/workflows/native.yml']
+    paths: ['native/**', 'schema/**', 'js/share.js', 'js/countdown.js', 'js/sky/dim.js', 'js/easing.js', 'js/config.js', 'tools/native-*.mjs', '.github/workflows/native.yml']
   workflow_dispatch:
 
 permissions:
@@ -40,3 +40,25 @@ jobs:
           node native/cli/main.mjs get
           node native/cli/main.mjs capabilities
           mandoc -Tutf8 native/man/wobbly-clock.conf.5 | head -40
+
+  core:
+    name: Rust core (tests, and builds for every Pi)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: The golden vectors and digit shapes are the web code's current ones
+        run: |
+          node tools/native-golden.mjs --check
+          node tools/native-digits.mjs --check
+      - name: Install the Rust targets
+        run: rustup target add arm-unknown-linux-gnueabihf aarch64-unknown-linux-gnu
+      - name: Tests (the Rust core agrees with the web code)
+        run: cargo test --manifest-path native/Cargo.toml
+      - name: Builds for the original Pi Zero (ARMv6) and for 64-bit Pis
+        run: |
+          cargo build --release --lib --manifest-path native/Cargo.toml --target arm-unknown-linux-gnueabihf
+          cargo build --release --lib --manifest-path native/Cargo.toml --target aarch64-unknown-linux-gnu

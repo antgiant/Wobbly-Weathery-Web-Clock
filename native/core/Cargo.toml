@@ -1,0 +1,8 @@
+[package]
+name = "wobbly-core"
+version = "0.1.0"
+edition = "2021"
+description = "The parts of Wobbly Weathery Web Clock that the native (Raspberry Pi) version shares with the web page, with no I/O and no dependencies"
+license = "MIT"
+
+[dependencies]

@@ -6,16 +6,17 @@
   "type": "module",
   "scripts": {
     "lint": "eslint .",
-    "test": "node tools/schema-json.mjs && node tools/native-man.mjs && node tools/stamp.mjs && npm run lint && node tests/run.mjs changed",
+    "test": "node tools/schema-json.mjs && node tools/native-man.mjs && node tools/native-digits.mjs && node tools/native-golden.mjs && node tools/stamp.mjs && npm run lint && node tests/run.mjs changed",
     "test:unit": "node tests/run.mjs unit",
     "test:browser": "node tests/run.mjs browser",
     "test:visual:update": "UPDATE_BASELINES=1 node tests/run.mjs browser visual",
     "serve": "python3 -m http.server 8000",
-    "test:quick": "node tools/schema-json.mjs && node tools/native-man.mjs && node tools/stamp.mjs && npm run lint && TIER=fast node tests/run.mjs all",
-    "test:full": "node tools/schema-json.mjs && node tools/native-man.mjs && node tools/stamp.mjs && npm run lint && node tests/run.mjs all",
+    "test:quick": "node tools/schema-json.mjs && node tools/native-man.mjs && node tools/native-digits.mjs && node tools/native-golden.mjs && node tools/stamp.mjs && npm run lint && TIER=fast node tests/run.mjs all",
+    "test:full": "node tools/schema-json.mjs && node tools/native-man.mjs && node tools/native-digits.mjs && node tools/native-golden.mjs && node tools/stamp.mjs && npm run lint && node tests/run.mjs all",
     "stamp": "node tools/stamp.mjs",
     "schema": "node tools/schema-json.mjs",
-    "man": "node tools/native-man.mjs"
+    "man": "node tools/native-man.mjs",
+    "golden": "node tools/native-golden.mjs"
   },
   "devDependencies": {
     "eslint": "^10.1.0",

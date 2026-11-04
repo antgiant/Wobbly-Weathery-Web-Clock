@@ -32,12 +32,14 @@ says so too). Nothing here may be copied by hand: generate from the schema, or i
 | `manpage.mjs` | `man wobbly-clock(1)` and `wobbly-clock.conf(5)` generated from the schema into `native/man/` |
 | `main.mjs` | the commands: `setup test get set presets preset apply import-matrix-cfg export-matrix-cfg install-service capabilities man` |
 
+**`native/core/`** is the start of the compiled side: a Rust crate (no dependencies, no I/O) with the **brightness model** (`dim.rs`, from `js/sky/dim.js`) and the **countdown digits** (`countdown.rs`, from `js/countdown.js`). Its tests read `core/tests/golden.tsv`, 2,295 vectors generated from the web code by `tools/native-golden.mjs`, and assert the same answers, so the two cannot drift (a JS unit test fails if the file is stale; `native.yml` runs `cargo test` and builds the crate for the original Pi Zero, `arm-unknown-linux-gnueabihf`, and for `aarch64`). It also has the **ten digit shapes** (`digits.rs`, generated from `dd` in `js/config.js` by `tools/native-digits.mjs`), the page's **morph** (`morph.rs`: `easeInOutBack` and the blend of two digits, checked against the web code's numbers) and a small **software rasteriser** (`raster.rs`: the four curves flattened and stroked 80 wide with soft edges, as coverage 0..1; this is what the HDMI and LED outputs will colour with the sky behind). `frame.rs` lays the time out ("12:34:56", colons as two round dots), centres and fits it to any size, and composes a frame (a gradient background for now, the time in the ink colour, a brightness factor) as RGB bytes; `cargo run --release --example frame -- 64 32 12:34 out.ppm` writes a picture. It reads well down to a 64 x 32 panel. Language decision: **Rust**.
+
 Not built: the **renderer** (the sky, digits and landscape drawn to HDMI or the matrix) and the release/packaging pipeline (static binary, `.deb`,
 download, install). `wobbly-clock run` does not exist yet; the service unit already points at it. The LED guide is [`../docs/LED-PANELS.md`](../docs/LED-PANELS.md).
 The command line is written in JavaScript so the settings, share links and brightness maths are the web page's own code; the renderer's
 language (Rust or C) is still to be decided, and the command line may move into it once it exists.
 
-## Layout (planned)
+## Layout (core exists; the rest is planned)
 
 ```
 native/
