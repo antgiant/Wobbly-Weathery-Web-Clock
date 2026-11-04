@@ -30,3 +30,15 @@ pub fn weight(dx: f64, dy: f64, r: f64) -> f64 {
     let glow = 0.3 * (-g * g).exp();
     core.max(glow)
 }
+
+/// The compass bearing the screen looks at in the "follow the sun" view: the sun is kept where `sun_position` puts it, so the heading is the sun's own
+/// bearing less its screen offset (the page's horizontal field of view is about 80 degrees). By night the screen goes on turning at the pace the sun
+/// would, so the heading stays continuous. 180 (south) where there is no sunrise or sunset to measure from.
+pub fn follow_heading(t_ms: f64, lat: f64, lon: f64) -> f64 {
+    let ev: SunEvents = sun::events(t_ms, lat, lon);
+    let (alt, az) = sun::position(t_ms, lat, lon);
+    let frac = if alt >= sun::RISE_SET_ALTITUDE && ev.prev_rise.is_finite() && ev.next_set.is_finite() && ev.next_set > ev.prev_rise { Some(((t_ms - ev.prev_rise) / (ev.next_set - ev.prev_rise)).clamp(0.0, 1.0)) }
+        else if alt < sun::RISE_SET_ALTITUDE && ev.prev_set.is_finite() && ev.next_rise.is_finite() && ev.next_rise > ev.prev_set { Some(1.0 + ((t_ms - ev.prev_set) / (ev.next_rise - ev.prev_set)).clamp(0.0, 1.0)) }
+        else { None };
+    match frac { Some(f) => (az - (0.5 + 0.35 * (std::f64::consts::PI * f).cos() - 0.5) * 80.0).rem_euclid(360.0), None => 180.0 }
+}

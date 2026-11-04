@@ -1,7 +1,7 @@
 //! The whole picture for a moment and a place: the sun decides the sky colours and the brightness, the time is drawn over it.
 
 use crate::dim::{brightness_at, SunEvents};
-use crate::frame::{draw_text, draw_text_stroked, field_text_region};
+use crate::frame::{draw_text_bent, field_text_bent};
 use crate::glass::{self, GlassStyle};
 use crate::digits::STROKE;
 use crate::sky::{at_row, colors_at, Rgb, SkyColors};
@@ -26,10 +26,16 @@ pub struct Scene {
     pub glow: f64,
     /// glass: "warm", "white", "cool" or "follow" (the sun or moon light)
     pub glow_color: String,
+    /// the full weather (for the wind and what lands on the digits); `weather` above is its look in a word
+    pub wx: crate::weather::Weather,
+    /// rain and snow on the digits (the page's `digitWeather`)
+    pub digit_weather: bool,
+    /// wind sway: "off", "lean" or "full"
+    pub sway: String,
 }
 
 impl Default for Scene {
-    fn default() -> Self { Scene { lat: 40.7, lon: -74.0, horizon: 0.63, brightness_day: 1.0, brightness_night: 1.0, transition_minutes: 45.0, weather: "clear".into(), style: "solid".into(), frost: 0.35, glow: 0.0, glow_color: "follow".into() } }
+    fn default() -> Self { Scene { lat: 40.7, lon: -74.0, horizon: 0.63, brightness_day: 1.0, brightness_night: 1.0, transition_minutes: 45.0, weather: "clear".into(), style: "solid".into(), frost: 0.35, glow: 0.0, glow_color: "follow".into(), wx: crate::weather::Weather::CLEAR, digit_weather: true, sway: "off".into() } }
 }
 
 const WHITE: Rgb = [255.0, 255.0, 255.0];
@@ -86,10 +92,10 @@ pub fn background(scene: &Scene, t_ms: f64, w: usize, h: usize) -> (Vec<f32>, Sk
 }
 
 /// Flat ink over the background, with a halo of the other ink when neither reads everywhere.
-fn solid(bg: &[f32], text: &str, w: usize, h: usize, colors: &SkyColors, horizon: f64) -> Vec<f32> {
+fn solid(bg: &[f32], text: &str, w: usize, h: usize, colors: &SkyColors, horizon: f64, bends: &[f64]) -> Vec<f32> {
     let (ink, halo) = legibility(colors, horizon);
-    let cov = draw_text(text, w, h, 0.9);
-    let halo_cov = halo.map(|_| draw_text_stroked(text, w, h, 0.9, STROKE * 1.45));
+    let cov = draw_text_bent(text, w, h, 0.9, STROKE, bends);
+    let halo_cov = halo.map(|_| draw_text_bent(text, w, h, 0.9, STROKE * 1.45, bends));
     let mut out = bg.to_vec();
     for y in 0..h {
         for x in 0..w {
@@ -116,6 +122,18 @@ fn glass_style(scene: &Scene, alt: f64, centers: Vec<f64>) -> GlassStyle {
     GlassStyle { frost: scene.frost.clamp(0.0, 1.0), glow: if stained { scene.glow.max(0.25) } else { scene.glow.clamp(0.0, 1.0) }, glow_color, tint: if stained { Some(STAINED.to_vec()) } else { None }, light, lift: glass::lift_for(alt), centers }
 }
 
+/// How far the wind bends each digit at the top, in path units, left to right (empty when the wind does not move them): a steady lean downwind, and in
+/// "full" mode a gust that differs per digit (js/wind.js and the digit phases of js/clock.js).
+pub fn bends_for(scene: &Scene, t_ms: f64, text: &str) -> Vec<f64> {
+    if scene.sway != "lean" && scene.sway != "full" { return vec![]; }
+    let (speed, to_az) = scene.wx.ground_wind();
+    let heading = crate::disc::follow_heading(t_ms, scene.lat, scene.lon);
+    let (lean, gust) = crate::wind::sway_for(speed, to_az, heading);
+    const PHASE: [f64; 6] = [0.4, 2.1, 3.7, 5.2, 1.3, 4.4];                 // h0 h1 m0 m1 s0 s1
+    let n = crate::frame::pieces(text).iter().filter(|p| p.is_some()).count();
+    (0..n).map(|i| lean + if scene.sway == "full" && speed > 1.5 { gust * crate::wind::flutter(t_ms, PHASE[(6usize.saturating_sub(n) + i).min(5)]) } else { 0.0 }).collect()
+}
+
 /// The sky changes slowly, so it is drawn once a minute and reused for the seconds in between (the digits are drawn every time).
 #[derive(Default)]
 pub struct BackgroundCache { key: Option<(usize, usize, i64, String, String)>, bg: Vec<f32>, colors: Option<SkyColors>, alt: f64 }
@@ -139,11 +157,20 @@ pub fn render(scene: &Scene, t_ms: f64, text: &str, w: usize, h: usize) -> Vec<u
 
 fn finish(scene: &Scene, t_ms: f64, text: &str, w: usize, h: usize, bg: Vec<f32>, colors: SkyColors, alt: f64) -> Vec<u8> {
     let level = brightness(scene, t_ms);
-    let frame = if (scene.style == "glass" || scene.style == "stained") && !text.is_empty() {
-        let (field, origin, half) = field_text_region(text, w, h, 0.9);
+    let bends = bends_for(scene, t_ms, text);
+    let fx = if scene.digit_weather && !text.is_empty() { crate::effects::for_weather(&scene.wx) } else { crate::effects::NONE };
+    let styled = (scene.style == "glass" || scene.style == "stained") && !text.is_empty();
+    let mut frame = if styled {
+        let (field, origin, half) = field_text_bent(text, w, h, 0.9, &bends);
         let mut out = bg.clone();
         glass::apply(&bg, &mut out, w, h, &field, origin, half, &colors, &glass_style(scene, alt, crate::frame::glyph_centers(text, w, h, 0.9)));
+        if fx != crate::effects::NONE { crate::effects::apply(&mut out, w, &field, origin, half, fx, (t_ms / 7000.0) as u64); }
         out
-    } else if text.is_empty() { bg } else { solid(&bg, text, w, h, &colors, scene.horizon) };
+    } else if text.is_empty() { bg } else {
+        let mut out = solid(&bg, text, w, h, &colors, scene.horizon, &bends);
+        if fx != crate::effects::NONE { let (field, origin, half) = field_text_bent(text, w, h, 0.9, &bends); crate::effects::apply(&mut out, w, &field, origin, half, fx, (t_ms / 7000.0) as u64); }
+        out
+    };
+    let _ = &mut frame;
     frame.iter().map(|v| (*v as f64 * level).round().clamp(0.0, 255.0) as u8).collect()
 }

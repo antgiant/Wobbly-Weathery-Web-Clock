@@ -91,6 +91,41 @@ for (const z of ZONES) {
   if (keep === undefined) delete process.env.TZ; else process.env.TZ = keep;
 }
 
+// ---- weather: the page's presets, and how it maps an Open-Meteo "current" block (js/sky/weather.js) ----
+{
+  const W = await import('../js/sky/weather.js');
+  const f = (v) => (v === null || v === undefined ? 'nan' : Number(v).toFixed(6));
+  const row = (w) => [w.cover[0], w.cover[1], w.cover[2], w.precip, w.snowfall, w.cloudDark, w.visKm, w.fog, w.wind[0], w.wind[1], w.aod, w.snowCover, w.tempC].map(f).join('\t');
+  for (const [name, w] of Object.entries(W.PRESETS)) lines.push(['wpreset', name, row(w)].join('\t'));
+  const blocks = [
+    { cloud_cover: 80, cloud_cover_low: 60, cloud_cover_mid: 30, cloud_cover_high: 10, precipitation: 0, temperature_2m: 18.5, weather_code: 3, visibility: 24000, wind_speed_10m: 4.2, wind_direction_10m: 270 },
+    { cloud_cover: 100, cloud_cover_low: 100, cloud_cover_mid: 90, cloud_cover_high: 70, precipitation: 3.2, rain: 3.0, showers: 0.2, temperature_2m: 12, weather_code: 63, visibility: 8000, wind_speed_10m: 9.5, wind_direction_10m: 200 },
+    { cloud_cover: 100, cloud_cover_low: 100, cloud_cover_mid: 100, cloud_cover_high: 80, precipitation: 8, rain: 8, temperature_2m: 22, weather_code: 96, visibility: 3000, wind_speed_10m: 16, wind_direction_10m: 45 },
+    { cloud_cover: 95, cloud_cover_low: 90, cloud_cover_mid: 60, cloud_cover_high: 20, precipitation: 1.5, snowfall: 2.1, snow_depth: 0.05, temperature_2m: -3, weather_code: 73, visibility: 2000, wind_speed_10m: 3, wind_direction_10m: 350 },
+    { cloud_cover: 0, temperature_2m: 25, weather_code: 0, visibility: 60000, wind_speed_10m: 1, wind_direction_10m: 0 },
+    { cloud_cover: 40, precipitation: 0, temperature_2m: 5, weather_code: 45, visibility: 300, wind_speed_10m: 0.5, wind_direction_10m: 90 },
+    { cloud_cover: 20, temperature_2m: 30, weather_code: 1, wind_speed_10m: 7, wind_direction_10m: 135 },
+  ];
+  blocks.forEach((b, i) => {
+    const fields = ['cloud_cover', 'cloud_cover_low', 'cloud_cover_mid', 'cloud_cover_high', 'precipitation', 'rain', 'showers', 'snowfall', 'snow_depth', 'temperature_2m', 'weather_code', 'visibility', 'wind_speed_10m', 'wind_direction_10m'];
+    const json = '{"latitude":40.7,"current":{' + fields.filter((k) => k in b).map((k) => `"${k}":${b[k]}`).join(',') + ',"time":"2026-06-21T12:00"}}';
+    lines.push(['wlive', i, json, row(W.mapOpenMeteo(b, null))].join('\t'));
+  });
+}
+
+// ---- wind sway (js/wind.js): strength, lean, gusts, and a bent digit ----
+{
+  const Wd = await import('../js/wind.js');
+  for (const speed of [0, 0.5, 2, 5, 9, 14, 18, 25]) for (const [toAz, heading] of [[90, 180], [270, 180], [180, 180], [0, 180], [45, 300], [330, 20]]) {
+    const r = Wd.swayFor(speed, toAz, heading);
+    lines.push(['sway', speed, toAz, heading, f6(Wd.strength(speed)), f6(r.lean), f6(r.gust)].join('\t'));
+  }
+  for (const [t, ph] of [[0, 0], [1000, 0.8], [5000, 2.1], [12345, 4.4], [60000, 1.2]]) lines.push(['flutter', t, ph, f6(Wd.flutter(t, ph))].join('\t'));
+  for (const d of [0, 1, 4, 8]) for (const dx of [-90, -20, 0, 35, 108]) lines.push(['bend', d, dx, Wd.bend(dd[d], dx).map((v) => v.toFixed(1)).join(',')].join('\t'));
+  for (const y of [0, 30, 100, 240, 450, 500]) lines.push(['weight', y, f6(Wd.weight(y))].join('\t'));
+  function f6(v) { return Number(v).toFixed(9); }
+}
+
 // ---- the Christmas season (js/season.js): Thanksgiving to December 25, for every day of several years ----
 {
   const { thanksgivingDay, isChristmasSeason } = await import('../js/season.js');

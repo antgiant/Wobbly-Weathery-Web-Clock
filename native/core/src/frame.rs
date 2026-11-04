@@ -3,6 +3,7 @@
 
 use crate::digits::STROKE;
 use crate::morph::digit;
+use crate::wind::bend;
 use crate::raster::{draw_digit_stroked, field_digit, field_dot, Coverage, Field};
 
 pub type Rgb = [u8; 3];
@@ -30,13 +31,17 @@ pub fn fit(text: &str, w: usize, h: usize, fill: f64) -> (f64, f64, f64) {
 pub fn draw_text(text: &str, w: usize, h: usize, fill: f64) -> Coverage { draw_text_stroked(text, w, h, fill, STROKE) }
 
 /// The same with a wider (or narrower) stroke, in digit space: a halo behind the time is the time drawn wider.
-pub fn draw_text_stroked(text: &str, w: usize, h: usize, fill: f64, stroke: f64) -> Coverage {
+pub fn draw_text_stroked(text: &str, w: usize, h: usize, fill: f64, stroke: f64) -> Coverage { draw_text_bent(text, w, h, fill, stroke, &[]) }
+
+/// The same with each digit bent at the top by `bends[i]` path units (the wind), in the order the digits appear; fewer entries than digits means no bend.
+pub fn draw_text_bent(text: &str, w: usize, h: usize, fill: f64, stroke: f64, bends: &[f64]) -> Coverage {
     let mut cov = Coverage::new(w, h);
     let (scale, left, top) = fit(text, w, h, fill);
     let mut x = left;
+    let mut di = 0;
     for p in pieces(text) {
         match p {
-            Some(d) => { draw_digit_stroked(&mut cov, digit(d), x - 20.0 * scale + 10.0 * scale, top, scale, stroke); x += DIGIT_W * scale; }
+            Some(d) => { let pts = bend(digit(d), bends.get(di).copied().unwrap_or(0.0)); di += 1; draw_digit_stroked(&mut cov, &pts, x - 20.0 * scale + 10.0 * scale, top, scale, stroke); x += DIGIT_W * scale; }
             None => {
                 // two round dots, STROKE wide, level with the upper and lower thirds of the digits
                 for cy in [190.0, 350.0] {
@@ -107,27 +112,35 @@ pub fn glyph_centers(text: &str, w: usize, h: usize, fill: f64) -> Vec<f64> {
 
 /// The rectangle (x0, y0, x1, y1, in pixels, clipped to the picture) the time can touch with a stroke of `stroke` in digit space: everything outside it is
 /// untouched, so shading only needs to look here.
-pub fn text_bbox(text: &str, w: usize, h: usize, fill: f64, stroke: f64) -> (usize, usize, usize, usize) {
+pub fn text_bbox(text: &str, w: usize, h: usize, fill: f64, stroke: f64) -> (usize, usize, usize, usize) { text_bbox_bent(text, w, h, fill, stroke, 0.0) }
+
+/// The same, wider by the largest bend (path units) the digits may take.
+pub fn text_bbox_bent(text: &str, w: usize, h: usize, fill: f64, stroke: f64, max_bend: f64) -> (usize, usize, usize, usize) {
     let (scale, left, top) = fit(text, w, h, fill);
     let total: f64 = pieces(text).iter().map(|p| if p.is_some() { DIGIT_W } else { COLON_W }).sum();
-    let pad = stroke * scale / 2.0 + 3.0;
+    let pad = stroke * scale / 2.0 + 3.0 + max_bend.abs() * scale;
     let (x0, y0) = ((left - 30.0 * scale - pad).floor().max(0.0), (top - pad).floor().max(0.0));
     let (x1, y1) = ((left + total * scale + 30.0 * scale + pad).ceil().min(w as f64), (top + 560.0 * scale + pad).ceil().min(h as f64));
     (x0 as usize, y0 as usize, x1.max(x0) as usize, y1.max(y0) as usize)
 }
 
 /// Like `field_text`, but the field covers only the time's own rectangle: returns it with the rectangle's top-left corner in the picture.
-pub fn field_text_region(text: &str, w: usize, h: usize, fill: f64) -> (Field, (usize, usize), f64) {
+pub fn field_text_region(text: &str, w: usize, h: usize, fill: f64) -> (Field, (usize, usize), f64) { field_text_bent(text, w, h, fill, &[]) }
+
+/// The same with each digit bent by `bends[i]` (path units) at the top.
+pub fn field_text_bent(text: &str, w: usize, h: usize, fill: f64, bends: &[f64]) -> (Field, (usize, usize), f64) {
     let (scale, left, top) = fit(text, w, h, fill);
     let half = STROKE * scale / 2.0;
-    let (x0, y0, x1, y1) = text_bbox(text, w, h, fill, STROKE);
+    let max_bend = bends.iter().fold(0.0f64, |m, b| m.max(b.abs()));
+    let (x0, y0, x1, y1) = text_bbox_bent(text, w, h, fill, STROKE, max_bend);
     let mut f = Field::new((x1 - x0).max(1), (y1 - y0).max(1));
     let (ox, oy) = (x0 as f64, y0 as f64);
     let reach = half + 1.0;
     let mut x = left;
+    let mut di = 0;
     for p in pieces(text) {
         match p {
-            Some(d) => { field_digit(&mut f, digit(d), x - 20.0 * scale + 10.0 * scale - ox, top - oy, scale, reach); x += DIGIT_W * scale; }
+            Some(d) => { let pts = bend(digit(d), bends.get(di).copied().unwrap_or(0.0)); di += 1; field_digit(&mut f, &pts, x - 20.0 * scale + 10.0 * scale - ox, top - oy, scale, reach); x += DIGIT_W * scale; }
             None => { for cy in [190.0, 350.0] { field_dot(&mut f, x + COLON_W * scale / 2.0 - ox, top + cy * scale - oy, reach); } x += COLON_W * scale; }
         }
     }

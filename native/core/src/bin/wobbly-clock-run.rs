@@ -29,10 +29,13 @@ fn run() -> Result<(), String> {
     let text = std::fs::read_to_string(&cfg_path).unwrap_or_default();       // no file: the defaults (the setup command writes one)
     let cfg = config::parse(&text);
     for e in &cfg.errors { eprintln!("{cfg_path}: {e}"); }
+    let fixed_at: Option<f64> = arg(&a, "--at").and_then(|x| x.parse().ok());
     let mut clock = Clock::new(cfg.clone());
+    // live weather: the first answer before the first frame, then refreshed in the background
+    let live = if cfg.weather_mode == "live" && (fixed_at.is_none() || std::env::var("WOBBLY_CURL").is_ok()) { Some(wobbly_core::live::Live::start(cfg.latitude, cfg.longitude, Duration::from_secs(600))) } else { None };
+    clock.live = live.clone();
     let sink = arg(&a, "--sink").unwrap_or_else(|| if cfg.output == "matrix" { "matrix".into() } else { "fb".into() });
     let frames: Option<usize> = arg(&a, "--frames").and_then(|x| x.parse().ok());
-    let fixed_at: Option<f64> = arg(&a, "--at").and_then(|x| x.parse().ok());
     let (w, h) = arg(&a, "--size").and_then(|s| s.split_once('x').map(|(w, h)| (w.parse().unwrap_or(128), h.parse().unwrap_or(64)))).unwrap_or((128, 64));
 
     let layout = if sink == "matrix" || cfg.output == "matrix" && sink.starts_with("ppm") {
