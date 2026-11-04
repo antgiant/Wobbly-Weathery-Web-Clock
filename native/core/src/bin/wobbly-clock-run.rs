@@ -24,6 +24,7 @@ fn read_fb(dev: &str) -> Result<FbFormat, String> {
 
 fn run() -> Result<(), String> {
     let a: Vec<String> = std::env::args().skip(1).collect();
+    if a.iter().any(|x| x == "--version" || x == "-V") { println!("wobbly-clock-run {}", env!("CARGO_PKG_VERSION")); return Ok(()); }
     if a.iter().any(|x| x == "--help" || x == "-h") { println!("usage: wobbly-clock-run --config FILE [--sink fb[:DEV]|ppm:DIR|matrix] [--size WxH] [--frames N] [--at EPOCH_MS]"); return Ok(()); }
     let cfg_path = arg(&a, "--config").unwrap_or_else(|| "/etc/wobbly-clock/wobbly-clock.conf".into());
     let text = std::fs::read_to_string(&cfg_path).unwrap_or_default();       // no file: the defaults (the setup command writes one)

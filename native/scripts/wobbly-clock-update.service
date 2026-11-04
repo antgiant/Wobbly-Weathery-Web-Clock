@@ -1,0 +1,8 @@
+[Unit]
+Description=Look for a new Wobbly Weathery Web Clock
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/wobbly-clock-update

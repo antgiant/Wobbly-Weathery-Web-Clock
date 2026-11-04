@@ -12,6 +12,8 @@ function world(profileName = 'pi-4', answers = []) {
     io: {
       read: (f) => (f in files ? files[f] : null), write: (f, t) => { files[f] = t; },
       profile: (output) => ({ ...H.PROFILES[profileName], output, sensors: false }),
+      calls: [], exec(cmd, args) { this.calls.push([cmd, ...args]); return this.execStatus?.[cmd] ?? 0; },
+      capture(cmd, args) { this.calls.push([cmd, ...args]); return this.captured?.[`${cmd} ${args[0]}`] ?? { code: 0, out: '' }; },
       ask: answers ? async (q) => { asked.push(q); return answers.length ? answers.shift() : ''; } : null,
     },
   };
@@ -72,6 +74,20 @@ w = world(); w.files['/etc/wobbly-clock/matrix.cfg'] = SAMPLE; r = await go(w, '
 check('test lists the four patterns and what each should look like', r.out.split('\n').length === 4 && /colour bars/.test(r.out) && /identify/.test(r.out));
 r = await go(w, 'install-service', '--print'); check('install-service --print shows the unit; without --print it writes it', /\[Service\]/.test(r.out) && (await go(w, 'install-service')).out.includes('systemctl enable') && '/etc/systemd/system/wobbly-clock.service' in w.files);
 r = await go(w, 'man'); check('man prints the manual page', /^\.TH WOBBLY-CLOCK 1 "2026-11-04"/.test(r.out));
+
+// running and looking after the service
+w = world(); r = await go(w, 'run');
+check('run starts the renderer with the configuration file', r.code === 0 && w.io.calls[0].join(' ') === `wobbly-clock-run --config ${CONF}`, JSON.stringify(w.io.calls));
+w.io.execStatus = { 'wobbly-clock-run': 127 }; r = await go(w, 'run');
+check('run says how to get the renderer when it is missing (exit 3)', r.code === 3 && /not installed/.test(r.err));
+w = world(); w.io.captured = { 'wobbly-clock-run --version': { code: 0, out: 'wobbly-clock-run 0.4.2' }, 'systemctl is-active': { code: 0, out: 'active' }, 'systemctl is-enabled': { code: 0, out: 'enabled' } };
+r = await go(w, 'status');
+check('status says the version, the output, the machine and whether the service runs and starts on boot', /wobbly-clock 0\.4\.2/.test(r.out) && /running, starts on boot/.test(r.out) && /output\s+hdmi/.test(r.out), r.out);
+w = world(); r = await go(w, 'status'); check('status when nothing is installed says so', /not installed/.test(r.out) && /stopped/.test(r.out), r.out);
+w = world(); await go(w, 'restart'); await go(w, 'update'); await go(w, 'logs'); await go(w, 'logs', '-f');
+check('restart, update and logs call systemctl, the update script and journalctl', w.io.calls.some((c) => c.join(' ') === 'systemctl restart wobbly-clock') && w.io.calls.some((c) => c[0] === 'wobbly-clock-update') && w.io.calls.some((c) => c.join(' ') === 'journalctl -u wobbly-clock -n 50 --no-pager') && w.io.calls.some((c) => c.join(' ') === 'journalctl -u wobbly-clock --no-pager -f'), JSON.stringify(w.io.calls));
+w = world(); w.io.execStatus = { systemctl: 1, 'wobbly-clock-update': 2 };
+check('failures are reported with exit 1 and in words', (await go(w, 'restart')).code === 1 && /could not restart/.test((await go(w, 'restart')).err) && (await go(w, 'update')).code === 1);
 
 // a file with mistakes is reported but does not stop the program
 w = world(); w.files[CONF] = 'hideSeconds = maybe\nclockStyle = glass\n'; r = await go(w, 'get');
