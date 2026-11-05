@@ -799,7 +799,7 @@ export class SkyEngine {
       if (scene) gl.generateMipmap(gl.TEXTURE_2D);          // frosting blurs through the mip chain
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
     } else gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    if (glassOn && this.es2 && (scene || !this.sceneMips)) this._sceneMips();
+    if (glassOn && this.es2 && (scene || !(this.mipState && this.mipState.scene) || this.mipState.scene.src !== T)) { this._mipAtlas('scene', T.tex, T.w, T.h); this.mipState.scene.src = T; }
     const led = g.led.on;
     if (led) this._ensureComp(cw, ch);
     gl.bindFramebuffer(gl.FRAMEBUFFER, led ? this.compTarget.fbo : null);
@@ -807,9 +807,9 @@ export class SkyEngine {
     this._use(this.pBlit);
     this._1i('uTex', 0); this._bind(0, T.tex);
     this._1f('uTexW', T.w);
-    if (glassOn && this.es2) for (let k = 1; k <= 7; k++) { this._1i('uMip' + k, 4 + k); this._bind(4 + k, this.sceneMips[k - 1].tex); }
+    if (glassOn && this.es2) this._bindMipAtlas('scene', 5);
     this._1i('uMask', 1); this._bind(1, this.maskTex);
-    if (glassOn && this.es2) this._bindMaskMips(12);
+    if (glassOn && this.es2) this._bindMipAtlas('mask', 6);
     const dpr = cw / Math.max(1, this.canvas.clientWidth);
     this._4f('uGlass', g.frost, glassOn ? g.mode : 0, g.stroke * dpr, 0);
     this._4f('uMaskRect', g.rect[0], g.rect[1], g.rect[2], g.rect[3]);
@@ -836,41 +836,21 @@ export class SkyEngine {
     if (led) this._ledPass(cw, ch);
   }
 
-  /** ES 2: the scene's mip levels 1..7 as separate textures (each a bilinear read of the one above: the average of 2x2 texels), for the glass's frosting. */
-  _sceneMips() {
-    const gl = this.gl, T = this.sceneTarget;
-    if (!this.sceneMips || this.sceneMips.src !== T) {
-      if (this.sceneMips) for (const m of this.sceneMips) { gl.deleteTexture(m.tex); gl.deleteFramebuffer(m.fbo); }
-      this.sceneMips = []; this.sceneMips.src = T;
-      let w = T.w, h = T.h;
-      for (let k = 1; k <= 7; k++) { w = Math.max(1, w >> 1); h = Math.max(1, h >> 1); this.sceneMips.push(this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE)); }
-    }
-    if (!this.pNoiseDown) this.pNoiseDown = this._program(VERT_FULLSCREEN, FRAG_NOISE_DOWN);
-    gl.disable(gl.BLEND);
-    gl.bindVertexArray(this.vaoEmpty);
-    this._use(this.pNoiseDown);
-    let src = T.tex;
-    for (const m of this.sceneMips) {
-      gl.bindFramebuffer(gl.FRAMEBUFFER, m.fbo); gl.viewport(0, 0, m.w, m.h);
-      this._1i('uSrc', 0); this._bind(0, src); this._2f('uSize', m.w, m.h);
-      gl.drawArrays(gl.TRIANGLES, 0, 3);
-      src = m.tex;
-    }
-  }
-
   /**
-   * ES 2: the mask's mip levels 1..7 stacked in one texture (each with a border of its own edge texels), the way FRAG_BLIT's maskLod reads them. Each level is a
-   * bilinear read of the one above (the average of 2x2 texels), made in textures of their own and then copied into the stack. `src` is the mask's texture.
+   * ES 2: the mip levels 1..7 of a texture stacked in one texture (each with a border of its own edge texels), the way portable.js's mipAtlasGlsl reads them.
+   * Each level is a bilinear read of the one above (the average of 2x2 texels), made in textures of their own and then copied into the stack. `kind` is 'mask' or
+   * 'scene'; `src` is the texture's WebGL object, w x h its size.
    */
-  _maskMips(src, w, h) {
+  _mipAtlas(kind, src, w, h) {
     const gl = this.gl;
-    let st = this.maskMipState;
+    const all = this.mipState || (this.mipState = {});
+    let st = all[kind];
     if (!st || st.w !== w || st.h !== h) {
       if (st) { for (const l of st.levels) { gl.deleteTexture(l.tex); gl.deleteFramebuffer(l.fbo); } gl.deleteTexture(st.atlas.tex); gl.deleteFramebuffer(st.atlas.fbo); }
       const levels = []; let lw = w, lh = h, y = 0;
       for (let k = 1; k <= 7; k++) { lw = Math.max(1, lw >> 1); lh = Math.max(1, lh >> 1); const t = this._target(lw, lh, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE); t.y = y; levels.push(t); y += lh + 2; }
       const atlas = this._target(levels[0].w + 2, y, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);
-      st = this.maskMipState = { w, h, levels, atlas };
+      st = all[kind] = { w, h, levels, atlas };
     }
     if (!this.pNoiseDown) this.pNoiseDown = this._program(VERT_FULLSCREEN, FRAG_NOISE_DOWN);
     if (!this.pAtlasPlace) this.pAtlasPlace = this._program(VERT_FULLSCREEN, FRAG_ATLAS_PLACE);
@@ -893,12 +873,14 @@ export class SkyEngine {
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
   }
-  _bindMaskMips(unit) {
-    const st = this.maskMipState;
+  /** Sets the current program's uniforms for a texture's mip atlas, and binds the atlas at `unit`. */
+  _bindMipAtlas(kind, unit) {
+    const st = this.mipState && this.mipState[kind];
     if (!st) return;
-    this._1i('uMaskMips', unit); this._bind(unit, st.atlas.tex);
-    this._2f('uMaskAtlasPx', st.atlas.w, st.atlas.h);
-    st.levels.forEach((m, i) => this._4f('uMaskLv' + (i + 1), m.w, m.h, m.y, 0));
+    const N = kind[0].toUpperCase() + kind.slice(1);
+    this._1i('u' + N + 'Mips', unit); this._bind(unit, st.atlas.tex);
+    this._2f('u' + N + 'MipsPx', st.atlas.w, st.atlas.h);
+    st.levels.forEach((m, i) => this._4f('u' + N + 'Lv' + (i + 1), m.w, m.h, m.y, 0));
   }
 
   _ensureComp(w, h) {
@@ -950,7 +932,7 @@ export class SkyEngine {
       this._use(this.pLedPeak);
       this._1i('uComp', 0); this._bind(0, C.tex);
       this._1i('uMask', 2); this._bind(2, this.maskTex);
-      if (g.hasMask && g.mode > 0 && this.es2) this._bindMaskMips(3);
+      if (g.hasMask && g.mode > 0 && this.es2) this._bindMipAtlas('mask', 3);
       this._2f('uRes', cw, ch);
       this._4f('uLed', L.cols, L.rows, 0, 0);
       this._4f('uMaskRect', g.rect[0], g.rect[1], g.rect[2], g.rect[3]);
@@ -1011,7 +993,7 @@ export class SkyEngine {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    if (this.es2) this._maskMips(this.maskTex, canvas.width, canvas.height);
+    if (this.es2) this._mipAtlas('mask', this.maskTex, canvas.width, canvas.height);
     else gl.generateMipmap(gl.TEXTURE_2D);
     g.rect = rect; g.maskW = canvas.width; g.maskH = canvas.height; g.stroke = strokeCssPx; g.hasMask = true;
     this.redrawGlass();
@@ -1063,7 +1045,7 @@ export class SkyEngine {
     }
     gl.bindVertexArray(null);
     gl.blendEquation(gl.FUNC_ADD); gl.disable(gl.BLEND);
-    if (this.es2) this._maskMips(T.tex, w, h);
+    if (this.es2) this._mipAtlas('mask', T.tex, w, h);
     else { gl.bindTexture(gl.TEXTURE_2D, T.tex); gl.generateMipmap(gl.TEXTURE_2D); }
     g.rect = rect; g.maskW = w; g.maskH = h; g.stroke = strokeCssPx; g.hasMask = true;
     this.redrawGlass();

@@ -7,7 +7,7 @@
 // physically (limiting magnitude, scotopic shift, moonlight ...).
 
 import { ATMOS_COMMON, VERT_FULLSCREEN } from './glsl-atmosphere.js';
-import { PORTABLE, MASK_LOD } from './portable.js';
+import { PORTABLE, MASK_LOD, SCENE_LOD } from './portable.js';
 
 // ---------------------------------------------------------------- shared ---
 // Sky radiance lookup used by the composite, the star vertex shader and the
@@ -271,7 +271,7 @@ export const FRAG_BLIT = `#version 300 es
 precision highp float;
 ${PORTABLE}
 ${MASK_LOD}
-uniform sampler2D uTex;
+${SCENE_LOD}
 uniform float uTexW;       // width of uTex in texels
 uniform vec4 uGlass;       // x frost 0..1, y mode (0 off, 1 liquid, 2 stained, 3 LED), z stroke width (canvas px), w time
 uniform vec4 uMaskRect;    // clock bounding box in canvas uv, y down: x, y, w, h
@@ -298,33 +298,11 @@ float hash21(vec2 p) {
 }
 vec2 hash22(vec2 p) { return vec2(hash21(p), hash21(p + 17.31)); }
 
-float maskAt(vec2 uv, float lod) {
-  vec2 m = (vec2(uv.x, 1.0 - uv.y) - uMaskRect.xy) / uMaskRect.zw;
-  return maskLod(m, lod).a;
-}
+vec2 maskUv(vec2 uv) { return (vec2(uv.x, 1.0 - uv.y) - uMaskRect.xy) / uMaskRect.zw; }
+float maskA(vec2 uv, MaskLv v) { return maskAt(maskUv(uv), v).a; }       // the mask's coverage at a detail level (worked out once: maskLv)
+float maskA0(vec2 uv) { return maskAt0(maskUv(uv)).a; }
 float lumaOf(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
-#ifdef WOBBLY_ES2
-// An ES 2 GPU cannot pick a detail level in a shader, and a bias on its own choice goes wrong where the position moves unevenly from pixel to pixel (the glass bends it).
-// So the scene's mip levels are separate textures (engine.js makes them) and two of them are blended here.
-uniform sampler2D uMip1, uMip2, uMip3, uMip4, uMip5, uMip6, uMip7;
-vec3 sceneLvl(float k, vec2 uv) {
-  if (k < 0.5) return texture(uTex, uv).rgb;
-  if (k < 1.5) return texture(uMip1, uv).rgb;
-  if (k < 2.5) return texture(uMip2, uv).rgb;
-  if (k < 3.5) return texture(uMip3, uv).rgb;
-  if (k < 4.5) return texture(uMip4, uv).rgb;
-  if (k < 5.5) return texture(uMip5, uv).rgb;
-  if (k < 6.5) return texture(uMip6, uv).rgb;
-  return texture(uMip7, uv).rgb;
-}
-vec3 sceneAt(vec2 uv, float lod) {
-  lod = clamp(lod, 0.0, 7.0);
-  float l0 = floor(lod);
-  return mix(sceneLvl(l0, uv), sceneLvl(min(l0 + 1.0, 7.0), uv), lod - l0);
-}
-#else
-vec3 sceneAt(vec2 uv, float lod) { return textureLod(uTex, uv, lod).rgb; }
-#endif
+vec3 sceneAtL(vec2 uv, SceneLv v) { return sceneAt(uv, v).rgb; }
 
 float linLum(vec3 c) { return dot(pow(max(c, 0.0), vec3(2.2)), vec3(0.2126, 0.7152, 0.0722)); }
 
@@ -344,12 +322,12 @@ vec3 withOutline(vec3 outside, vec3 inside, float cover) {
   float t = max(uGlass.z * 0.085, 1.6);                    // outline width in canvas px: about 8% of the stroke
   if (cell > 0.0) t = max(t, cell);                        // on the LED panel never thinner than one LED
   float maskScale = uMaskPx.x / (uMaskRect.z * uRes.x);
-  float m0 = maskAt(vUv, 0.0);
-  float mw = maskAt(vUv, max(log2(t * maskScale), 0.0));
+  float m0 = maskA0(vUv);
+  float mw = maskA(vUv, maskLv(max(log2(t * maskScale), 0.0)));
   float inner = m0 * (1.0 - smoothstep(0.55, 0.92, mw));   // inside the glyph, near its edge
   float outer = (1.0 - m0) * smoothstep(0.06, 0.5, mw);    // outside it, near its edge
   float texScale = uTexW / uRes.x;
-  float Lb = linLum(sceneAt(vUv, max(log2(max(uGlass.z * 0.15, t) * texScale), 0.0)));
+  float Lb = linLum(sceneAtL(vUv, sceneLv(max(log2(max(uGlass.z * 0.15, t) * texScale), 0.0))));
   float pol = smoothstep(0.10, 0.26, Lb);                  // 1: bright sky behind, dark outline
   vec3 oc = mix(vec3(0.98, 0.98, 1.0), vec3(0.012), pol);
   vec3 o = mix(outside, oc, outer * k * 0.85);
@@ -359,7 +337,7 @@ vec3 withOutline(vec3 outside, vec3 inside, float cover) {
 
 // gentle, spatially smooth tone for the body of the glass
 vec3 bodyTone(vec3 c, float stroke) {
-  float Lbig = linLum(sceneAt(vUv, max(log2(stroke * 2.5 * uTexW / uRes.x), 0.0)));
+  float Lbig = linLum(sceneAtL(vUv, sceneLv(max(log2(stroke * 2.5 * uTexW / uRes.x), 0.0))));
   float dark = smoothstep(0.22, 0.6, Lbig), light = 1.0 - smoothstep(0.03, 0.14, Lbig);
   c *= 1.0 - 0.38 * dark * uContrast;
   return mix(c, vec3(1.0), 0.22 * light * uContrast);
@@ -380,7 +358,7 @@ float snowCap(float stroke, float amount) {
   float cap = 0.0;
   for (int k = 1; k <= 6; k++) {
     float f = float(k) / 6.0;
-    float m = maskAt(vUv + vec2(0.0, depth * f / uRes.y), 0.0);
+    float m = maskA0(vUv + vec2(0.0, depth * f / uRes.y));
     cap = max(cap, (1.0 - smoothstep(0.2, 0.8, m)) * (1.0 - 0.5 * f));
   }
   return cap;
@@ -437,8 +415,8 @@ vec3 rainOn(vec3 col, vec4 b, vec3 lightCol, vec3 skyHere) {
 float splash(float stroke, float rate) {
   if (rate < 0.02) return 0.0;
   float r = stroke * 0.12;
-  float above = 1.0 - smoothstep(0.1, 0.4, maskAt(vUv, 0.0));
-  float below = maskAt(vUv - vec2(0.0, r * 0.7 / uRes.y), 0.0);
+  float above = 1.0 - smoothstep(0.1, 0.4, maskA0(vUv));
+  float below = maskA0(vUv - vec2(0.0, r * 0.7 / uRes.y));
   float edge = above * smoothstep(0.5, 0.95, below);
   if (edge < 0.01) return 0.0;
   float cx = floor(gl_FragCoord.x / (stroke * 0.18));
@@ -452,7 +430,7 @@ void body() {
   float mode = uGlass.y;
   if (mode < 0.5) { oColor = vec4(base, 1.0); return; }
   if (mode > 2.5) {                                          // flat ink: the LED panel has no glass here, but the digits still need drawing
-    float cv = smoothstep(0.1, 0.9, maskAt(vUv, 0.0));
+    float cv = smoothstep(0.1, 0.9, maskA0(vUv));
     vec3 ink = uInk, bs = base;
     float stk = uGlass.z;
     if (cv > 0.02 && uWx.x > 0.01) ink = snowOn(ink, snowCap(stk, uWx.x), base);
@@ -471,26 +449,25 @@ void body() {
   float stroke = uGlass.z;                                  // canvas px
   float maskScale = uMaskPx.x / (uMaskRect.z * uRes.x);     // mask texels per canvas px
   float lodH = max(log2(stroke * 0.30 * maskScale), 0.0);
-  float lodS = max(log2(stroke * 0.9 * maskScale), 0.0);
-  float lodG = max(log2(stroke * 1.5 * maskScale), 0.0);
+  MaskLv lvH = maskLv(lodH), lvS = maskLv(max(log2(stroke * 0.9 * maskScale), 0.0)), lvG = maskLv(max(log2(stroke * 1.5 * maskScale), 0.0));
   float glow = uGlow.x;
   bool stained = mode > 1.5;
 
   // soft shadow of the glass cast on the sky, away from the light
   vec2 sh = vUv - uLight.xy * stroke * 0.22 * px;
-  float shadow = maskAt(sh, lodS) * (0.10 + 0.20 * uLight.z) * (1.0 - 0.7 * glow);
+  float shadow = maskA(sh, lvS) * (0.10 + 0.20 * uLight.z) * (1.0 - 0.7 * glow);
 
-  float cover = maskAt(vUv, 0.0);
-  float wide = maskAt(vUv, lodS);
-  float halo = glow > 0.002 ? maskAt(vUv, lodG) : 0.0;     // light spilling out of the glass onto the sky
+  float cover = maskA0(vUv);
+  float wide = maskA(vUv, lvS);
+  float halo = glow > 0.002 ? maskA(vUv, lvG) : 0.0;     // light spilling out of the glass onto the sky
   if (cover < 0.004 && wide < 0.004 && shadow < 0.004 && halo * glow < 0.004) { oColor = vec4(base, 1.0); return; }
 
   // height field = blurred coverage; gradient = bevel
   float d = stroke * 0.22;
   vec2 dx = vec2(d * px.x, 0.0), dy = vec2(0.0, d * px.y);
-  float h  = maskAt(vUv, lodH);
-  float gx = maskAt(vUv + dx, lodH) - maskAt(vUv - dx, lodH);
-  float gy = maskAt(vUv + dy, lodH) - maskAt(vUv - dy, lodH);
+  float h  = maskA(vUv, lvH);
+  float gx = maskA(vUv + dx, lvH) - maskA(vUv - dx, lvH);
+  float gy = maskA(vUv + dy, lvH) - maskA(vUv - dy, lvH);
   vec2 g = vec2(gx, gy);
   vec3 n = normalize(vec3(-g * 2.4, 1.0));
   float slope = length(g);
@@ -509,20 +486,20 @@ void body() {
   vec3 emit = uGlowCol;
   if (stained) {
     vec2 mUv = (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw;
-    vec4 mk = maskLod(mUv, lodH * 0.5);                      // a little blur: glass spreads the light
+    vec4 mk = maskAt(mUv, maskLv(lodH * 0.5));                      // a little blur: glass spreads the light
     emit = min(mk.rgb / max(mk.a, 0.05), vec3(1.3));
   }
 
   // ---- liquid glass (stained glass is the same glass with a colour in it) ----
   vec2 off = n.xy * stroke * (0.9 + 0.8 * h) * px;                    // lens-like displacement
-  float lodF = frost * 6.0;
+  SceneLv lvF = sceneLv(frost * 6.0);
   vec3 c;
   float disp = (1.0 - frost) * 0.10 + 0.015;
-  c.r = sceneAt(vUv + off * (1.0 + disp), lodF).r;
-  c.g = sceneAt(vUv + off, lodF).g;
-  c.b = sceneAt(vUv + off * (1.0 - disp), lodF).b;
+  c.r = sceneAtL(vUv + off * (1.0 + disp), lvF).r;
+  c.g = sceneAtL(vUv + off, lvF).g;
+  c.b = sceneAtL(vUv + off * (1.0 - disp), lvF).b;
   // frost: diffuse towards the local average sky colour and go milky; clear glass stays clear
-  vec3 avg = sceneAt(vUv, 6.5);
+  vec3 avg = sceneAtL(vUv, sceneLv(6.5));
   c = mix(c, mix(avg, c, 0.5), frost * 0.6);
   float lum = lumaOf(c);
   c = mix(c, vec3(lum), 0.12 * frost);
@@ -551,8 +528,8 @@ void body() {
     if (uWx.y > 0.01) {
       if (uDropsOn > 0.5) {                                              // drops that run, merge and are shed with the digit (drops.js)
         vec4 dr = texture(uDrops, (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw);
-        glass = rainOn(glass, vec4(dr.r, dr.g, dr.b, 0.0), uLightCol, sceneAt(vUv + vec2(0.0, stroke * 0.3) * px, 1.0));       // (a drop shows the sky upside down and shifted)
-      } else glass = rainOn(glass, rainBeads(stroke, uWx.y), uLightCol, sceneAt(vUv - (gl_FragCoord.xy / (stroke * 0.42) - floor(gl_FragCoord.xy / (stroke * 0.42)) - 0.5) * (stroke * 0.42) * px * 1.4, 1.0));
+        glass = rainOn(glass, vec4(dr.r, dr.g, dr.b, 0.0), uLightCol, sceneAtL(vUv + vec2(0.0, stroke * 0.3) * px, sceneLv(1.0)));       // (a drop shows the sky upside down and shifted)
+      } else glass = rainOn(glass, rainBeads(stroke, uWx.y), uLightCol, sceneAtL(vUv - (gl_FragCoord.xy / (stroke * 0.42) - floor(gl_FragCoord.xy / (stroke * 0.42)) - 0.5) * (stroke * 0.42) * px * 1.4, sceneLv(1.0)));
     }
   }
 
@@ -561,7 +538,7 @@ void body() {
   vec3 haloCol = uGlowCol;
   float haloK = 0.30;
   if (stained) {                                                      // the tube's lights colour the air around it
-    vec4 hm = maskLod((vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw, lodG);
+    vec4 hm = maskAt(maskUv(vUv), lvG);
     haloCol = hm.rgb / max(hm.a, 0.04); haloK = 0.85;
   }
   shaded += haloCol * halo * glow * (1.0 - cover) * haloK;
@@ -604,7 +581,7 @@ void main() {
   if (uMaskOn > 0.5) {                                                      // the clock wins: no star on a digit
     vec2 m = (vec2(cuv.x, 1.0 - cuv.y) - uMaskRect.xy) / uMaskRect.zw;
     float lod = max(log2(cell * uMaskPx.x / (uMaskRect.z * uRes.x)), 0.0);
-    if (maskLod(m, lod).a > 0.004) { oColor = vec4(0.0); return; }
+    if (maskAt(m, maskLv(lod)).a > 0.004) { oColor = vec4(0.0); return; }
   }
 #ifdef WOBBLY_ES2
   vec3 sum = vec3(0.0);                                                     // no mip levels to average with: the block is summed below
@@ -1127,21 +1104,15 @@ void main() {
   // pixel of the skyline, shade both sides and blend by coverage.
   int topLayer = sk.b > sk.g ? 2 : (sk.g > sk.r ? 1 : 0);
   float edge = (sk.b - d.y) / pixM;                      // pixels below the silhouette
-  vec3 L;
-  float skyMask;
-  if (layer >= 0 && edge > 1.0) {
-    L = shadeTerrain(layer, d);
-    skyMask = 0.0;
-  } else if (layer < 0 && edge < -1.0) {
-    L = shadeSky(d, skyMask);
-  } else {
-    float cov = clamp(edge + 0.5, 0.0, 1.0);
-    float m;
-    vec3 Ls = shadeSky(d, m);
-    vec3 Lt = shadeTerrain(layer >= 0 ? layer : topLayer, d);
-    L = mix(Ls, Lt, cov);
-    skyMask = m * (1.0 - cov);
-  }
+  // How much of the pixel is terrain: all of it below the silhouette, none above, a blend within a pixel of it. Sky and terrain are each shaded at most once (a GPU that
+  // cannot skip work shades both only on that one-pixel edge; and each is in the program once, which matters on a small GPU: it has to fit it).
+  float cov = (layer >= 0 && edge > 1.0) ? 1.0 : ((layer < 0 && edge < -1.0) ? 0.0 : clamp(edge + 0.5, 0.0, 1.0));
+  vec3 L = vec3(0.0), Lt = vec3(0.0);
+  float skyMask = 0.0, m = 1.0;
+  if (cov > 0.0) Lt = shadeTerrain(layer >= 0 ? layer : topLayer, d);
+  if (cov < 1.0) L = shadeSky(d, m);
+  L = mix(L, Lt, cov);
+  skyMask = m * (1.0 - cov);
 
   // ---------- precipitation overlay (screen space, display-referred) ----------
   vec3 rainRel = vec3(0.0);

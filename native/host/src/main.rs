@@ -151,7 +151,7 @@ fn n_c2d_count() -> usize { canvas2d::count() }
 /// Resident memory of this program in MB (Linux), or 0.
 fn rss_mb() -> f64 { std::fs::read_to_string("/proc/self/statm").ok().and_then(|s| s.split_whitespace().nth(1).and_then(|v| v.parse::<f64>().ok())).map(|p| p * 4096.0 / 1048576.0).unwrap_or(0.0) }
 fn n_rss() -> f64 { rss_mb() }
-fn n_exit(code: i32) { OUT.with(|o| if let Some(x) = o.borrow_mut().take() { x.finish(); }); std::process::exit(code) }
+fn n_exit(code: i32) { OUT.with(|o| if let Some(x) = o.borrow_mut().take() { x.finish(); }); leave(code) }
 fn n_presents() -> f64 { PRESENTS.with(|p| p.get()) as f64 }
 fn n_c2d_resize(id: usize, w: u32, h: u32) { canvas2d::resize(id, w, h) }
 fn n_c2d_call<'js>(id: usize, op: String, arg: String, buf: Option<ArrayBuffer<'js>>) -> Result<()> {
@@ -187,9 +187,10 @@ impl Loader for Load {
 /// Start this program again with Mesa's software renderer (the environment must be set before the driver loads).
 fn reexec_software() -> ! {
     use std::os::unix::process::CommandExt;
+    { extern "C" { fn dup2(a: i32, b: i32) -> i32; } let o = ORIG_STDERR.load(std::sync::atomic::Ordering::Relaxed); if o >= 0 { unsafe { dup2(o, 2); } } }      // (the new program must get the real stderr, not our filter's pipe)
     let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("wobbly-clock-run"));
     let err = std::process::Command::new(exe).args(std::env::args().skip(1)).env("WOBBLY_SOFTWARE", "1").env("LIBGL_ALWAYS_SOFTWARE", "1").env("GALLIUM_DRIVER", std::env::var("GALLIUM_DRIVER").unwrap_or_else(|_| "llvmpipe".into())).exec();
-    eprintln!("wobbly-clock-run: cannot restart with software rendering: {err}"); std::process::exit(1)
+    eprintln!("wobbly-clock-run: cannot restart with software rendering: {err}"); leave(1)
 }
 
 fn usage(code: i32) -> ! {
@@ -204,7 +205,48 @@ usage: wobbly-clock-run [--config FILE] [--web DIR] [--sink fb[:DEV]|ppm:DIR|mat
   --size WxH      the picture size for the ppm sink; --frames N stop after N frames; --at EPOCH_MS pretend it is this moment\n\
 tests: wobbly-clock-run <repo-root> <out.ppm> [--app] [--w=N --h=N --search=... --conf=JSON ...]");
     if code == 0 { println!("{text}"); } else { eprintln!("{text}"); }
+    leave(code)
+}
+
+/// The GPU driver on a Pi Zero or 3 (Mesa's VC4) prints a whole shader, hundreds of thousands of lines, whenever it cannot fit one into its registers and tries again another
+/// way. That goes through here (stderr is a pipe for the program's own lifetime): the lines of such a dump are dropped and one line says it happened; everything else is
+/// passed on as it came. WOBBLY_RAW_STDERR=1 turns this off.
+static ORIG_STDERR: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(-1);
+/// Ends the program. If stderr was put through the filter below, the real one is put back and the filter is given a moment to pass on what it holds.
+fn leave(code: i32) -> ! {
+    extern "C" { fn dup2(a: i32, b: i32) -> i32; }
+    let o = ORIG_STDERR.load(std::sync::atomic::Ordering::Relaxed);
+    if o >= 0 { unsafe { dup2(o, 2); } std::thread::sleep(std::time::Duration::from_millis(60)); }
     std::process::exit(code)
+}
+fn quiet_driver_noise() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::io::FromRawFd;
+    extern "C" { fn pipe(fds: *mut i32) -> i32; fn dup(fd: i32) -> i32; fn dup2(a: i32, b: i32) -> i32; }
+    if std::env::var("WOBBLY_RAW_STDERR").is_ok() { return; }
+    unsafe {
+        let mut fds = [0i32; 2];
+        if pipe(fds.as_mut_ptr()) != 0 { return; }
+        let orig = dup(2);
+        if orig < 0 || dup2(fds[1], 2) < 0 { return; }
+        ORIG_STDERR.store(dup(orig), std::sync::atomic::Ordering::Relaxed);          // (a second copy of the real stderr for leave(): the filter owns `orig`)
+        let reader = std::fs::File::from_raw_fd(fds[0]);
+        let mut out = std::fs::File::from_raw_fd(orig);
+        std::thread::spawn(move || {
+            let mut dump = false; let mut hidden = 0u64;
+            for line in BufReader::new(reader).split(b'\n').flatten() {
+                let t = String::from_utf8_lossy(&line);
+                let is_dump = t.starts_with("Failed to register allocate") || (dump && (t.is_empty() || t.starts_with(' ') || t.starts_with('\t') || t.starts_with("BLOCK") || t.starts_with("->") || t.starts_with(|c: char| c.is_ascii_digit()) || t.starts_with("temp") || t.starts_with("Spill")));
+                if is_dump {
+                    if t.starts_with("Failed to register allocate") { let _ = writeln!(out, "wobbly-clock-run: the GPU driver could not fit a shader into its registers and is trying another way (its listing is not shown; set WOBBLY_RAW_STDERR=1 to see it)"); }
+                    dump = true; hidden += 1; continue;
+                }
+                dump = false;
+                let _ = out.write_all(&line); let _ = out.write_all(b"\n");
+            }
+            let _ = hidden;
+        });
+    }
 }
 
 fn main() {
@@ -234,7 +276,7 @@ fn main() {
         (std::fs::canonicalize(&a[1]).expect("repo root"), a[2].clone())
     } else {
         match fl("web").or_else(|| std::env::var("WOBBLY_WEB").ok()) {
-            Some(web) => (std::fs::canonicalize(&web).unwrap_or_else(|e| { eprintln!("wobbly-clock-run: the page's files are not at {web}: {e}"); std::process::exit(1) }), String::new()),
+            Some(web) => (std::fs::canonicalize(&web).unwrap_or_else(|e| { eprintln!("wobbly-clock-run: the page's files are not at {web}: {e}"); leave(1) }), String::new()),
             None => { WEB_ON_DISK.with(|d| d.set(false)); (PathBuf::from("/web"), String::new()) }       // the copy inside the program
         }
     };
@@ -250,7 +292,7 @@ fn main() {
         let cp = fl("config").unwrap_or_else(|| "/etc/wobbly-clock/wobbly-clock.conf".into());
         cfg_text = std::fs::read_to_string(&cp).unwrap_or_default();       // no file: the defaults (the setup command writes one)
         let size = fl("size").and_then(|s| s.split_once('x').map(|(a, b)| (a.parse().unwrap_or(480), b.parse().unwrap_or(270)))).unwrap_or((480usize, 270usize));
-        let (o, ow, oh) = out::Out::open(fl("sink").as_deref(), &cfg_text, size).unwrap_or_else(|e| { eprintln!("wobbly-clock-run: {e}"); std::process::exit(1) });
+        let (o, ow, oh) = out::Out::open(fl("sink").as_deref(), &cfg_text, size).unwrap_or_else(|e| { eprintln!("wobbly-clock-run: {e}"); leave(1) });
         OUT.with(|x| *x.borrow_mut() = Some(o));
         start_watchdog();
         w = ow as u32; h = oh as u32;
@@ -262,6 +304,7 @@ fn main() {
     // Mesa's software renderer (llvmpipe) provides ES 3 on the CPU: slower, but the same picture. Software rendering is also chosen with --software.
     let force_software = flags.iter().any(|(k, _)| k == "software");
     if force_software && std::env::var("WOBBLY_SOFTWARE").is_err() { reexec_software(); }
+    quiet_driver_noise();
     let opened = if gpu_test { egl::Egl::open(2) } else if std::env::var("WOBBLY_FAKE_NO_ES3").is_ok() && std::env::var("WOBBLY_SOFTWARE").is_err() { Err("simulated: no EGL configuration for OpenGL ES 3".to_string()) } else { egl::Egl::open(3) };   // (the variable is for the test of the fallback)
     // No ES 3: the Pi Zero (all models), 1, 2 and 3 have OpenGL ES 2 in hardware, and the page's shaders run there in their ES 2 form (js/sky/portable.js). Only when there is
     // no GPU context at all does the program fall back to the CPU renderer. (WOBBLY_FAKE_NO_ES3 tests that fallback; --es2 makes any GPU take the ES 2 path.)
@@ -274,7 +317,7 @@ fn main() {
                     Ok(e2) => { eprintln!("wobbly-clock-run: no OpenGL ES 3 on this GPU ({e}): using its OpenGL ES 2 (the page's shaders in their ES 2 form)"); e2 }
                     Err(e2) => { eprintln!("wobbly-clock-run: no OpenGL ES 3 on this GPU ({e}), and ES 2 gives: {e2}: drawing on the CPU instead (slower)"); reexec_software(); }
                 }
-            } else { eprintln!("wobbly-clock-run: {e}"); std::process::exit(1) }
+            } else { eprintln!("wobbly-clock-run: {e}"); leave(1) }
         }
     };
     let gl = Rc::new(gl::Gl::new(egl));
@@ -326,31 +369,31 @@ fn main() {
         eprintln!("GL: {} / {}", gl.version(), (|| { let v = gl.call(&ctx, "getString", &[Value::new_int(ctx.clone(), 0x1F01)]).ok().and_then(|v| v.as_string().and_then(|s| s.to_string().ok())); v.unwrap_or_default() })());
 
         let host = embedded("host/host.js").expect("host.js");
-        if let Err(e) = ctx.eval::<(), _>(host) { eprintln!("host.js: {}", describe(&ctx, e)); std::process::exit(1); }
+        if let Err(e) = ctx.eval::<(), _>(host) { eprintln!("host.js: {}", describe(&ctx, e)); leave(1); }
         let (mod_name, spike) = if gpu_test { ("host/gputest.js".to_string(), embedded("host/gputest.js").unwrap()) } else if run_mode || fl("app").is_some() { ("host/boot.js".to_string(), embedded("host/boot.js").unwrap()) } else {
             let script_path = std::env::var("WOBBLY_SCRIPT").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("native/host/js/spike.js"));
             let full = if script_path.is_absolute() { script_path.clone() } else if root.join(&script_path).exists() { root.join(&script_path) } else { std::env::current_dir().unwrap().join(&script_path) };
-            let src = std::fs::read_to_string(&full).unwrap_or_else(|e| { eprintln!("{}: {e}", full.display()); std::process::exit(1) });
+            let src = std::fs::read_to_string(&full).unwrap_or_else(|e| { eprintln!("{}: {e}", full.display()); leave(1) });
             let full = std::fs::canonicalize(&full).unwrap_or(full);
             (full.strip_prefix(&root).map(|p| p.to_string_lossy().to_string()).unwrap_or_else(|_| "script.js".into()), src)
         };
-        match Module::evaluate(ctx.clone(), mod_name, spike) { Ok(p) => { MAIN_PROMISE.with(|m| *m.borrow_mut() = Some(rquickjs::Persistent::save(&ctx, p))); } Err(e) => { eprintln!("script: {}", describe(&ctx, e)); std::process::exit(1); } }
+        match Module::evaluate(ctx.clone(), mod_name, spike) { Ok(p) => { MAIN_PROMISE.with(|m| *m.borrow_mut() = Some(rquickjs::Persistent::save(&ctx, p))); } Err(e) => { eprintln!("script: {}", describe(&ctx, e)); leave(1); } }
     });
 
     // run promise jobs and timers until the script says it is done
     let started = Instant::now();
     while !DONE.with(|d| d.get()) {
-        loop { match rt.execute_pending_job() { Ok(true) => {}, Ok(false) => break, Err(e) => { ctx.with(|c| eprintln!("job error: {}", describe(&c, rquickjs::Error::Exception)));  let _ = e; std::process::exit(1) } } }
+        loop { match rt.execute_pending_job() { Ok(true) => {}, Ok(false) => break, Err(e) => { ctx.with(|c| eprintln!("job error: {}", describe(&c, rquickjs::Error::Exception)));  let _ = e; leave(1) } } }
         beat();
         ctx.with(|c| { let _ = c.globals().get::<_, Function>("__pump").and_then(|f| f.call::<_, ()>(())); });
         let failed = ctx.with(|c| MAIN_PROMISE.with(|m| { let p = m.borrow().clone()?; let p = p.restore(&c).ok()?; match p.result::<Value>() { Some(Err(e)) => Some(describe(&c, e)), _ => None } }));
-        if let Some(e) = failed { eprintln!("script failed: {e}"); std::process::exit(1); }
-        if !run_mode && started.elapsed().as_secs() > 120 { eprintln!("timeout"); std::process::exit(1); }
+        if let Some(e) = failed { eprintln!("script failed: {e}"); leave(1); }
+        if !run_mode && started.elapsed().as_secs() > 120 { eprintln!("timeout"); leave(1); }
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
     OUT.with(|o| if let Some(x) = o.borrow_mut().take() { x.finish(); });
     if !run_mode { eprintln!("rendered {w}x{h} to {out_path} in {:.1}s", started.elapsed().as_secs_f64()); }
-    std::process::exit(0);   // (skips freeing the JS heap: the page's objects reference each other)
+    leave(0);   // (skips freeing the JS heap: the page's objects reference each other)
 }
 
 fn describe(ctx: &Ctx<'_>, e: rquickjs::Error) -> String {
