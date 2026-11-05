@@ -846,24 +846,43 @@ export class SkyEngine {
       const snowRate = (w.precip || 0) * (w.snowfall || 0), rainRate = (w.precip || 0) * (1 - (w.snowfall || 0));
       this.wx = { snow: on ? Math.min(1, snowRate * 1.4) : 0, rain: on ? Math.min(1, rainRate * 1.3) : 0 };       // (read by the tests)
     }
-    // An ES 2 GPU gets the glass as up to three small programs (body, weather, outline), each reading the one before; the rest is one program.
+    // An ES 2 GPU gets the glass as small programs, each reading what the ones before made (a Pi Zero's driver could not fit the whole glass in one: it drew nothing): the height field and
+    // slope (ggeo), the shadow and halo (gaura), for stained glass the tube's colours (gemit, ghalo), the body (gbody), snow and rain when there are any (gwx), the outline (gout).
     const kind = !glassOn ? 'off' : g.mode > 2.5 ? 'ink' : 'glass';
-    const passes = this.es2 && kind === 'glass' ? ['gbody', ...(this.wx.snow > 0.01 || this.wx.rain > 0.01 ? ['gwx'] : []), 'gout'] : [kind];
-    if (passes.length > 1) this._ensurePing(cw, ch);
+    const stained = g.mode > 1.5 && g.mode <= 2.5;
+    const passes = this.es2 && kind === 'glass' ? ['ggeo', 'gaura', ...(stained ? ['gemit', 'ghalo'] : []), 'gbody', ...(this.wx.snow > 0.01 || this.wx.rain > 0.01 ? ['gwx'] : []), 'gout'] : [kind];
+    if (passes.length > 1) { this._ensurePing(cw, ch); this._ensureGlassT(cw, ch); }
     const dpr = cw / Math.max(1, this.canvas.clientWidth);
-    let prev = null;
-    passes.forEach((pass, i) => {
-      const last = i === passes.length - 1;
-      const out = last ? (led ? this.compTarget : null) : this.pingT[i % 2];
+    let prev = null, n = 0;
+    for (const pass of passes) {
+      const last = pass === passes[passes.length - 1];
+      const own = passes.length > 1 && this.glassT[pass];                // a pass that makes an input of a later one
+      const out = last ? (led ? this.compTarget : null) : own || this.pingT[n++ % 2];
       gl.bindFramebuffer(gl.FRAMEBUFFER, out ? out.fbo : null);
       gl.viewport(0, 0, cw, ch);
       this._use(this._blitProgram(pass));
       this._blitUniforms(T, glassOn, led, cw, ch, dpr, prev, last);
+      this._bindGlassInputs(pass);
       gl.bindVertexArray(this.vaoEmpty);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
-      prev = out;
-    });
+      if (!own) prev = out;
+    }
     if (led) this._ledPass(cw, ch);
+  }
+
+  _ensureGlassT(w, h) {
+    const gl = this.gl;
+    if (this.glassT && this.glassT.w === w && this.glassT.h === h) return;
+    if (this.glassT) for (const k of ['ggeo', 'gaura', 'gemit', 'ghalo']) { gl.deleteTexture(this.glassT[k].tex); gl.deleteFramebuffer(this.glassT[k].fbo); }
+    this.glassT = { w, h };
+    for (const k of ['ggeo', 'gaura', 'gemit', 'ghalo']) this.glassT[k] = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);
+  }
+  /** The body pass reads what the passes before it made (units 1 to 4: nothing else it reads is on them). */
+  _bindGlassInputs(pass) {
+    if (pass !== 'gbody' || !this.glassT) return;
+    const G = this.glassT;
+    this._1i('uGeo', 1); this._bind(1, G.ggeo.tex); this._1i('uAura', 2); this._bind(2, G.gaura.tex);
+    this._1i('uEmit', 3); this._bind(3, G.gemit.tex); this._1i('uHalo', 4); this._bind(4, G.ghalo.tex);
   }
 
   /** The uniforms and textures of a final pass (the program is already in use); `prev` is the picture the pass before it made. */
@@ -1231,12 +1250,10 @@ export class SkyEngine {
       const d = new Uint8Array(cw * ch * 4); gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, d);
       if (this.es2 && g.mode > 0 && g.hasMask && this.pingT) {
         const dpr = cw / Math.max(1, this.canvas.clientWidth), led = g.led.on;
-        const draw = (k, fbo, prev, unit) => { gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.viewport(0, 0, cw, ch); gl.clearColor(1, 0, 1, 1); gl.clear(gl.COLOR_BUFFER_BIT); this._use(this._blitProgram(k)); this._blitUniforms(T, true, led, cw, ch, dpr, prev, true, unit); gl.bindVertexArray(this.vaoEmpty); gl.drawArrays(gl.TRIANGLES, 0, 3); };
+        const draw = (k, fbo, prev, unit) => { gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.viewport(0, 0, cw, ch); gl.clearColor(1, 0, 1, 1); gl.clear(gl.COLOR_BUFFER_BIT); this._use(this._blitProgram(k)); this._blitUniforms(T, true, led, cw, ch, dpr, prev, true, unit); this._bindGlassInputs(k); gl.bindVertexArray(this.vaoEmpty); gl.drawArrays(gl.TRIANGLES, 0, 3); };
         const shot = () => { gl.bindFramebuffer(gl.FRAMEBUFFER, null); const e = new Uint8Array(cw * ch * 4); gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, e); let un = 0; for (let i = 0; i < e.length; i += 4) if (e[i] === 255 && e[i + 1] === 0 && e[i + 2] === 255) un++; return grid(e, cw, ch) + '\n(' + un + ' of ' + cw * ch + ' px were never drawn on)'; };
-        draw('gbody', null, this.pingT[0], 7); probe += '\nexperiment the glass body pass, straight to the screen:\n' + shot();
-        draw('dbgtex', this.pingT[1].fbo, null, 7); draw('dbgprev', null, this.pingT[1], 7); probe += '\nexperiment the scene copied into a spare picture, then read back from it (unit 7):\n' + shot();
-        draw('dbgprev', null, this.pingT[1], 2); probe += '\nexperiment the same read back through unit 2:\n' + shot();
-        draw('gbody', this.pingT[1].fbo, this.pingT[0], 7); draw('dbgprev', null, this.pingT[1], 7); probe += '\nexperiment the glass body pass into a spare picture, then read back from it:\n' + shot();
+        this._ensureGlassT(cw, ch);
+        for (const k of ['ggeo', 'gaura', 'gbody']) { draw(k, null, this.pingT[0], 7); probe += '\nexperiment the pass ' + k + ' straight to the screen:\n' + shot(); }
         for (const [k, what] of [['dbgtex', 'uTex read as it is'], ['dbgscene', 'the scene mip atlas (level 1)'], ['dbgmask', 'the mask coverage'], ['dbgprev', 'the picture of the pass before']]) {
           gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, cw, ch); gl.clearColor(1, 0, 1, 1); gl.clear(gl.COLOR_BUFFER_BIT);
           this._use(this._blitProgram(k)); this._blitUniforms(T, true, led, cw, ch, dpr, this.pingT[0], true);

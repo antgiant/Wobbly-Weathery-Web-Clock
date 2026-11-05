@@ -330,6 +330,10 @@ uniform float uContrast;   // strength of the readability outline and tone, 0 of
 uniform vec4 uWx;          // weather on the digits: x snow settled on them 0..1, y rain on the glass 0..1, w time in seconds
 uniform sampler2D uDrops;  // raindrops from drops.js, in the mask's place: r dark rim, g glint, b water
 uniform float uDropsOn;
+uniform sampler2D uGeo;    // (the ES 2 glass's passes)
+uniform sampler2D uAura;
+uniform sampler2D uEmit;
+uniform sampler2D uHalo;
 uniform sampler2D uPrev;   // the previous of the glass's passes (ES 2 runs the glass as body, weather and outline)
 in vec2 vUv;
 out vec4 oColor;
@@ -571,7 +575,6 @@ void bodyGlass() {
   c += uLightCol * rim * 0.05;
   c += uLightCol * exp(-pow((h - 0.62) * 5.0, 2.0)) * spec * 0.35 * (1.0 - frost);
   vec3 glass = min(c, vec3(1.6));
-#ifndef BLIT_GBODY
   if (cover > 0.02) {                                                  // snow and rain on the digits
     if (uWx.x > 0.01) glass = snowOn(glass, snowCap(stroke, uWx.x), base);
     if (uWx.y > 0.01) {
@@ -584,7 +587,6 @@ void bodyGlass() {
 #endif
     }
   }
-#endif
 
   // halo on the sky around lit glass
   vec3 shaded = base * (1.0 - shadow * (1.0 - cover));
@@ -595,16 +597,117 @@ void bodyGlass() {
     haloCol = hm.rgb / max(hm.a, 0.04); haloK = 0.85;
   }
   shaded += haloCol * halo * glow * (1.0 - cover) * haloK;
-#ifdef BLIT_GBODY
-  oColor = vec4(mix(shaded, glass, cover), 1.0);                       // (snow, rain and the outline are the next passes)
-#else
   if (uWx.y > 0.01) shaded += splash(stroke, uWx.y) * vec3(0.8, 0.9, 1.0) * 0.55;
   oColor = vec4(withOutline(shaded, glass, cover), 1.0);
-#endif
   }
 }
 
-// The ES 2 glass in three passes (each small enough for a Pi Zero's GPU): the body above (BLIT_GBODY), then snow and rain on the digits, then the readability outline.
+// The glass body of the ES 2 form, in the passes that make what it reads (ggeo: the height field and its slope, gaura: the shadow, halo and nearness, gemit/ghalo: a stained tube's colours), so that
+// no one program has to hold every read of the mask and of the scene: a Pi Zero's driver could not fit them (it drew nothing).
+void passGeo() {
+  float stroke = uGlass.z;
+  vec2 px = 1.0 / uRes;
+  float maskScale = uMaskPx.x / (uMaskRect.z * uRes.x);
+  MaskLv lvH = maskLv(max(log2(stroke * 0.30 * maskScale), 0.0));
+  float d = stroke * 0.22;
+  vec2 dx = vec2(d * px.x, 0.0), dy = vec2(0.0, d * px.y);
+  float h  = maskA(vUv, lvH);
+  float gx = maskA(vUv + dx, lvH) - maskA(vUv - dx, lvH);
+  float gy = maskA(vUv + dy, lvH) - maskA(vUv - dy, lvH);
+  oColor = vec4(h, gx * 0.5 + 0.5, gy * 0.5 + 0.5, maskA0(vUv));
+}
+void passAura() {
+  float stroke = uGlass.z;
+  vec2 px = 1.0 / uRes;
+  float maskScale = uMaskPx.x / (uMaskRect.z * uRes.x);
+  MaskLv lvS = maskLv(max(log2(stroke * 0.9 * maskScale), 0.0)), lvG = maskLv(max(log2(stroke * 1.5 * maskScale), 0.0));
+  float glow = uGlow.x;
+  vec2 sh = vUv - uLight.xy * stroke * 0.22 * px;
+  float shadow = maskA(sh, lvS) * (0.10 + 0.20 * uLight.z) * (1.0 - 0.7 * glow);
+  float halo = glow > 0.002 ? maskA(vUv, lvG) : 0.0;
+  oColor = vec4(shadow, halo, maskA(vUv, lvS), 1.0);
+}
+void passEmit() {
+  float maskScale = uMaskPx.x / (uMaskRect.z * uRes.x);
+  vec4 mk = maskAt(maskUv(vUv), maskLv(max(log2(uGlass.z * 0.30 * maskScale), 0.0) * 0.5));
+  oColor = vec4(min(mk.rgb / max(mk.a, 0.05), vec3(1.3)) / 1.3, 1.0);
+}
+void passHaloCol() {
+  float maskScale = uMaskPx.x / (uMaskRect.z * uRes.x);
+  vec4 hm = maskAt(maskUv(vUv), maskLv(max(log2(uGlass.z * 1.5 * maskScale), 0.0)));
+  oColor = vec4(min(hm.rgb / max(hm.a, 0.04), vec3(1.5)) / 1.5, 1.0);
+}
+void bodyLit() {
+  vec3 base = texture(uTex, vUv).rgb;
+  float mode = uGlass.y;
+  vec2 px = 1.0 / uRes;
+  float stroke = uGlass.z;
+  float glow = uGlow.x;
+  bool stained = mode > 1.5;
+  vec4 geo = texture(uGeo, vUv), au = texture(uAura, vUv);
+  float cover = geo.a, h = geo.r, shadow = au.r, halo = au.g, wide = au.b;
+  vec2 g = geo.gb * 2.0 - 1.0;
+  oColor = vec4(base, 1.0);
+  bool near = !(cover < 0.004 && wide < 0.004 && shadow < 0.004 && halo * glow < 0.004);
+  if (near) {
+  vec3 n = normalize(vec3(-g * 2.4, 1.0));
+  float slope = length(g);
+
+  vec3 Ldir = normalize(vec3(uLight.xy * 0.75, 0.7));
+  vec3 Hv = normalize(Ldir + vec3(0.0, 0.0, 1.0));
+  float spec = pow(max(dot(n, Hv), 0.0), 38.0) * uLight.z;
+  float facing = max(dot(normalize(-g + 1e-5), uLight.xy), 0.0);      // 1 where the bevel faces the light
+  float away = max(dot(normalize(g + 1e-5), uLight.xy), 0.0);
+  float rim = smoothstep(0.02, 0.55, slope);
+  float frost = uGlass.x;
+
+  // Coloured tube: glass.js paints the lights into the mask's colour channels (alpha stays coverage), evenly
+  // spaced along each digit and fixed to their place in it, so the colour here is how brightly each light
+  // shines on this spot. The tube itself is plain glass; there are no lines on it.
+  vec3 emit = stained ? texture(uEmit, vUv).rgb * 1.3 : uGlowCol;
+
+  // ---- liquid glass (stained glass is the same glass with a colour in it) ----
+  vec2 off = n.xy * stroke * (0.9 + 0.8 * h) * px;                    // lens-like displacement
+  SceneLv lvF = sceneLv(frost * 6.0);
+  vec3 c;
+  float disp = (1.0 - frost) * 0.10 + 0.015;
+  c.r = sceneAtL(vUv + off * (1.0 + disp), lvF).r;
+  c.g = sceneAtL(vUv + off, lvF).g;
+  c.b = sceneAtL(vUv + off * (1.0 - disp), lvF).b;
+  // frost: diffuse towards the local average sky colour and go milky; clear glass stays clear
+  vec3 avg = sceneAtL(vUv, sceneLv(6.5));
+  c = mix(c, mix(avg, c, 0.5), frost * 0.6);
+  float lum = lumaOf(c);
+  c = mix(c, vec3(lum), 0.12 * frost);
+  c += uLightCol * (0.012 + 0.26 * frost * frost + 0.06 * frost) * (0.45 + 0.55 * uLight.z);
+  c += (hash21(gl_FragCoord.xy) - 0.5) * 0.05 * frost;               // fine grain of etched glass
+  c *= 1.0 - 0.10 * rim * away;                                       // bevel facing away from the light darkens
+
+  // light from inside: brightest in the thick middle of the stroke, the bevelled edge stays glassy
+  float core = smoothstep(0.10, 0.80, h);
+  float inner = glow * (0.28 + 0.72 * core) * (1.0 - 0.45 * rim);
+  if (stained) c *= mix(0.75, 1.0, smoothstep(0.30, 0.85, h));         // round tube: a little darker towards the sides
+  vec3 lamp = emit * inner;
+  if (stained) lamp *= 1.0 + 0.9 * pow(smoothstep(0.45, 0.98, h), 2.0);   // brightest down the middle of the tube
+  c += lamp * (stained ? 1.15 : 0.80);
+  if (!stained) c += emit * glow * 0.10 * (1.0 - frost * 0.4);        // faint all-over fill so thin strokes light up too
+
+  // the body of the glass is made readable first; the glints and the rim go on top, so it still looks like glass
+  if (!stained) c = bodyTone(c, stroke);                               // (a lit tube keeps its colours: the outline carries it)
+  c += uLightCol * spec * mix(1.1, 0.35, frost) * (stained ? 0.7 : 1.0);   // frost scatters the glint into a soft sheen
+  c += uLightCol * rim * facing * (0.30 + 0.45 * uLight.z) * mix(1.0, 0.65, frost) * (stained ? 0.8 : 1.0);
+  c += uLightCol * rim * 0.05;
+  c += uLightCol * exp(-pow((h - 0.62) * 5.0, 2.0)) * spec * 0.35 * (1.0 - frost);
+  vec3 glass = min(c, vec3(1.6));
+
+  vec3 shaded = base * (1.0 - shadow * (1.0 - cover));
+  vec3 haloCol = stained ? texture(uHalo, vUv).rgb * 1.5 : uGlowCol;
+  shaded += haloCol * halo * glow * (1.0 - cover) * (stained ? 0.85 : 0.30);
+  oColor = vec4(mix(shaded, glass, cover), 1.0);                       // (snow, rain and the outline are the next passes)
+  }
+}
+
+// The ES 2 glass in passes (each small enough for a Pi Zero's GPU): the reads above, the body (BLIT_GBODY), then snow and rain on the digits, then the readability outline.
 void bodyWx() {
   vec3 comp = texture(uPrev, vUv).rgb;
   float stroke = uGlass.z;
@@ -629,8 +732,18 @@ void bodyOut() {
 }
 
 void main() {
-#if defined(BLIT_GLASS) || defined(BLIT_GBODY)
+#if defined(BLIT_GLASS)
   bodyGlass();
+#elif defined(BLIT_GBODY)
+  bodyLit();
+#elif defined(BLIT_GGEO)
+  passGeo();
+#elif defined(BLIT_GAURA)
+  passAura();
+#elif defined(BLIT_GEMIT)
+  passEmit();
+#elif defined(BLIT_GHALO)
+  passHaloCol();
 #elif defined(BLIT_DBGTEX)
   oColor = vec4(texture(uTex, vUv).rgb, 1.0);
 #elif defined(BLIT_DBGSCENE)
