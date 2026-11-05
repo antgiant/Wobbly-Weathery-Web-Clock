@@ -101,7 +101,7 @@ const sitting = (x, y, r = 3) => ({ x, y, r, vy: 0, run: false, y0: y, hang: 0, 
   const dryRun = (wetX) => {
     const t = make(23); const d2 = { x: 50, y: 25, r: S * 0.12, vy: 3, run: true, y0: 25, hang: 0, wait: 0, dying: false, fall: 0, age: 1, trail: [] }; t.drops.push(d2);
     if (wetX != null) for (let y = 0; y < H; y++) for (let k = -1; k <= 1; k++) t.wet[y * W + wetX + k] = 1;      // a wet track beside it (the ink grid is 100 x 100 here)
-    for (let i = 0; i < 20; i++) { t.step(0.05, 0); t.wet[0] = t.wet[0]; if (d2.hang || d2.dying) break; }
+    for (let i = 0; i < 20; i++) { t.step(0.05, 0); if (d2.hang || d2.dying) break; }
     return d2;
   };
   const noWet = dryRun(null), right = dryRun(56), left = dryRun(44);
