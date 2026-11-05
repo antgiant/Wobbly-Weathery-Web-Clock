@@ -1204,7 +1204,21 @@ export class SkyEngine {
     let mk = 'no mask texture';
     const M = this.maskTarget;
     if (M) { gl.bindFramebuffer(gl.FRAMEBUFFER, M.fbo); const m = new Uint8Array(M.w * M.h * 4); gl.readPixels(0, 0, M.w, M.h, gl.RGBA, gl.UNSIGNED_BYTE, m); gl.bindFramebuffer(gl.FRAMEBUFFER, null); let lit = 0; for (let i = 3; i < m.length; i += 4) if (m[i] > 40) lit++; mk = 'mask ' + M.w + 'x' + M.h + ': ' + lit + ' px covered (' + (100 * lit / (M.w * M.h)).toFixed(1) + '%), rect ' + g.rect.map((v) => v.toFixed(2)).join(','); }
-    return mk + '\nfinal pass: ' + (!(g.mode > 0 && g.hasMask) ? 'off (no glass: mode ' + g.mode + ', mask ' + g.hasMask + ')' : g.mode > 2.5 ? 'ink' : 'glass') + '; scene ' + T.w + 'x' + T.h + ' (top row first):\n' + grid(a, T.w, T.h) + '\nscreen ' + cw + 'x' + ch + ':\n' + grid(b, cw, ch);
+    let probe = '';
+    const err0 = gl.getError();
+    try {                                                              // two experiments on the screen: is every pixel of it paintable, and does a plain copy of the scene fill it?
+      gl.disable(gl.BLEND); gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, cw, ch);
+      gl.clearColor(1, 0, 1, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+      const c = new Uint8Array(cw * ch * 4); gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, c);
+      let lit = 0, xs = 0, ys = 0; for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { const i = (y * cw + x) * 4; if (c[i] > 200 && c[i + 2] > 200) { lit++; if (x + 1 > xs) xs = x + 1; if (y + 1 > ys) ys = y + 1; } }
+      probe = '\nclear test: ' + lit + ' of ' + cw * ch + ' px painted (reaches ' + xs + ' x ' + ys + ')';
+      gl.bindTexture(gl.TEXTURE_2D, T.tex);
+      this._use(this._blitProgram('off')); this._1i('uTex', 0); this._bind(0, T.tex); this._1f('uTexW', T.w); this._1f('uFullOn', 0);
+      gl.bindVertexArray(this.vaoEmpty); gl.drawArrays(gl.TRIANGLES, 0, 3);
+      const d = new Uint8Array(cw * ch * 4); gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, d);
+      probe += '\nplain copy of the scene on the screen:\n' + grid(d, cw, ch) + '\nGL error before the probe ' + err0 + ', after ' + gl.getError();
+    } catch (e) { probe += '\nprobe failed: ' + e; }
+    return mk + '\nfinal pass: ' + (!(g.mode > 0 && g.hasMask) ? 'off (no glass: mode ' + g.mode + ', mask ' + g.hasMask + ')' : g.mode > 2.5 ? 'ink' : 'glass') + '; scene ' + T.w + 'x' + T.h + ' (top row first):\n' + grid(a, T.w, T.h) + '\nscreen ' + cw + 'x' + ch + ':\n' + grid(b, cw, ch) + probe;
   }
 
   /** One line about what the GPU made so far (for the Pi's timing log, to tell a black screen from a dark sky): the scene's average colour, the exposure and, on ES 2, the packed tables decoded. */
