@@ -47,6 +47,11 @@ vec3 skyLum(vec3 d) {
   return L;
 }
 float lumaOf(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+vec3 sunTransAt(float h, float elev) {            // sunlight reaching height h above the camera
+  float r = BOT + uCamH + h;
+  float mu = sin(elev);
+  return transmittance(r, mu) * earthShadow(r, mu);
+}
 `;
 
 
@@ -80,6 +85,43 @@ vec3 toDisplay(vec3 L, float expo, vec3 addRel) {
   return srgb(mix(toe, tm, smoothstep(0.02, 0.25, x)));
 }
 `;
+
+// ------------------------------------------------- per-frame constants ---
+// Values that are the same for every pixel (or depend only on the compass direction) are worked out once a frame in a tiny pass, FRAG_CONSTS, instead of at every pixel:
+// texel 0 the zenith light, 1 the ambient light on the ground, 2 the sunlight reaching it, 3 the moonlight; then HAZE_N texels, one per compass direction, of the sky's colour
+// just above the horizon (the haze that distant things fade into). Read by the scene programs and the plants.
+export const CONSTS_N = 4, HAZE_N = 512;
+export const CONSTS_LOOKUP = `
+uniform sampler2D uConsts;
+const float CONSTS_W = ${CONSTS_N + HAZE_N}.0;
+const float CONSTS_SCALE = 16384.0;                // (these are absolute luminances, up to tens of thousands of cd/m^2: packed as value / CONSTS_SCALE, which is what the 8-bit packing's range holds)
+vec3 constAt(float i) { return hdrFetch(uConsts, vec2((i + 0.5) / CONSTS_W, 0.5)) * CONSTS_SCALE; }
+vec3 hazeAt(float az) {                            // az: compass direction as atan(x, z), -PI..PI
+  float x = (az + PI) / (2.0 * PI) * ${HAZE_N}.0 - 0.5;
+  float i = floor(x), f = x - i;
+  return mix(constAt(${CONSTS_N}.0 + mod(i + ${HAZE_N}.0, ${HAZE_N}.0)), constAt(${CONSTS_N}.0 + mod(i + 1.0 + ${HAZE_N}.0, ${HAZE_N}.0)), f);
+}
+`;
+export const FRAG_CONSTS = `#version 300 es
+${ATMOS_COMMON}
+${SKY_LOOKUP}
+const float CONSTS_SCALE = 16384.0;                // (see constAt)
+out vec4 oColor;
+void main() {
+  float i = floor(gl_FragCoord.x);
+  vec3 v;
+  if (i >= ${CONSTS_N}.0) {
+    float a = ((i - ${CONSTS_N}.0 + 0.5) / ${HAZE_N}.0) * 2.0 * PI - PI;
+    v = skyLum(normalize(vec3(sin(a), 0.012, cos(a))));
+  } else {
+    vec3 zen = skyLum(vec3(0.0, 1.0, 0.0));
+    if (i < 0.5) v = zen;
+    else if (i < 1.5) v = PI * (0.7 * zen + 0.3 * skyLum(normalize(vec3(uSunA.x * 0.866, 0.5, uSunA.y * 0.866))));
+    else if (i < 2.5) v = sunTransAt(0.0, uSunA.z) * uSunA.w;
+    else v = sunTransAt(0.0, uMoonA.z) * uMoonA.w;
+  }
+  oColor = hdrPack(v / CONSTS_SCALE);
+}`;
 
 // ----------------------------------------------------------------- noise ---
 // (The noise is made here with integer arithmetic, which an OpenGL ES 2 GPU lacks: it loads the same picture from data/noise.bin, made by tools/make-noise.mjs.)
@@ -716,6 +758,7 @@ void main() {
 const SCENE_HEAD = `${ATMOS_COMMON}
 ${SKY_LOOKUP}
 ${DISPLAY_FNS}
+${CONSTS_LOOKUP}
 uniform sampler2D uMilky;
 uniform sampler2D uMoonTex;
 uniform sampler2D uNoise;
@@ -776,12 +819,6 @@ float lodFor(float footprintM, float tileM) {
   return clamp(log2(max(footprintM / tileM * 256.0, 1.0)), 0.0, 8.0);
 }
 
-// ---- atmosphere helpers ----
-vec3 sunTransAt(float h, float elev) {            // sunlight reaching height h above the camera
-  float r = BOT + uCamH + h;
-  float mu = sin(elev);
-  return transmittance(r, mu) * earthShadow(r, mu);
-}
 
 // per-pixel values shared by the terrain and sky shaders (assigned in setup)
 float swellUp;
@@ -1125,12 +1162,11 @@ const SCENE_SETUP = `void setup() {
   else if (d.y < sk.b) layer = 2;
 
   hdir = normalize(vec3(d.x, 0.0, d.z) + vec3(1e-6, 0.0, 0.0));
-  hazeL = skyLum(normalize(vec3(hdir.x, 0.012, hdir.z)));
-  zenL = skyLum(vec3(0.0, 1.0, 0.0));
-  vec3 sunUpDir = normalize(vec3(uSunA.x * 0.866, 0.5, uSunA.y * 0.866));
-  ambLux = PI * (0.7 * zenL + 0.3 * skyLum(sunUpDir));
-  sunIg  = sunTransAt(0.0, uSunA.z) * uSunA.w;
-  moonIg = sunTransAt(0.0, uMoonA.z) * uMoonA.w;
+  hazeL = hazeAt(az);                                   // these five are the same every frame for all pixels, or for all pixels in one direction: FRAG_CONSTS worked them out
+  zenL = constAt(0.0);
+  ambLux = constAt(1.0);
+  sunIg  = constAt(2.0);
+  moonIg = constAt(3.0);
 
   // Analytic antialiasing of the outermost silhouette (there is no MSAA here): within a
   // pixel of the skyline, shade both sides and blend by coverage.

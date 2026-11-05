@@ -132,7 +132,7 @@ out('--- the engine\'s real shaders: the OpenGL ES 2 form (GLSL ES 1.00), compil
   const { toES1 } = await import('js/sky/portable.js');
   const pairs = [
     ['transmittance', A.VERT_FULLSCREEN, A.FRAG_TRANSMITTANCE], ['multiscatter', A.VERT_FULLSCREEN, A.FRAG_MULTISCATTER], ['skyview', A.VERT_FULLSCREEN, A.FRAG_SKYVIEW],
-    ['noise (mips)', S.VERT_FULLSCREEN, S.FRAG_NOISE_DOWN], ['mip atlas', S.VERT_FULLSCREEN, S.FRAG_ATLAS_PLACE], ['exposure', S.VERT_FULLSCREEN, S.FRAG_ADAPT],
+    ['noise (mips)', S.VERT_FULLSCREEN, S.FRAG_NOISE_DOWN], ['mip atlas', S.VERT_FULLSCREEN, S.FRAG_ATLAS_PLACE], ['exposure', S.VERT_FULLSCREEN, S.FRAG_ADAPT], ['per-frame light', S.VERT_FULLSCREEN, S.FRAG_CONSTS],
     ['scene: sky and clouds', S.VERT_FULLSCREEN, S.FRAG_SCENE_SKY], ['scene: ground and water', S.VERT_FULLSCREEN, S.FRAG_SCENE_TERRAIN], ['final picture: plain', S.VERT_FULLSCREEN, S.fragBlit('off')], ['final picture: LED ink', S.VERT_FULLSCREEN, S.fragBlit('ink')], ['final picture: glass', S.VERT_FULLSCREEN, S.fragBlit('glass')],
     ['stars', S.VERT_STARS, S.FRAG_STARS], ['plants', P.VERT_PLANTS, P.FRAG_PLANTS],
     ['LED panel', S.VERT_FULLSCREEN, S.FRAG_LED], ['LED stars', S.VERT_FULLSCREEN, S.FRAG_LED_PEAK], ['LED averages', S.VERT_FULLSCREEN, S.FRAG_LED_AVG],

@@ -17,7 +17,7 @@ import {
   VERT_FULLSCREEN, FRAG_TRANSMITTANCE, FRAG_MULTISCATTER, FRAG_SKYVIEW,
 } from './glsl-atmosphere.js';
 import {
-  FRAG_NOISE, FRAG_NOISE_DOWN, FRAG_ATLAS_PLACE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, fragBlit, FRAG_LED, FRAG_LED_PEAK, FRAG_LED_AVG, FRAG_SCENE_SKY, FRAG_SCENE_TERRAIN,
+  FRAG_NOISE, FRAG_NOISE_DOWN, FRAG_ATLAS_PLACE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, fragBlit, FRAG_LED, FRAG_LED_PEAK, FRAG_LED_AVG, FRAG_SCENE_SKY, FRAG_SCENE_TERRAIN, FRAG_CONSTS, CONSTS_N, HAZE_N,
 } from './glsl-scene.js';
 import { toES1, packSkyline, NOISE_ATLAS } from './portable.js';
 import { VERT_PLANTS, FRAG_PLANTS } from './glsl-plants.js';
@@ -221,6 +221,7 @@ export class SkyEngine {
     this.pSkyView = this._program(VERT_FULLSCREEN, FRAG_SKYVIEW);
     this.pNoise = this.es2 ? null : this._program(VERT_FULLSCREEN, FRAG_NOISE);          // (an ES 2 GPU has no integer arithmetic: data/noise.bin has the same picture)
     this.pAdapt = this._program(VERT_FULLSCREEN, FRAG_ADAPT);
+    this.pConsts = this._program(VERT_FULLSCREEN, FRAG_CONSTS);
     this.pSceneSky = this._program(VERT_FULLSCREEN, FRAG_SCENE_SKY);          // the sky and the ground are two programs into one picture (glsl-scene.js: one is too big for a small GPU)
     this.pSceneTerrain = this._program(VERT_FULLSCREEN, FRAG_SCENE_TERRAIN);
     this.pBlits = {};                                            // the final pass in the form that is needed (_blitProgram)
@@ -238,6 +239,7 @@ export class SkyEngine {
     this.tMS = this._target(sc(MS_SIZE, 8), sc(MS_SIZE, 8), F, RGBA, HF, LF);
     this.tSkySun = this._target(sc(SKY_W, 64), sc(SKY_H, 48), F, RGBA, HF, LF);
     this.tSkyMoon = this._target(sc(SKY_W, 64), sc(SKY_H, 48), F, RGBA, HF, LF);
+    this.tConsts = this._target(CONSTS_N + HAZE_N, 1, F, RGBA, HF, gl.NEAREST);         // the values that are the same for every pixel (glsl-scene.js: FRAG_CONSTS)
     this.tAdapt = [this._target(1, 1, F, RGBA, HF, gl.NEAREST), this._target(1, 1, F, RGBA, HF, gl.NEAREST)];
     this.adaptIdx = 0;
 
@@ -706,6 +708,14 @@ export class SkyEngine {
       this.exposure.adaptSnap = false;
     }
 
+    // ---- the light that is the same for every pixel, once instead of at every one ----
+    {
+      this._use(this.pConsts);
+      this._1f('uMie', s.mie);
+      this._bindSkyUniforms(sky, sunAz, sunAlt, sunLux, moonAz, moonAlt, moonLux, natural, lp, camH);
+      this._runPass(this.tConsts, this.pConsts);
+    }
+
     // ---- scene ----
     const T = this.sceneTarget;
     gl.bindFramebuffer(gl.FRAMEBUFFER, T.fbo);
@@ -719,6 +729,7 @@ export class SkyEngine {
     this._1i('uNoise', 6); this._bind(6, this.tNoise.tex);
     this._1i('uSkyline', 7); this._bind(7, this.texSkyline);
     this._1i('uAdapt', 8); this._bind(8, this.tAdapt[this.adaptIdx].tex);
+    this._1i('uConsts', 10); this._bind(10, this.tConsts.tex);
     this._2f('uRes', T.w, T.h);
     this._m3('uCam', cam.mat); this._2f('uTan', cam.tan[0], cam.tan[1]);
     this._m3('uEqj', sky.eqj);
@@ -1167,6 +1178,7 @@ export class SkyEngine {
     const ad = this.tAdapt[this.adaptIdx];
     if (this.es2) {
       const a = rd(ad); o += ', exposure log ' + ((a[0] * 65536 + a[1] * 256 + a[2]) / 16777215 * 64 - 32).toFixed(2);
+      const cs = rd(this.tConsts), big = (t) => t.split(' ').map((v) => (+v * 16384).toPrecision(3)).join(' '); o += ', light (cd/m2) zenith ' + big(hdr(cs, 0)) + ' | ambient ' + big(hdr(cs, 4)) + ' | sun ' + big(hdr(cs, 8)) + ' | moon ' + big(hdr(cs, 12)) + ' | haze north ' + big(hdr(cs, (CONSTS_N + HAZE_N / 2) * 4));
       const sk = rd(this.tSkySun), tr = rd(this.tTrans);
       o += ', sky table centre ' + hdr(sk, ((this.tSkySun.h >> 1) * this.tSkySun.w + (this.tSkySun.w >> 1)) * 4) + ', transmittance centre ' + hdr(tr, ((this.tTrans.h >> 1) * this.tTrans.w + (this.tTrans.w >> 1)) * 4);
     } else { const a = rd(ad); o += ' (ES 3: tables are half floats)'; void a; }
@@ -1232,6 +1244,7 @@ export class SkyEngine {
     this._1f('uMie', s.mie);
     this._bindSkyUniforms(sky, sunAz, sunAlt, sunLux, moonAz, moonAlt, moonLux, natural, lp, camH);
     this._1i('uAdapt', 8);
+    this._1i('uConsts', 10); this._bind(10, this.tConsts.tex);
     this._m3('uCam', cam.mat);
     this._2f('uTan', cam.tan[0], cam.tan[1]);
     this._3f('uSunDir', sky.sun.dir);

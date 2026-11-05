@@ -116,9 +116,11 @@ vec3 skylineAt(sampler2D s, float u) {
 }
 // ---- a whole texel by its position (the texture is NEAREST filtered and has no mip levels) ----
 vec4 texel(sampler2D s, vec2 ij, vec2 size) { return texture(s, (floor(ij) + 0.5) / size); }
+vec3 hdrFetch(sampler2D s, vec2 uv) { return hdrDecode(texture(s, uv)); }                    // one packed texel, not blended (the texture is NEAREST filtered)
 vec4 texel0(sampler2D s, vec2 ij, vec2 size, float rho) { return texture(s, (floor(ij) + 0.5) / size); }       // (the texture has no mip levels here, so no level is chosen)
 #else
 vec4 hdrPack(vec3 c) { return vec4(c, 1.0); }
+vec3 hdrFetch(sampler2D s, vec2 uv) { return texture(s, uv).rgb; }
 vec3 hdrTex(sampler2D s, vec2 uv, vec2 px) { return texture(s, uv).rgb; }
 vec4 adaptPack(float a, float target) { return vec4(a, target, 0.0, 1.0); }
 float adaptLog(sampler2D s) { return texelFetch(s, ivec2(0), 0).r; }
