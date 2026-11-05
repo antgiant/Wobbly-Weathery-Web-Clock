@@ -744,14 +744,6 @@ void main() {
   passEmit();
 #elif defined(BLIT_GHALO)
   passHaloCol();
-#elif defined(BLIT_DBGTEX)
-  oColor = vec4(texture(uTex, vUv).rgb, 1.0);
-#elif defined(BLIT_DBGSCENE)
-  oColor = vec4(sceneAtL(vUv, sceneLv(1.0)), 1.0);
-#elif defined(BLIT_DBGMASK)
-  oColor = vec4(vec3(maskA0(vUv)), 1.0);
-#elif defined(BLIT_DBGPREV)
-  oColor = vec4(texture(uPrev, vUv).rgb, 1.0);
 #elif defined(BLIT_GWX)
   bodyWx();
 #elif defined(BLIT_GOUT)

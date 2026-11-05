@@ -1254,13 +1254,6 @@ export class SkyEngine {
         const shot = () => { gl.bindFramebuffer(gl.FRAMEBUFFER, null); const e = new Uint8Array(cw * ch * 4); gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, e); let un = 0; for (let i = 0; i < e.length; i += 4) if (e[i] === 255 && e[i + 1] === 0 && e[i + 2] === 255) un++; return grid(e, cw, ch) + '\n(' + un + ' of ' + cw * ch + ' px were never drawn on)'; };
         this._ensureGlassT(cw, ch);
         for (const k of ['ggeo', 'gaura', 'gbody']) { draw(k, null, this.pingT[0], 7); probe += '\nexperiment the pass ' + k + ' straight to the screen:\n' + shot(); }
-        for (const [k, what] of [['dbgtex', 'uTex read as it is'], ['dbgscene', 'the scene mip atlas (level 1)'], ['dbgmask', 'the mask coverage'], ['dbgprev', 'the picture of the pass before']]) {
-          gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, cw, ch); gl.clearColor(1, 0, 1, 1); gl.clear(gl.COLOR_BUFFER_BIT);
-          this._use(this._blitProgram(k)); this._blitUniforms(T, true, led, cw, ch, dpr, this.pingT[0], true);
-          gl.bindVertexArray(this.vaoEmpty); gl.drawArrays(gl.TRIANGLES, 0, 3);
-          const e = new Uint8Array(cw * ch * 4); gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, e);
-          probe += '\nexperiment ' + k + ' (' + what + '):\n' + grid(e, cw, ch);
-        }
       }
       probe += '\nplain copy of the scene on the screen:\n' + grid(d, cw, ch) + '\nGL error before the probe ' + err0 + ', after ' + gl.getError();
     } catch (e) { probe += '\nprobe failed: ' + e; }
