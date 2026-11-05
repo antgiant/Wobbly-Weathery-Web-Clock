@@ -12,12 +12,16 @@ After=network-online.target time-sync.target
 Wants=network-online.target time-sync.target
 
 [Service]
-Type=simple
-ExecStart=${bin} --config ${config}
+Type=notify
+NotifyAccess=main
+WatchdogSec=600
+ExecStart=${bin} --config ${config} --maxrss 350
 Restart=on-failure
 RestartSec=5
 ${isMatrix ? '# the matrix library opens the GPIO as root, then drops privileges itself\n' : `User=${user}\nSupplementaryGroups=video render\n`}Nice=${isMatrix ? '-5' : '0'}
-# a watchdog (WatchdogSec=60, Type=notify) is added once the renderer reports in with sd_notify
+# the renderer says READY and, every 30 s while pictures keep coming, WATCHDOG=1; a hang means no word for 10 minutes and systemd restarts it.
+# --maxrss: if memory ever grows past 350 MB the program exits and is restarted (a safety valve; the soak test shows it should never be needed)
+TimeoutStartSec=infinity
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/wobbly-clock

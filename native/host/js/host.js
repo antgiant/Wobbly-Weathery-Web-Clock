@@ -196,9 +196,11 @@ function makeGL(canvas) {
   return gl;
 }
 
+// a canvas whose script object is gone gives its pixels back (a clock that runs for years makes a few canvases a minute)
+const canvasRegistry = new FinalizationRegistry((id) => __c2d_free(id));
 class Canvas {
   constructor() { this._w = 300; this._h = 150; this._id = -1; this.clientWidth = 300; this.clientHeight = 150; this.style = {}; }
-  _ensure() { if (this._id < 0) this._id = __c2d_new(this._w, this._h); }
+  _ensure() { if (this._id < 0) { this._id = __c2d_new(this._w, this._h); canvasRegistry.register(this, this._id); } }
   get width() { return this._w; } get height() { return this._h; }
   set width(v) { this._w = v | 0; if (this._id >= 0) __c2d_resize(this._id, this._w, this._h); }
   set height(v) { this._h = v | 0; if (this._id >= 0) __c2d_resize(this._id, this._w, this._h); }

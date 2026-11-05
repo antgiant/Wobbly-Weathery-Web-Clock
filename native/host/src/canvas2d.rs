@@ -7,11 +7,20 @@ use tiny_skia::*;
 
 pub struct Canvas { pub pm: Pixmap, stack: Vec<Transform>, ts: Transform }
 
-thread_local! { static CANVASES: RefCell<Vec<Canvas>> = RefCell::new(Vec::new()); }
+thread_local! { static CANVASES: RefCell<Vec<Canvas>> = RefCell::new(Vec::new()); static FREE: RefCell<Vec<usize>> = RefCell::new(Vec::new()); }
 
 pub fn create(w: u32, h: u32) -> usize {
-    CANVASES.with(|c| { let mut c = c.borrow_mut(); c.push(Canvas { pm: Pixmap::new(w.max(1), h.max(1)).unwrap(), stack: vec![], ts: Transform::identity() }); c.len() - 1 })
+    let fresh = Canvas { pm: Pixmap::new(w.max(1), h.max(1)).unwrap(), stack: vec![], ts: Transform::identity() };
+    if let Some(id) = FREE.with(|f| f.borrow_mut().pop()) { CANVASES.with(|c| c.borrow_mut()[id] = fresh); return id; }       // a freed slot is used again: a clock that runs for years must not grow
+    CANVASES.with(|c| { let mut c = c.borrow_mut(); c.push(fresh); c.len() - 1 })
 }
+/// The script no longer has the canvas: its pixels are released and the slot can be used again.
+pub fn free(id: usize) {
+    CANVASES.with(|c| { let mut c = c.borrow_mut(); if let Some(k) = c.get_mut(id) { k.pm = Pixmap::new(1, 1).unwrap(); k.stack.clear(); } });
+    FREE.with(|f| { let mut f = f.borrow_mut(); if !f.contains(&id) { f.push(id); } });
+}
+/// How many canvases exist (for the health report).
+pub fn count() -> usize { CANVASES.with(|c| c.borrow().len()) - FREE.with(|f| f.borrow().len()) }
 pub fn resize(id: usize, w: u32, h: u32) { CANVASES.with(|c| { let mut c = c.borrow_mut(); let k = &mut c[id]; k.pm = Pixmap::new(w.max(1), h.max(1)).unwrap(); k.stack.clear(); k.ts = Transform::identity(); }); }
 
 /// Straight (not premultiplied) RGBA of a region, as getImageData and a texture upload want it.

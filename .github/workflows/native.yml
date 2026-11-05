@@ -78,6 +78,12 @@ jobs:
           WOBBLY_STORE="$RUNNER_TEMP/store.json" native/target/release/wobbly-clock-run . "$RUNNER_TEMP/app-host.ppm" --app --w=480 --h=270 "--search=t=2026-06-21T17:00:00Z&speed=0&lat=40.7&lon=-74&weather=clear" --out="$RUNNER_TEMP/app-host.ppm" --frames=2 --tz=UTC --seed=1 --offline=1 "--conf=$CONF"
           node native/host/tests/app-chromium.mjs "$RUNNER_TEMP/app-chrome.ppm" 480 270 "t=2026-06-21T17:00:00Z&speed=0&lat=40.7&lon=-74&weather=clear" "$CONF"
           node native/host/tests/ppm-diff.mjs "$RUNNER_TEMP/app-host.ppm" "$RUNNER_TEMP/app-chrome.ppm" 12 "$RUNNER_TEMP/app-diff.ppm" --max-mean 1.5 --max-over 1
+      - name: Soak - time-warped hours of running leave memory and canvases flat
+        run: |
+          set -e
+          printf 'weatherMode = rain\nlocation_latitude = 40.7\nlocation_longitude = -74\ntimeZone = UTC\nplants = off\n' > soak.conf
+          timeout 240 native/target/release/wobbly-clock-run --config soak.conf --sink ppm:/tmp/soak --size 160x90 --timewarp 3600 --health 60 --software 1 2>&1 | grep '^health' | tee soak.txt || true
+          node -e "const L=require('fs').readFileSync('soak.txt','utf8').trim().split('\n').map(l=>({rss:+/rss (\d+)/.exec(l)[1],cv:+/canvases (\d+)/.exec(l)[1]}));if(L.length<8)throw new Error('too few health lines: '+L.length);const r=L.map(x=>x.rss),h=Math.floor(L.length/2);const a=Math.max(...r.slice(0,h)),b=Math.max(...r.slice(h));console.log('rss first half max',a,'second half max',b,'canvases max',Math.max(...L.map(x=>x.cv)));if(b>a+25)throw new Error('memory grows');if(Math.max(...L.map(x=>x.cv))>80)throw new Error('canvases are not freed')"
       - name: The GPU test runs (on the CPU renderer here; it is for the Pi)
         run: native/target/release/wobbly-clock-run --gpu-test 2>&1 | tee "$RUNNER_TEMP/gputest.log" | tail -5; grep -q "=== done ===" "$RUNNER_TEMP/gputest.log"
       - name: "A GPU without OpenGL ES 3 (Pi 3, Zero): the program restarts with software rendering and still draws"
