@@ -1390,7 +1390,9 @@ export class SkyEngine {
     this._1f('uPx', T.h / 1080);
     this._1f('uTime', perfNow / 1000 % 3600);
     this._1f('uTwinkle', this.s.twinkle && !this.s.reducedMotion ? 1 : 0);
-    this._1f('uStarGain', 1.0);
+    // A star sprite is never smaller than a pixel and keeps its brightness, so on the tiny scene of a Pi at its lowest quality level (11 x 6 pixels) every visible star was a pixel-sized
+    // spot and together they made a white haze at night. With the governor on, the brightness follows the sprite's share of the picture (the same total light), for scenes under 135 pixels high.
+    this._1f('uStarGain', this.gov ? Math.min(1, (T.h / 135) ** 2) : 1.0);
     this._1f('uExtraK', Math.max(0, (w.aod - 0.12) * 1.1));
     this._1f('uWorld', 0);
     gl.bindVertexArray(this.vaoStars);
