@@ -37,6 +37,13 @@ let searchText = A.search || '';
 if (A.at) { const q = new URLSearchParams(searchText); q.set('t', new Date(A.at).toISOString()); q.set('speed', '1'); searchText = q.toString(); }     // --at: pretend it is this moment (and let time run on)
 // a CPU doing the drawing (no usable GPU): smaller sky tables (js/sky/engine.js lutScale), unless --lut says otherwise
 if (A.present) {
+  // a clock that runs for years: every hour say how it is (uptime, memory, canvases, pictures), and restart if memory grows past a limit (systemd starts it again)
+  const maxRss = A.maxrss || 0; let hourly = 0;
+  setInterval(() => {
+    const rss = __rss(), line = 'health: up ' + (performance.now() / 3600000).toFixed(2) + ' h, rss ' + rss.toFixed(0) + ' MB, canvases ' + __c2d_count() + ', pictures ' + __presents() + (G.__sky && G.__sky.gov ? ', level ' + G.__sky.gov.level : '');
+    if (A.health || ++hourly % 1 === 0) __print(line);
+    if (maxRss && rss > maxRss) { __print('health: memory ' + rss.toFixed(0) + ' MB is over the limit of ' + maxRss + ' MB, restarting'); __exit(3); }
+  }, A.health ? A.health * 1000 : 3600000);
   const renderer = String(__gl('getString', 0x1F01));
   const soft = /llvmpipe|softpipe|swrast/i.test(renderer);
   const q = new URLSearchParams(searchText);
@@ -50,8 +57,11 @@ G.location = { search, hash: '', href: doc.baseURI + search, origin: 'file://', 
 // ---- localStorage: one JSON file ----
 {
   let data = {}; try { data = JSON.parse(__store_read()); } catch (_) { /* start empty */ }
-  let pending = 0; const flush = () => { pending = 0; __store_write(JSON.stringify(data)); };
-  G.localStorage = { getItem: (k) => (k in data ? data[k] : null), setItem(k, v) { data[k] = String(v); if (!pending) pending = setTimeout(flush, 300); }, removeItem(k) { delete data[k]; if (!pending) pending = setTimeout(flush, 300); }, clear() { data = {}; flush(); }, key: (i) => Object.keys(data)[i] || null, get length() { return Object.keys(data).length; } };
+  // the SD card wears with every write: write only what changed, and at most once in ten minutes (a clock saves something every minute)
+  let pending = 0, lastText = JSON.stringify(data), lastAt = -1e12;
+  const flush = () => { pending = 0; const t = JSON.stringify(data); if (t === lastText) return; lastText = t; lastAt = performance.now(); __store_write(t); };
+  const later = () => { if (!pending) pending = setTimeout(flush, Math.max(300, lastAt + 600000 - performance.now())); };
+  G.localStorage = { getItem: (k) => (k in data ? data[k] : null), setItem(k, v) { data[k] = String(v); later(); }, removeItem(k) { delete data[k]; later(); }, clear() { data = {}; flush(); }, key: (i) => Object.keys(data)[i] || null, get length() { return Object.keys(data).length; } };
   const mem = {}; G.sessionStorage = { getItem: (k) => (k in mem ? mem[k] : null), setItem(k, v) { mem[k] = String(v); }, removeItem(k) { delete mem[k]; }, clear() { for (const k in mem) delete mem[k]; }, key: (i) => Object.keys(mem)[i] || null, get length() { return Object.keys(mem).length; } };
 }
 

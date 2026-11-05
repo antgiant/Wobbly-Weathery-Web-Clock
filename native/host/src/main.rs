@@ -12,7 +12,39 @@ use rquickjs::{ArrayBuffer, Context, Ctx, Function, Module, Object, Result, Runt
 use rquickjs::function::Rest;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
+
+/// Milliseconds since start at which the program last showed signs of life (the loop turning, a GL call returning); the watchdog thread reads it.
+static ALIVE_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_PRESENT_MS: AtomicU64 = AtomicU64::new(0);
+static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+fn since_start_ms() -> u64 { START.get_or_init(Instant::now).elapsed().as_millis() as u64 }
+fn beat() { ALIVE_MS.store(since_start_ms(), Ordering::Relaxed); }
+
+/// systemd's watchdog (Type=notify, WatchdogSec): tell it we are ready and, every minute, that we are well: the loop is turning and pictures keep coming.
+/// A program that hangs (a GPU that stops answering, a loop that never ends) stops sending, and systemd restarts it.
+fn start_watchdog() {
+    use std::os::unix::net::UnixDatagram;
+    let Ok(path) = std::env::var("NOTIFY_SOCKET") else { return };
+    std::thread::spawn(move || {
+        let sock = match UnixDatagram::unbound() { Ok(s) => s, Err(_) => return };
+        let send = |msg: &str| {
+            if let Some(rest) = path.strip_prefix('@') {
+                #[cfg(target_os = "linux")] { use std::os::linux::net::SocketAddrExt; if let Ok(a) = std::os::unix::net::SocketAddr::from_abstract_name(rest.as_bytes()) { let _ = sock.send_to_addr(msg.as_bytes(), &a); } }
+            } else { let _ = sock.send_to(msg.as_bytes(), &path); }
+        };
+        send("READY=1\nSTATUS=starting");
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(30));
+            let now = since_start_ms();
+            let alive = now.saturating_sub(ALIVE_MS.load(Ordering::Relaxed)) < 400_000;                 // the loop has turned in the last ~7 minutes (a first start on a Pi Zero compiles for minutes)
+            let lp = LAST_PRESENT_MS.load(Ordering::Relaxed);
+            let pictures = if lp == 0 { now < 900_000 } else { now.saturating_sub(lp) < 300_000 };       // and pictures are still being made
+            if alive && pictures { send("WATCHDOG=1"); }
+        }
+    });
+}
 
 /// The host's own JavaScript is part of the program (WOBBLY_HOST_JS=dir uses files from a folder instead, for working on them).
 const EMBED: &[(&str, &str)] = &[
@@ -32,6 +64,9 @@ thread_local! {
     static GL: std::cell::RefCell<Option<Rc<gl::Gl>>> = std::cell::RefCell::new(None);
     static ROOT: std::cell::RefCell<PathBuf> = std::cell::RefCell::new(PathBuf::new());
     static WEB_ON_DISK: std::cell::Cell<bool> = std::cell::Cell::new(true);
+    static WARP: std::cell::Cell<f64> = std::cell::Cell::new(1.0);        // soak tests: time runs this many times faster for every timer in the page
+    static LAST_PRESENT: std::cell::Cell<Option<Instant>> = std::cell::Cell::new(None);
+    static PRESENTS: std::cell::Cell<u64> = std::cell::Cell::new(0);
     static DONE: std::cell::Cell<bool> = std::cell::Cell::new(false);
     static T0: std::cell::Cell<Option<Instant>> = std::cell::Cell::new(None);
 }
@@ -44,8 +79,8 @@ fn vfs_read(p: &str) -> Option<Vec<u8>> {
 }
 fn vfs_exists(rel: &str) -> bool { vfs_read(rel).is_some() }
 fn throw<'js>(ctx: &Ctx<'js>, m: String) -> rquickjs::Error { rquickjs::Exception::throw_message(ctx, &m) }
-fn n_gl<'js>(ctx: Ctx<'js>, name: String, args: Rest<Value<'js>>) -> Result<Value<'js>> { let g = GL.with(|g| g.borrow().clone().unwrap()); g.call(&ctx, &name, &args.0) }
-fn n_now() -> f64 { T0.with(|t| t.get().unwrap().elapsed().as_secs_f64() * 1000.0) }
+fn n_gl<'js>(ctx: Ctx<'js>, name: String, args: Rest<Value<'js>>) -> Result<Value<'js>> { let g = GL.with(|g| g.borrow().clone().unwrap()); let r = g.call(&ctx, &name, &args.0); beat(); r }
+fn n_now() -> f64 { T0.with(|t| t.get().unwrap().elapsed().as_secs_f64() * 1000.0) * WARP.with(|w| w.get()) }
 fn n_readfile<'js>(ctx: Ctx<'js>, p: String) -> Result<ArrayBuffer<'js>> {
     let b = vfs_read(&p).ok_or_else(|| throw(&ctx, format!("{p}: not found")))?; ArrayBuffer::new_copy(ctx.clone(), b)
 }
@@ -82,7 +117,7 @@ fn n_store_write(json: String) { STORE.with(|p| { if let Some(p) = p.borrow().as
 
 // ---- network: curl in a thread, polled from the loop (the page's fetch) --------------------------------------------------------
 type Reply = Option<(i32, Vec<u8>)>;
-thread_local! { static HTTP: std::cell::RefCell<Vec<std::sync::mpsc::Receiver<Reply>>> = std::cell::RefCell::new(Vec::new()); }
+thread_local! { static HTTP: std::cell::RefCell<std::collections::HashMap<usize, std::sync::mpsc::Receiver<Reply>>> = std::cell::RefCell::new(std::collections::HashMap::new()); static HTTP_N: std::cell::Cell<usize> = std::cell::Cell::new(0); }
 fn n_http_start(url: String) -> usize {
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
@@ -90,11 +125,13 @@ fn n_http_start(url: String) -> usize {
         let r = out.ok().filter(|o| o.status.success()).and_then(|o| { let b = o.stdout; let i = b.iter().rposition(|&c| c == b'\n')?; let code = std::str::from_utf8(&b[i + 1..]).ok()?.trim().parse::<i32>().ok()?; Some((code, b[..i].to_vec())) });
         let _ = tx.send(r);
     });
-    HTTP.with(|h| { let mut h = h.borrow_mut(); h.push(rx); h.len() - 1 })
+    let id = HTTP_N.with(|n| { n.set(n.get() + 1); n.get() });
+    HTTP.with(|h| h.borrow_mut().insert(id, rx));
+    id
 }
 /// undefined while pending; { status, data } (status 0 = could not connect) when done
 fn n_http_poll<'js>(ctx: Ctx<'js>, id: usize) -> Result<Value<'js>> {
-    let r = HTTP.with(|h| h.borrow().get(id).and_then(|rx| rx.try_recv().ok()));
+    let r = HTTP.with(|h| { let mut h = h.borrow_mut(); let got = h.get(&id).and_then(|rx| rx.try_recv().ok()); if got.is_some() { h.remove(&id); } got });      // an answer is delivered once, and forgotten
     match r {
         None => Ok(Value::new_undefined(ctx.clone())),
         Some(rep) => { let o = Object::new(ctx.clone())?; match rep { Some((c, b)) => { o.set("status", c)?; o.set("data", ArrayBuffer::new_copy(ctx.clone(), b)?)?; } None => { o.set("status", 0)?; o.set("data", ArrayBuffer::new_copy(ctx.clone(), Vec::<u8>::new())?)?; } } Ok(o.into_value()) }
@@ -104,10 +141,18 @@ fn n_http_poll<'js>(ctx: Ctx<'js>, id: usize) -> Result<Value<'js>> {
 /// The page hands over a finished frame: RGBA from glReadPixels (bottom row first) and the brightness level.
 fn n_present<'js>(ctx: Ctx<'js>, w: usize, h: usize, ab: ArrayBuffer<'js>, level: f64) -> Result<()> {
     let px = ab.as_bytes().ok_or_else(|| throw(&ctx, "no bytes".into()))?;
+    LAST_PRESENT.with(|l| l.set(Some(Instant::now()))); PRESENTS.with(|p| p.set(p.get() + 1)); LAST_PRESENT_MS.store(since_start_ms(), Ordering::Relaxed);
     OUT.with(|o| match o.borrow_mut().as_mut() { Some(out) => out.present(w, h, px, level).map_err(|e| throw(&ctx, e)), None => Ok(()) })
 }
 
 fn n_c2d_new(w: u32, h: u32) -> usize { canvas2d::create(w, h) }
+fn n_c2d_free(id: usize) { canvas2d::free(id) }
+fn n_c2d_count() -> usize { canvas2d::count() }
+/// Resident memory of this program in MB (Linux), or 0.
+fn rss_mb() -> f64 { std::fs::read_to_string("/proc/self/statm").ok().and_then(|s| s.split_whitespace().nth(1).and_then(|v| v.parse::<f64>().ok())).map(|p| p * 4096.0 / 1048576.0).unwrap_or(0.0) }
+fn n_rss() -> f64 { rss_mb() }
+fn n_exit(code: i32) { OUT.with(|o| if let Some(x) = o.borrow_mut().take() { x.finish(); }); std::process::exit(code) }
+fn n_presents() -> f64 { PRESENTS.with(|p| p.get()) as f64 }
 fn n_c2d_resize(id: usize, w: u32, h: u32) { canvas2d::resize(id, w, h) }
 fn n_c2d_call<'js>(id: usize, op: String, arg: String, buf: Option<ArrayBuffer<'js>>) -> Result<()> {
     let b = buf.and_then(|b| b.as_bytes().map(|x| x.to_vec()));
@@ -181,6 +226,7 @@ fn main() {
     let fl = |k: &str| flags.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
     let gpu_test = argv.iter().any(|x| x == "--gpu-test");
     let run_mode = !legacy && !gpu_test;
+    START.get_or_init(Instant::now);
     let a: Vec<String> = std::iter::once("wobbly".to_string()).chain(pos.into_iter()).collect();
     if legacy && a.len() < 3 { usage(2); }
     let (root, out_path): (PathBuf, String) = if gpu_test { WEB_ON_DISK.with(|d| d.set(false)); (PathBuf::from("/web"), String::new()) } else if legacy {
@@ -195,6 +241,7 @@ fn main() {
     let mut h: u32 = a.get(4).and_then(|s| s.parse().ok()).or(fl("h").and_then(|v| v.parse().ok())).unwrap_or(270);
     let time = a.get(5).cloned().unwrap_or("2026-06-21T20:30:00Z".into());
     let state = a.get(6).cloned().unwrap_or("{}".into());
+    if let Some(wp) = fl("timewarp").and_then(|v| v.parse::<f64>().ok()) { WARP.with(|w| w.set(wp.max(1.0))); }       // soak tests: every timer of the page runs this many times faster
     // run mode: the settings file and the output
     let mut cfg_text = String::new();
     let mut led: Option<(usize, usize)> = None;
@@ -204,6 +251,7 @@ fn main() {
         let size = fl("size").and_then(|s| s.split_once('x').map(|(a, b)| (a.parse().unwrap_or(480), b.parse().unwrap_or(270)))).unwrap_or((480usize, 270usize));
         let (o, ow, oh) = out::Out::open(fl("sink").as_deref(), &cfg_text, size).unwrap_or_else(|e| { eprintln!("wobbly-clock-run: {e}"); std::process::exit(1) });
         OUT.with(|x| *x.borrow_mut() = Some(o));
+        start_watchdog();
         w = ow as u32; h = oh as u32;
         if let Some(out::Kind::Matrix { layout, cell, .. }) = OUT.with(|x| x.borrow().as_ref().map(|o| match &o.kind { out::Kind::Matrix { layout, cell, .. } => out::Kind::Matrix { layout: layout.clone(), panel: None, dir: None, table: [0; 256], cell: *cell }, _ => out::Kind::Ppm { dir: String::new() } })) { led = Some((layout.display_width, layout.display_height)); let _ = cell; }
         for e in &OUT.with(|x| x.borrow().as_ref().map(|o| o.cfg.errors.clone()).unwrap_or_default()) { eprintln!("wobbly-clock-run: {e}"); }
@@ -243,6 +291,11 @@ fn main() {
         g.set("__writeppm", Function::new(ctx.clone(), n_writeppm)).unwrap();
         g.set("__c2d_new", Function::new(ctx.clone(), n_c2d_new)).unwrap();
         g.set("__c2d_resize", Function::new(ctx.clone(), n_c2d_resize)).unwrap();
+        g.set("__c2d_free", Function::new(ctx.clone(), n_c2d_free)).unwrap();
+        g.set("__c2d_count", Function::new(ctx.clone(), n_c2d_count)).unwrap();
+        g.set("__rss", Function::new(ctx.clone(), n_rss)).unwrap();
+        g.set("__exit", Function::new(ctx.clone(), n_exit)).unwrap();
+        g.set("__presents", Function::new(ctx.clone(), n_presents)).unwrap();
         g.set("__c2d_call", Function::new(ctx.clone(), n_c2d_call)).unwrap();
         g.set("__c2d_read", Function::new(ctx.clone(), n_c2d_read)).unwrap();
         g.set("__tzoffset", Function::new(ctx.clone(), n_tzoffset)).unwrap();
@@ -279,6 +332,7 @@ fn main() {
     let started = Instant::now();
     while !DONE.with(|d| d.get()) {
         loop { match rt.execute_pending_job() { Ok(true) => {}, Ok(false) => break, Err(e) => { ctx.with(|c| eprintln!("job error: {}", describe(&c, rquickjs::Error::Exception)));  let _ = e; std::process::exit(1) } } }
+        beat();
         ctx.with(|c| { let _ = c.globals().get::<_, Function>("__pump").and_then(|f| f.call::<_, ()>(())); });
         let failed = ctx.with(|c| MAIN_PROMISE.with(|m| { let p = m.borrow().clone()?; let p = p.restore(&c).ok()?; match p.result::<Value>() { Some(Err(e)) => Some(describe(&c, e)), _ => None } }));
         if let Some(e) = failed { eprintln!("script failed: {e}"); std::process::exit(1); }

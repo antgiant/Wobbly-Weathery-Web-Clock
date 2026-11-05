@@ -5,6 +5,7 @@ const S = await import('../../native/cli/service.mjs');
 const U = await import('../../native/cli/update.mjs');
 
 const unit = S.unit({ output: 'hdmi' }), led = S.unit({ output: 'matrix' });
+check('the service reports to systemd (notify, watchdog) and has a memory valve', /Type=notify/.test(unit) && /WatchdogSec=\d+/.test(unit) && /--maxrss \d+/.test(unit));
 check('the service starts after the network, restarts on failure, logs to the journal (the default) and starts on boot', /After=network-online\.target/.test(unit) && /Restart=on-failure/.test(unit) && /WantedBy=multi-user\.target/.test(unit) && /ExecStart=\/usr\/bin\/wobbly-clock-run --config \/etc\/wobbly-clock\/wobbly-clock\.conf/.test(unit));
 check('HDMI runs as an unprivileged user in the video group; the LED panel opens the GPIO first and is not forced to a user', /User=wobbly/.test(unit) && /SupplementaryGroups=video/.test(unit) && !/User=/.test(led) && /Nice=-5/.test(led));
 check('the service can only write its own state directory', /ProtectSystem=strict/.test(unit) && /ReadWritePaths=\/var\/lib\/wobbly-clock/.test(unit) && /ProtectHome=true/.test(unit));
