@@ -1146,11 +1146,14 @@ void waveTrain(vec4 W, vec2 p, float fp, out vec2 slope, out float hgt) {
   }
 }
 
-// Terrain, water and city layers; layer 0 is the nearest.
+// Terrain, water and city layers; layer 0 is the nearest. The sea and the land are one program, or (TERRAIN_LAND, TERRAIN_OCEAN: a small GPU's driver could not fit both) two,
+// each of which leaves the other's pixels to the other.
+bool oceanPixel(int layer, vec3 d) { return layer == 0 && d.y < -uDip + 0.0002 + swellUp && abs(uLandType - 1.0) < 0.1; }
 vec3 shadeTerrain(int layer, vec3 d) {
-  vec3 L;
+  vec3 L = vec3(0.0);
   bool plane = layer == 0 && d.y < -uDip + 0.0002 + swellUp;
   if (plane && abs(uLandType - 1.0) < 0.1) {
+#ifndef TERRAIN_LAND
     // ocean: Fresnel mix of the reflected sky and a dark body, wind-roughened glitter
     float tdist = uEyeH / max(-d.y, 1e-4);              // km to the water
     vec2 wp = d.xz * tdist * 1000.0;                    // metres
@@ -1198,7 +1201,9 @@ vec3 shadeTerrain(int layer, vec3 d) {
       L += vec3(ring * 0.30 * uWet * (1.0 - smoothstep(0.02, 0.05, tdist)) / expo);
     }
     L = mix(L, hazeL, smoothstep(0.004, 0.0, -d.y - uDip) * 0.5);
+#endif
   } else {
+#ifndef TERRAIN_OCEAN
     float ridgeTop = layer == 0 ? sk.r : (layer == 1 ? sk.g : sk.b);
     float depthMix = layer == 0 ? 0.0 : (layer == 1 ? uHaze.y : uHaze.z);
     vec3 n;
@@ -1260,6 +1265,7 @@ vec3 shadeTerrain(int layer, vec3 d) {
     vec3 lit = terrainLit(alb, n, sunIg, moonIg, ambLux) + emit;
     float fogK = clamp(uFog * (0.35 + 0.65 * float(layer + 1) / 3.0), 0.0, 1.0);
     L = mix(lit, hazeL, clamp(depthMix + fogK, 0.0, 1.0));
+#endif
   }
   return L;
 }
@@ -1389,14 +1395,21 @@ void main() {
 }`;
 
 /** The ground, water and city layers, blended over the sky by coverage (alpha: the share of the pixel that is terrain). */
-export const FRAG_SCENE_TERRAIN = `#version 300 es
-${SCENE_HEAD}
+const TERRAIN_MAIN = `${SCENE_HEAD}
 ${SCENE_TERRAIN}
 ${SCENE_SETUP}
 void main() {
   setup();
   if (gCov <= 0.0) discard;                      // wholly sky
+#if defined(TERRAIN_OCEAN)
+  if (!oceanPixel(gLayer, gD)) discard;          // (the land program has the rest)
+#elif defined(TERRAIN_LAND)
+  if (oceanPixel(gLayer, gD)) discard;           // (the sea program has it)
+#endif
   oColor = finish(shadeTerrain(gLayer, gD), gCov);
 }`;
+export const FRAG_SCENE_TERRAIN = `#version 300 es\n${TERRAIN_MAIN}`;
+/** The ground in two programs for a small GPU: 'land' (everything but the sea) and 'ocean' (the sea; drawn only when the landscape is the sea). */
+export const fragTerrain = (kind) => `#version 300 es\n#define TERRAIN_${kind.toUpperCase()} 1\n${TERRAIN_MAIN}`;
 
 export { VERT_FULLSCREEN };

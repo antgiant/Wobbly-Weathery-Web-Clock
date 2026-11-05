@@ -17,7 +17,7 @@ import {
   VERT_FULLSCREEN, FRAG_TRANSMITTANCE, FRAG_MULTISCATTER, FRAG_SKYVIEW,
 } from './glsl-atmosphere.js';
 import {
-  FRAG_NOISE, FRAG_NOISE_DOWN, FRAG_ATLAS_PLACE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, fragBlit, FRAG_LED, FRAG_LED_PEAK, FRAG_LED_AVG, FRAG_SCENE_SKY, FRAG_SCENE_CLOUD, FRAG_SCENE_FOG, FRAG_SCENE_TERRAIN, FRAG_CONSTS, CONSTS_N, HAZE_N,
+  FRAG_NOISE, FRAG_NOISE_DOWN, FRAG_ATLAS_PLACE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, fragBlit, FRAG_LED, FRAG_LED_PEAK, FRAG_LED_AVG, FRAG_SCENE_SKY, FRAG_SCENE_CLOUD, FRAG_SCENE_FOG, FRAG_SCENE_TERRAIN, fragTerrain, FRAG_CONSTS, CONSTS_N, HAZE_N,
 } from './glsl-scene.js';
 import { toES1, packSkyline, NOISE_ATLAS } from './portable.js';
 import { VERT_PLANTS, FRAG_PLANTS } from './glsl-plants.js';
@@ -232,7 +232,7 @@ export class SkyEngine {
     this.pSceneSky = this._program(VERT_FULLSCREEN, FRAG_SCENE_SKY);          // the sky and the ground are two programs into one picture (glsl-scene.js: one is too big for a small GPU)
     this.pSceneCloud = this._program(VERT_FULLSCREEN, FRAG_SCENE_CLOUD);        // one cloud layer, drawn up to three times
     this.pSceneFog = this._program(VERT_FULLSCREEN, FRAG_SCENE_FOG);
-    this.pSceneTerrain = this._program(VERT_FULLSCREEN, FRAG_SCENE_TERRAIN);
+    this.pSceneTerrain = this._program(VERT_FULLSCREEN, this.es2 ? fragTerrain('land') : FRAG_SCENE_TERRAIN);          // (a small GPU gets the sea as a program of its own)
     this.pBlits = {};                                            // the final pass in the form that is needed (_blitProgram)
     performance.mark('sky:programs-compiled');
     this.pLed = this._program(VERT_FULLSCREEN, FRAG_LED);
@@ -803,6 +803,11 @@ export class SkyEngine {
     if (w.fog > 0.005) { this._use(this.pSceneFog); setScene(); gl.drawArrays(gl.TRIANGLES, 0, 3); }
     this._use(this.pSceneTerrain); setScene();
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if (this.es2 && land.ocean) {
+      this.pSceneOcean = this.pSceneOcean || this._program(VERT_FULLSCREEN, fragTerrain('ocean'));
+      this._use(this.pSceneOcean); setScene();
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
     gl.disable(gl.BLEND);
 
     // ---- plants: alpha-blended sprites that also knock the stars' visibility mask down ----
