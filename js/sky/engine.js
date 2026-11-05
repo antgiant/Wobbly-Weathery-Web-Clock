@@ -834,37 +834,48 @@ export class SkyEngine {
     if (glassOn && this.es2 && (scene || !(this.mipState && this.mipState.scene) || this.mipState.scene.src !== T)) { this._mipAtlas('scene', T.tex, T.w, T.h); this.mipState.scene.src = T; }
     const led = g.led.on;
     if (led) this._ensureComp(cw, ch);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, led ? this.compTarget.fbo : null);
-    gl.viewport(0, 0, cw, ch);
-    this._use(this._blitProgram(!glassOn ? 'off' : g.mode > 2.5 ? 'ink' : 'glass'));
-    this._1i('uTex', 0); this._bind(0, T.tex);
-    this._1f('uTexW', T.w);
-    if (glassOn && this.es2) this._bindMipAtlas('scene', 5);
-    this._1i('uMask', 1); this._bind(1, this.maskTex);
-    if (glassOn && this.es2) this._bindMipAtlas('mask', 6);
-    const dpr = cw / Math.max(1, this.canvas.clientWidth);
-    this._4f('uGlass', g.frost, glassOn ? g.mode : 0, g.stroke * dpr, 0);
-    this._4f('uMaskRect', g.rect[0], g.rect[1], g.rect[2], g.rect[3]);
-    this._2f('uMaskPx', g.maskW, g.maskH);
-    this._2f('uRes', cw, ch);
-    this._3f('uLight', g.light);
-    this._3f('uLightCol', g.lightCol);
-    this._4f('uGlow', g.glow, led ? Math.max(2, Math.floor(Math.min(cw / g.led.cols, ch / g.led.rows))) : 0, 0, 0);
-    this._3f('uGlowCol', g.glowCol);
-    this._3f('uInk', g.ink);
-    this._1f('uContrast', g.contrast);
     {                                                                  // snow and rain on the digits: from the weather being drawn
       const w = this.s.weather, on = this.s.digitWeather !== false && !this.s.reducedMotion;
       const snowRate = (w.precip || 0) * (w.snowfall || 0), rainRate = (w.precip || 0) * (1 - (w.snowfall || 0));
       this.wx = { snow: on ? Math.min(1, snowRate * 1.4) : 0, rain: on ? Math.min(1, rainRate * 1.3) : 0 };       // (read by the tests)
-      this._4f('uWx', this.wx.snow, this.wx.rain, 0, (performance.now() / 1000) % 3600);
     }
-    this._1i('uDrops', 4); this._bind(4, this.dropsTex);
-    this._1f('uDropsOn', g.dropsOn ? 1 : 0);
-    this._1i('uFull', 3); this._bind(3, this.overlayFullTex);
-    this._1f('uFullOn', led && g.overlayFull ? 1 : 0);
-    gl.bindVertexArray(this.vaoEmpty);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    // An ES 2 GPU gets the glass as up to three small programs (body, weather, outline), each reading the one before; the rest is one program.
+    const kind = !glassOn ? 'off' : g.mode > 2.5 ? 'ink' : 'glass';
+    const passes = this.es2 && kind === 'glass' ? ['gbody', ...(this.wx.snow > 0.01 || this.wx.rain > 0.01 ? ['gwx'] : []), 'gout'] : [kind];
+    if (passes.length > 1) this._ensurePing(cw, ch);
+    const dpr = cw / Math.max(1, this.canvas.clientWidth);
+    let prev = null;
+    passes.forEach((pass, i) => {
+      const last = i === passes.length - 1;
+      const out = last ? (led ? this.compTarget : null) : this.pingT[i % 2];
+      gl.bindFramebuffer(gl.FRAMEBUFFER, out ? out.fbo : null);
+      gl.viewport(0, 0, cw, ch);
+      this._use(this._blitProgram(pass));
+      this._1i('uTex', 0); this._bind(0, T.tex);
+      this._1f('uTexW', T.w);
+      if (glassOn && this.es2) this._bindMipAtlas('scene', 5);
+      this._1i('uMask', 1); this._bind(1, this.maskTex);
+      if (glassOn && this.es2) this._bindMipAtlas('mask', 6);
+      this._4f('uGlass', g.frost, glassOn ? g.mode : 0, g.stroke * dpr, 0);
+      this._4f('uMaskRect', g.rect[0], g.rect[1], g.rect[2], g.rect[3]);
+      this._2f('uMaskPx', g.maskW, g.maskH);
+      this._2f('uRes', cw, ch);
+      this._3f('uLight', g.light);
+      this._3f('uLightCol', g.lightCol);
+      this._4f('uGlow', g.glow, led ? Math.max(2, Math.floor(Math.min(cw / g.led.cols, ch / g.led.rows))) : 0, 0, 0);
+      this._3f('uGlowCol', g.glowCol);
+      this._3f('uInk', g.ink);
+      this._1f('uContrast', g.contrast);
+      this._4f('uWx', this.wx.snow, this.wx.rain, 0, (performance.now() / 1000) % 3600);
+      this._1i('uDrops', 4); this._bind(4, this.dropsTex);
+      this._1f('uDropsOn', g.dropsOn ? 1 : 0);
+      this._1i('uFull', 3); this._bind(3, this.overlayFullTex);
+      this._1f('uFullOn', last && led && g.overlayFull ? 1 : 0);
+      this._1i('uPrev', 7); if (prev) this._bind(7, prev.tex);
+      gl.bindVertexArray(this.vaoEmpty);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      prev = out;
+    });
     if (led) this._ledPass(cw, ch);
   }
 
@@ -920,6 +931,13 @@ export class SkyEngine {
     if (this.compTarget && this.compTarget.w === w && this.compTarget.h === h) return;
     if (this.compTarget) { gl.deleteTexture(this.compTarget.tex); gl.deleteFramebuffer(this.compTarget.fbo); }
     this.compTarget = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);
+  }
+
+  _ensurePing(w, h) {
+    const gl = this.gl;
+    if (this.pingT && this.pingT[0].w === w && this.pingT[0].h === h) return;
+    if (this.pingT) for (const t of this.pingT) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); }
+    this.pingT = [0, 1].map(() => this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE));
   }
 
   _ensurePeak(w, h) {

@@ -330,6 +330,7 @@ uniform float uContrast;   // strength of the readability outline and tone, 0 of
 uniform vec4 uWx;          // weather on the digits: x snow settled on them 0..1, y rain on the glass 0..1, w time in seconds
 uniform sampler2D uDrops;  // raindrops from drops.js, in the mask's place: r dark rim, g glint, b water
 uniform float uDropsOn;
+uniform sampler2D uPrev;   // the previous of the glass's passes (ES 2 runs the glass as body, weather and outline)
 in vec2 vUv;
 out vec4 oColor;
 
@@ -572,6 +573,7 @@ void bodyGlass() {
   c += uLightCol * rim * 0.05;
   c += uLightCol * exp(-pow((h - 0.62) * 5.0, 2.0)) * spec * 0.35 * (1.0 - frost);
   vec3 glass = min(c, vec3(1.6));
+#ifndef BLIT_GBODY
   if (cover > 0.02) {                                                  // snow and rain on the digits
     if (uWx.x > 0.01) glass = snowOn(glass, snowCap(stroke, uWx.x), base);
     if (uWx.y > 0.01) {
@@ -584,6 +586,7 @@ void bodyGlass() {
 #endif
     }
   }
+#endif
 
   // halo on the sky around lit glass
   vec3 shaded = base * (1.0 - shadow * (1.0 - cover));
@@ -594,14 +597,45 @@ void bodyGlass() {
     haloCol = hm.rgb / max(hm.a, 0.04); haloK = 0.85;
   }
   shaded += haloCol * halo * glow * (1.0 - cover) * haloK;
+#ifdef BLIT_GBODY
+  oColor = vec4(mix(shaded, glass, cover), 1.0);                       // (snow, rain and the outline are the next passes)
+#else
   if (uWx.y > 0.01) shaded += splash(stroke, uWx.y) * vec3(0.8, 0.9, 1.0) * 0.55;
-
   oColor = vec4(withOutline(shaded, glass, cover), 1.0);
+#endif
+}
+
+// The ES 2 glass in three passes (each small enough for a Pi Zero's GPU): the body above (BLIT_GBODY), then snow and rain on the digits, then the readability outline.
+void bodyWx() {
+  vec3 comp = texture(uPrev, vUv).rgb;
+  float stroke = uGlass.z;
+  float cover = maskA0(vUv);
+  vec3 col = comp;
+  if (cover > 0.02) {
+    vec3 glass = comp;
+    if (uWx.x > 0.01) glass = snowOn(glass, snowCap(stroke, uWx.x), texture(uTex, vUv).rgb);
+    if (uWx.y > 0.01 && uDropsOn > 0.5) {
+      vec4 dr = texture(uDrops, (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw);
+      glass = rainOn(glass, vec4(dr.r, dr.g, dr.b, 0.0), uLightCol, sceneAtL(vUv + vec2(0.0, stroke * 0.3) / uRes, sceneLv(1.0)));
+    }
+    col = mix(comp, glass, cover);
+  }
+  if (uWx.y > 0.01) col += splash(stroke, uWx.y) * vec3(0.8, 0.9, 1.0) * 0.55 * (1.0 - cover);
+  oColor = vec4(col, 1.0);
+}
+
+void bodyOut() {
+  vec3 comp = texture(uPrev, vUv).rgb;
+  oColor = vec4(withOutline(comp, comp, maskA0(vUv)), 1.0);
 }
 
 void main() {
-#if defined(BLIT_GLASS)
+#if defined(BLIT_GLASS) || defined(BLIT_GBODY)
   bodyGlass();
+#elif defined(BLIT_GWX)
+  bodyWx();
+#elif defined(BLIT_GOUT)
+  bodyOut();
 #elif defined(BLIT_INK)
   bodyInk();
 #else
