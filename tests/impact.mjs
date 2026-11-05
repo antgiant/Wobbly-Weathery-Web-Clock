@@ -23,8 +23,8 @@ export const RULES = [
   [/^js\/(wakelock|settings_gear)\.js$/, ['settings', 'options']],
   [/^js\/sky\/governor\.js$/, ['sky', 'led', 'perf']],                         // the quality governor (off unless asked for; the Pi's program asks)
   [/^js\/sky\/glsl-scene\.js$/, ['sky', 'led', 'digitweather']],
-  [/^js\/sky\/glsl-mask\.js$/, ['sky', 'led', 'digitweather', 'options', 'maskgpu']],
-  [/^js\/sky\/glass\.js$/, ['sky', 'led', 'digitweather', 'options', 'maskgpu']],
+  [/^js\/sky\/glsl-mask\.js$/, ['sky', 'led', 'digitweather', 'options', 'maskgpu', 'dropsgpu']],
+  [/^js\/sky\/glass\.js$/, ['sky', 'led', 'digitweather', 'options', 'maskgpu', 'dropsgpu']],
   [/^js\/sky\/(glsl-plants|plants|biome|landscape|lightpollution)\.js$/, ['sky', 'smoke']],
   [/^js\/sky\/(astro|glsl-atmosphere)\.js$/, ['sky', 'led', 'alerts']],
   [/LICENSE|\.txt$|\.md$/, []],                                          // licences and notes: nothing to run

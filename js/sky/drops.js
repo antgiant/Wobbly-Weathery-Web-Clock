@@ -155,3 +155,27 @@ export function drawDrops(ctx, sim, light = [-0.5, 0.8]) {
   ctx.globalCompositeOperation = 'source-over';
   void S;
 }
+
+/**
+ * The same picture as drawDrops, as vertex lists for the GPU (glsl-mask.js): `drops` has 6 vertices per drop of 8 floats (x, y, centre x, centre y, radius, fade, light x, light y),
+ * `trails` 6 vertices per trail segment of 8 floats (x, y, ax, ay, bx, by, half width, brightness). Pure, so it is tested in node.
+ */
+export function dropGeometry(sim, light = [-0.5, 0.8]) {
+  const drops = [], trails = [];
+  const quad = (out, x0, y0, x1, y1, tail) => { for (const [x, y] of [[x0, y0], [x1, y0], [x0, y1], [x1, y0], [x1, y1], [x0, y1]]) out.push(x, y, ...tail); };
+  for (const d of sim.drops) {
+    const fade = d.dying ? Math.max(0, 1 - d.fall / 0.35) : 1;
+    if (fade <= 0) continue;
+    if (d.run && d.trail.length > 1) {
+      for (let i = 1; i < d.trail.length; i++) {
+        const a = d.trail[i - 1], b = d.trail[i], age = Math.max(0, 1 - (d.age - b[2]) / 1.6);
+        if (age <= 0) continue;
+        const hw = Math.max(1, d.r * 0.5) / 2, m = hw + 1;
+        quad(trails, Math.min(a[0], b[0]) - m, Math.min(a[1], b[1]) - m, Math.max(a[0], b[0]) + m, Math.max(a[1], b[1]) + m, [a[0], a[1], b[0], b[1], hw, 0.45 * age * fade]);
+      }
+    }
+    const r = Math.max(1, d.r), m = r * 1.1 + 2;
+    quad(drops, d.x - m, d.y - m, d.x + m, d.y + m, [d.x, d.y, r, fade, light[0], light[1]]);
+  }
+  return { drops: new Float32Array(drops), trails: new Float32Array(trails) };
+}

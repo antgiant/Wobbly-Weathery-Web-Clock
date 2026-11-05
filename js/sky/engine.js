@@ -12,7 +12,7 @@
 // the display rate with the render scale adapting to hold the frame rate.
 
 import { Governor } from './governor.js';
-import { VERT_STROKE, FRAG_STROKE, VERT_LIGHT, FRAG_LIGHT } from './glsl-mask.js';
+import { VERT_STROKE, FRAG_STROKE, VERT_LIGHT, FRAG_LIGHT, VERT_DROP, FRAG_DROP, VERT_TRAIL, FRAG_TRAIL } from './glsl-mask.js';
 import {
   VERT_FULLSCREEN, FRAG_TRANSMITTANCE, FRAG_MULTISCATTER, FRAG_SKYVIEW,
 } from './glsl-atmosphere.js';
@@ -259,7 +259,7 @@ export class SkyEngine {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    this.dropsTex = gl.createTexture();                                   // raindrops on the digits (drops.js), same shape and place as the mask
+    this.dropsTex = this.dropsTexCanvas = gl.createTexture();             // raindrops on the digits (drops.js), same shape and place as the mask
     gl.bindTexture(gl.TEXTURE_2D, this.dropsTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
@@ -884,9 +884,48 @@ export class SkyEngine {
     this.redrawGlass();
   }
 
+  /**
+   * The raindrops drawn on the GPU (glsl-mask.js) from dropGeometry()'s vertex lists, into a picture the size of the glass mask. Picked up by the next draw,
+   * like setGlassDrops (which does the same from a canvas).
+   */
+  setGlassDropsGeometry({ w, h, drops, trails }) {
+    const gl = this.gl;
+    if (!this.pDrop) {
+      this.pDrop = this._program(VERT_DROP, FRAG_DROP, { aPos: 0, aD: 1, aL: 2 });
+      this.pTrail = this._program(VERT_TRAIL, FRAG_TRAIL, { aPos: 0, aSeg: 1, aW: 2 });
+      this.dropBuf = gl.createBuffer(); this.vaoDrop = gl.createVertexArray(); this.vaoTrail = gl.createVertexArray();
+    }
+    if (!this.dropsTarget || this.dropsTarget.w !== w || this.dropsTarget.h !== h) {
+      if (this.dropsTarget) { gl.deleteTexture(this.dropsTarget.tex); gl.deleteFramebuffer(this.dropsTarget.fbo); }
+      this.dropsTarget = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.LINEAR, gl.CLAMP_TO_EDGE);
+    }
+    const T = this.dropsTarget;
+    this.dropsTex = T.tex;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, T.fbo);
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND); gl.blendEquation(gl.FUNC_ADD); gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ZERO, gl.ONE);       // the channels add up where drops and trails overlap
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.dropBuf);
+    const run = (P, vao, data, f1, f2) => {
+      if (!data.length) return;
+      this._use(P); this._2f('uSize', w, h);
+      gl.bindVertexArray(vao);
+      gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 32, 0);
+      gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 8);
+      gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 32, 24);
+      gl.drawArrays(gl.TRIANGLES, 0, data.length / 8);
+    };
+    run(this.pTrail, this.vaoTrail, trails);
+    run(this.pDrop, this.vaoDrop, drops);
+    gl.bindVertexArray(null); gl.disable(gl.BLEND);
+    this.glass.dropsOn = true;
+  }
+
   /** The raindrops (a canvas the size of the glass mask, drawn by drops.js). Picked up by the next draw; does not redraw by itself. */
   setGlassDrops(canvas) {
     const gl = this.gl;
+    this.dropsTex = this.dropsTexCanvas;
     gl.bindTexture(gl.TEXTURE_2D, this.dropsTex);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);

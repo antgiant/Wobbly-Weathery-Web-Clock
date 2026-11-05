@@ -15,7 +15,7 @@
 import { conf, clockStyleNow } from '../config.js';
 import { getSim } from '../simtime.js';
 import { every } from './scheduler.js';
-import { DropSim, drawDrops } from './drops.js';
+import { DropSim, drawDrops, dropGeometry } from './drops.js';
 import { applyLedPanel } from './ledpanel.js';
 
 const VB_W = 100, VB_H = 116, VB_Y0 = -8;      // viewBox of each digit svg: "0 -8 100 116"
@@ -76,8 +76,12 @@ export function initGlass(engine, getBasis) {
     lastDropT = t;
     if (inkStale) refreshInk();
     sim.step(dt, rain);
-    if (dropCanvas.width !== mW || dropCanvas.height !== mH) { dropCanvas.width = mW; dropCanvas.height = mH; }
     const L = engine.glass.light || [-0.5, 0.8, 0.6];
+    if (engine.canDrawMask && !window.__canvasMask) {                // the GPU draws the drops (glsl-mask.js); the CPU only lists them
+      engine.setGlassDropsGeometry({ w: mW, h: mH, ...dropGeometry(sim, [L[0], L[1]]) });
+      return;
+    }
+    if (dropCanvas.width !== mW || dropCanvas.height !== mH) { dropCanvas.width = mW; dropCanvas.height = mH; }
     drawDrops(dropCtx, sim, [L[0], L[1]]);
     engine.setGlassDrops(dropCanvas);
   }
