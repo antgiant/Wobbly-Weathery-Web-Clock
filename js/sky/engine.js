@@ -1176,6 +1176,16 @@ export class SkyEngine {
     return c;
   }
 
+  /** Where the scene and the finished picture are dark (for the Pi's timing log): two small maps (. dark, + middling, # bright) and what the final pass is doing. */
+  maps() {
+    const gl = this.gl, T = this.sceneTarget, g = this.glass;
+    if (!T) return 'no scene yet';
+    const grid = (px, w, h) => { const out = []; for (let r = 0; r < 12; r++) { let line = ''; for (let c = 0; c < 32; c++) { const x = Math.min(w - 1, Math.floor((c + 0.5) * w / 32)), y = Math.min(h - 1, Math.floor((11.5 - r) * h / 12)), i = (y * w + x) * 4, v = px[i] + px[i + 1] + px[i + 2]; line += v < 12 ? '.' : v < 200 ? '+' : '#'; } out.push(line); } return out.join('\n'); };
+    gl.bindFramebuffer(gl.FRAMEBUFFER, T.fbo); const a = new Uint8Array(T.w * T.h * 4); gl.readPixels(0, 0, T.w, T.h, gl.RGBA, gl.UNSIGNED_BYTE, a);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null); const cw = this.canvas.width, ch = this.canvas.height, b = new Uint8Array(cw * ch * 4); gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, b);
+    return 'final pass: ' + (!(g.mode > 0 && g.hasMask) ? 'off (no glass: mode ' + g.mode + ', mask ' + g.hasMask + ')' : g.mode > 2.5 ? 'ink' : 'glass') + '; scene ' + T.w + 'x' + T.h + ' (top row first):\n' + grid(a, T.w, T.h) + '\nscreen ' + cw + 'x' + ch + ':\n' + grid(b, cw, ch);
+  }
+
   /** One line about what the GPU made so far (for the Pi's timing log, to tell a black screen from a dark sky): the scene's average colour, the exposure and, on ES 2, the packed tables decoded. */
   diagnose() {
     const gl = this.gl, T = this.sceneTarget;

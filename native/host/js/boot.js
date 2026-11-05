@@ -138,6 +138,7 @@ if (A.present) {
     if (A.timing) {
       let r = 0, g = 0, b = 0, n = 0; const step = Math.max(1, Math.floor(w * h / 2000)) * 4;           // the average colour of the picture, to see a black screen from a dark one
       for (let i = 0; i < px.length; i += step) { r += px[i]; g += px[i + 1]; b += px[i + 2]; n++; }
+      if ((presented === 3 || presented === 12 || presented === 40) && G.__sky && G.__sky.maps) { try { __print('maps: ' + G.__sky.maps()); } catch (e) { __print('maps failed: ' + e); } }
       if ((presented === 2 || presented === 12) && G.__sky && G.__sky.diagnose) { try { __print('diagnose: ' + G.__sky.diagnose()); } catch (e) { __print('diagnose failed: ' + e); } }
       __print('[' + Math.round(performance.now()) + ' ms] frame ' + presented + ' presented ' + w + 'x' + h + ', average colour ' + Math.round(r / n) + ',' + Math.round(g / n) + ',' + Math.round(b / n) + ', dimmer ' + level.toFixed(2));
     }
