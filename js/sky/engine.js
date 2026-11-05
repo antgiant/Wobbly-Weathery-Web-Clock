@@ -860,7 +860,7 @@ export class SkyEngine {
   }
 
   /** The uniforms and textures of a final pass (the program is already in use); `prev` is the picture the pass before it made. */
-  _blitUniforms(T, glassOn, led, cw, ch, dpr, prev, last) {
+  _blitUniforms(T, glassOn, led, cw, ch, dpr, prev, last, prevUnit = 7) {
     const gl = this.gl, g = this.glass;
     this._1i('uTex', 0); this._bind(0, T.tex);
     this._1f('uTexW', T.w);
@@ -882,7 +882,7 @@ export class SkyEngine {
     this._1f('uDropsOn', g.dropsOn ? 1 : 0);
     this._1i('uFull', 3); this._bind(3, this.overlayFullTex);
     this._1f('uFullOn', last && led && g.overlayFull ? 1 : 0);
-    this._1i('uPrev', 7); if (prev) this._bind(7, prev.tex);
+    this._1i('uPrev', prevUnit); if (prev) this._bind(prevUnit, prev.tex);
   }
 
   /**
@@ -1224,6 +1224,12 @@ export class SkyEngine {
       const d = new Uint8Array(cw * ch * 4); gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, d);
       if (this.es2 && g.mode > 0 && g.hasMask && this.pingT) {
         const dpr = cw / Math.max(1, this.canvas.clientWidth), led = g.led.on;
+        const draw = (k, fbo, prev, unit) => { gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.viewport(0, 0, cw, ch); gl.clearColor(1, 0, 1, 1); gl.clear(gl.COLOR_BUFFER_BIT); this._use(this._blitProgram(k)); this._blitUniforms(T, true, led, cw, ch, dpr, prev, true, unit); gl.bindVertexArray(this.vaoEmpty); gl.drawArrays(gl.TRIANGLES, 0, 3); };
+        const shot = () => { gl.bindFramebuffer(gl.FRAMEBUFFER, null); const e = new Uint8Array(cw * ch * 4); gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, e); return grid(e, cw, ch); };
+        draw('gbody', null, this.pingT[0], 7); probe += '\nexperiment the glass body pass, straight to the screen:\n' + shot();
+        draw('dbgtex', this.pingT[1].fbo, null, 7); draw('dbgprev', null, this.pingT[1], 7); probe += '\nexperiment the scene copied into a spare picture, then read back from it (unit 7):\n' + shot();
+        draw('dbgprev', null, this.pingT[1], 2); probe += '\nexperiment the same read back through unit 2:\n' + shot();
+        draw('gbody', this.pingT[1].fbo, this.pingT[0], 7); draw('dbgprev', null, this.pingT[1], 7); probe += '\nexperiment the glass body pass into a spare picture, then read back from it:\n' + shot();
         for (const [k, what] of [['dbgtex', 'uTex read as it is'], ['dbgscene', 'the scene mip atlas (level 1)'], ['dbgmask', 'the mask coverage'], ['dbgprev', 'the picture of the pass before']]) {
           gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, cw, ch); gl.clearColor(1, 0, 1, 1); gl.clear(gl.COLOR_BUFFER_BIT);
           this._use(this._blitProgram(k)); this._blitUniforms(T, true, led, cw, ch, dpr, this.pingT[0], true);
