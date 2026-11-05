@@ -160,6 +160,136 @@ out('--- instancing and vertex arrays (the plants, and the engine\'s vertex-arra
 out('EXT_instanced_arrays / ANGLE_instanced_arrays: ' + (has('EXT_instanced_arrays') || has('ANGLE_instanced_arrays') ? 'yes' : 'NO (the driver lists no such extension; its function names exist but are empty stubs)'));
 out('OES_vertex_array_object: ' + (has('OES_vertex_array_object') ? 'yes' : 'NO'));
 
+// ---- do the ES 2 helpers compute what they should on this GPU, and where does the engine's picture go wrong? ----
+out('');
+out('--- the ES 2 helpers, on this GPU, against the same numbers worked out here ---');
+try {
+  const { PORTABLE, toES1, packSkyline } = await import('js/sky/portable.js');
+  const { VERT_FULLSCREEN } = await import('js/sky/glsl-atmosphere.js');
+  const FS = `#version 300 es
+precision highp float;
+${PORTABLE}
+uniform vec3 uIn; uniform sampler2D uTex; uniform vec2 uPx; uniform float uMode;
+in vec2 vUv;
+out vec4 oColor;
+vec4 enc16(float v) { float q = floor(clamp(v, 0.0, 1.0) * 65535.0 + 0.5); float h = floor(q / 256.0); return vec4(h, q - h * 256.0, 0.0, 0.0) / 255.0; }
+void main() {
+  if (uMode < 0.5) oColor = hdrPack(uIn);
+  else if (uMode < 1.5) oColor = hdrPack(hdrTex(uTex, vUv, uPx));
+  else { vec3 s = skylineAt(uTex, vUv.x); vec4 a = enc16((s.r + 1.5) / 4.0), b = enc16((s.g + 1.5) / 4.0); oColor = vec4(a.x, a.y, b.x, b.y); }
+}`;
+  const mkS = (type, src) => { const x = g('createShader', type); g('shaderSource', x, src); g('compileShader', x); if (g('getShaderParameter', x, GL.COMPILE) === 0) throw new Error(String(g('getShaderInfoLog', x))); return x; };
+  const pr = g('createProgram'); g('attachShader', pr, mkS(GL.VERTEX, toES1(VERT_FULLSCREEN, 'vertex').src)); g('attachShader', pr, mkS(GL.FRAGMENT, toES1(FS, 'fragment').src));
+  g('bindAttribLocation', pr, 0, 'aVid'); g('linkProgram', pr); g('useProgram', pr);
+  const vbuf = g('createBuffer'); g('bindBuffer', 0x8892, vbuf); g('bufferData', 0x8892, new Float32Array([0, 1, 2]).buffer, 0x88E4);
+  const vao = g('createVertexArray'); g('bindVertexArray', vao); g('enableVertexAttribArray', 0); g('vertexAttribPointer', 0, 1, 0x1406, 0, 0, 0);
+  const U = (n) => g('getUniformLocation', pr, n);
+  const fb = g('createFramebuffer'), ot = g('createTexture');
+  const run = (w, mode, setup) => {                                            // draws a w x 1 picture, returns its bytes
+    g('activeTexture', 0x84C1);                                                // (unit 1 for the picture being drawn, unit 0 for the texture being read)
+    g('bindTexture', GL.TEX2D, ot); g('texImage2D', GL.TEX2D, 0, GL.RGBA, w, 1, 0, GL.RGBA, GL.UBYTE, null); g('texParameteri', GL.TEX2D, 0x2801, 0x2600); g('texParameteri', GL.TEX2D, 0x2800, 0x2600);
+    g('bindFramebuffer', 0x8D40, fb); g('framebufferTexture2D', 0x8D40, 0x8CE0, GL.TEX2D, ot, 0); g('viewport', 0, 0, w, 1);
+    g('uniform1f', U('uMode'), mode); if (setup) setup();
+    g('activeTexture', 0x84C0);
+    g('drawArrays', 4, 0, 3); return new Uint8Array(g('readPixels', 0, 0, w, 1, GL.RGBA, GL.UBYTE));
+  };
+  // the same packing in doubles
+  const LO = -30, HI = 6;
+  const pack = (c) => { const S = c[0] + c[1] + c[2], l = Math.min(1, Math.max(0, (Math.log2(Math.max(S, 1e-12)) - LO) / (HI - LO))), L = Math.round(l * 4095), P = Math.round(c[0] / S * 1023), Q = Math.round(c[2] / S * 1023);
+    const A = Math.floor(L / 16), Ph = Math.floor(P / 64), Qh = Math.floor(Q / 256); return [Q - Qh * 256, (P - Ph * 64) * 4 + Qh, (L - A * 16) * 16 + Ph, A]; };
+  const unpack = (b) => { const Bh = Math.floor(b[2] / 16), Gh = Math.floor(b[1] / 4), L = b[3] * 16 + Bh, P = (b[2] - Bh * 16) * 64 + Gh, Q = (b[1] - Gh * 4) * 256 + b[0], S = 2 ** (LO + (HI - LO) * L / 4095), p = P / 1023, q = Q / 1023; return [S * p, S * Math.max(1 - p - q, 0), S * q]; };
+  let bad = 0;
+  for (const c of [[0.0453, 0.0954, 0.233], [0.863, 0.664, 0.784], [3.1e-4, 8e-4, 1.2e-3], [1.2, 0.4, 0.05], [2e-7, 3e-7, 5e-7]]) {
+    const got = run(1, 0, () => g('uniform3f', U('uIn'), c[0], c[1], c[2])), want = pack(c);
+    const dec = unpack(Array.from(got)), err = Math.max(...dec.map((v, i) => Math.abs(v - c[i]) / c[i]));
+    const ok = err < 0.02; if (!ok) bad++;
+    out('hdrPack ' + c.join(' ') + ' -> bytes ' + Array.from(got).join(',') + ' (here: ' + want.join(',') + '), decoded back within ' + (err * 100).toFixed(2) + ' % ' + (ok ? 'OK' : 'WRONG'));
+  }
+  // hdrTex: a 4 x 1 texture of packed colours, read between texels
+  const vals = [[0.01, 0.02, 0.05], [0.04, 0.09, 0.2], [0.8, 0.6, 0.7], [0.1, 0.1, 0.1]];
+  const tb = new Uint8Array(16); vals.forEach((c, i) => tb.set(pack(c), i * 4));
+  const tt = g('createTexture'); g('activeTexture', 0x84C0); g('bindTexture', GL.TEX2D, tt); g('texImage2D', GL.TEX2D, 0, GL.RGBA, 4, 1, 0, GL.RGBA, GL.UBYTE, tb.buffer);
+  for (const p of [0x2801, 0x2800]) g('texParameteri', GL.TEX2D, p, 0x2600); g('texParameteri', GL.TEX2D, 0x2802, 0x812F); g('texParameteri', GL.TEX2D, 0x2803, 0x812F);
+  const got = run(8, 1, () => { g('uniform1i', U('uTex'), 0); g('uniform2f', U('uPx'), 4, 1); });
+  let worst = 0;
+  for (let i = 0; i < 8; i++) {                                                // pixel i reads at u = (i + 0.5) / 8
+    const x = (i + 0.5) / 8 * 4 - 0.5, fl = Math.floor(x), i0 = Math.min(3, Math.max(0, fl)), i1 = Math.min(3, Math.max(0, fl + 1)), f = x - fl;
+    const want = vals[i0].map((v, k) => v + (vals[i1][k] - v) * f), dec = unpack(Array.from(got.slice(i * 4, i * 4 + 4)));
+    worst = Math.max(worst, ...dec.map((v, k) => Math.abs(v - want[k]) / want[k]));
+    if (i < 3) out('  hdrTex at u=' + ((i + 0.5) / 8).toFixed(4) + ' = ' + dec.map((v) => v.toPrecision(3)).join(' ') + ' (here: ' + want.map((v) => v.toPrecision(3)).join(' ') + ')');
+  }
+  if (worst > 0.03) bad++;
+  out('hdrTex (the hand-made bilinear read) at 8 positions: worst error ' + (worst * 100).toFixed(2) + ' % ' + (worst > 0.03 ? 'WRONG' : 'OK'));
+  // skylineAt: a ramp of 2048 bins
+  const N = 2048, sk = new Float32Array(N * 4); for (let i = 0; i < N; i++) { sk[i * 4] = -0.001 + 0.3 * i / N; sk[i * 4 + 1] = 0.05 + 0.2 * i / N; sk[i * 4 + 2] = 0.1; }
+  const st = g('createTexture'); g('bindTexture', GL.TEX2D, st); g('texImage2D', GL.TEX2D, 0, GL.RGBA, N, 2, 0, GL.RGBA, GL.UBYTE, packSkyline(sk, N).buffer);
+  for (const p of [0x2801, 0x2800]) g('texParameteri', GL.TEX2D, p, 0x2600); g('texParameteri', GL.TEX2D, 0x2802, 0x812F); g('texParameteri', GL.TEX2D, 0x2803, 0x812F);
+  const gs = run(8, 2, () => g('uniform1i', U('uTex'), 0));
+  let sw = 0;
+  for (let i = 0; i < 8; i++) {
+    const u = (i + 0.5) / 8, x = u * N - 0.5, a = Math.floor(x), f = x - a, ia = (a + N) % N, ib = (a + 1 + N) % N;
+    const wantR = sk[ia * 4] + (sk[ib * 4] - sk[ia * 4]) * f, gotR = ((gs[i * 4] * 256 + gs[i * 4 + 1]) / 65535) * 4 - 1.5;
+    sw = Math.max(sw, Math.abs(gotR - wantR));
+    if (i < 3) out('  skylineAt(' + u.toFixed(4) + ').r = ' + gotR.toFixed(4) + ' (here: ' + wantR.toFixed(4) + ')');
+  }
+  if (sw > 0.002) bad++;
+  out('skylineAt (the two-row ridge heights): worst error ' + sw.toFixed(5) + ' rad ' + (sw > 0.002 ? 'WRONG' : 'OK'));
+  out(bad ? bad + ' helper checks are WRONG on this GPU' : 'the helpers agree with the numbers worked out here');
+  results.helpersWrong = bad;
+} catch (e) { out('helper check failed: ' + (e && e.message || e)); }
+
+out('');
+out('--- the engine on this GPU, step by step (the first scene takes minutes: the driver compiles the big shader) ---');
+try {
+  const { SkyEngine } = await import('js/sky/engine.js');
+  const W = 96, H = 54, canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H; canvas.clientWidth = W; canvas.clientHeight = H;
+  const e = new SkyEngine(canvas, { baseUrl: __root });
+  out('engine path: ' + (e.es2 ? 'OpenGL ES 2 (packed tables)' : 'OpenGL ES 3'));
+  while (!e.assetsDone) await new Promise((r) => setTimeout(r, 20));
+  try {                                                                           // the noise atlas: read at two detail levels, against the same read worked out from data/noise.bin
+    const { PORTABLE, toES1 } = await import('js/sky/portable.js'), { VERT_FULLSCREEN } = await import('js/sky/glsl-atmosphere.js');
+    const FSN = `#version 300 es
+precision highp float;
+${PORTABLE}
+uniform sampler2D uTex;
+uniform float uLod;
+in vec2 vUv;
+out vec4 oColor;
+void main() { oColor = noiseLod(uTex, vec2(vUv.x * 3.7 + 0.21, 0.37 + vUv.y * 0.1), uLod); }`;
+    const mk = (type, src) => { const x = g('createShader', type); g('shaderSource', x, src); g('compileShader', x); if (g('getShaderParameter', x, GL.COMPILE) === 0) throw new Error(String(g('getShaderInfoLog', x))); return x; };
+    const pn = g('createProgram'); g('attachShader', pn, mk(GL.VERTEX, toES1(VERT_FULLSCREEN, 'vertex').src)); g('attachShader', pn, mk(GL.FRAGMENT, toES1(FSN, 'fragment').src));
+    g('bindAttribLocation', pn, 0, 'aVid'); g('linkProgram', pn); g('useProgram', pn);
+    const vb = g('createBuffer'); g('bindBuffer', 0x8892, vb); g('bufferData', 0x8892, new Float32Array([0, 1, 2]).buffer, 0x88E4);
+    const va = g('createVertexArray'); g('bindVertexArray', va); g('enableVertexAttribArray', 0); g('vertexAttribPointer', 0, 1, 0x1406, 0, 0, 0);
+    const fb2 = g('createFramebuffer'), ot2 = g('createTexture');
+    g('activeTexture', 0x84C1); g('bindTexture', GL.TEX2D, ot2); g('texImage2D', GL.TEX2D, 0, GL.RGBA, 8, 1, 0, GL.RGBA, GL.UBYTE, null); g('texParameteri', GL.TEX2D, 0x2801, 0x2600); g('texParameteri', GL.TEX2D, 0x2800, 0x2600);
+    g('bindFramebuffer', 0x8D40, fb2); g('framebufferTexture2D', 0x8D40, 0x8CE0, GL.TEX2D, ot2, 0); g('viewport', 0, 0, 8, 1);
+    g('activeTexture', 0x84C0); g('bindTexture', GL.TEX2D, e.tNoise.tex.id);
+    g('uniform1i', g('getUniformLocation', pn, 'uTex'), 0);
+    const file = new Uint8Array(__readfile(__root + '/data/noise.bin'));
+    const lvl = (k) => { const s = 256 >> k, out = new Float64Array(s * s * 4), b = 1 << k; for (let y = 0; y < s; y++) for (let x = 0; x < s; x++) for (let c = 0; c < 4; c++) { let t = 0; for (let j = 0; j < b; j++) for (let i = 0; i < b; i++) t += file[(((y * b + j) * 256) + x * b + i) * 4 + c]; out[(y * s + x) * 4 + c] = t / (b * b); } return { s, d: out }; };
+    for (const k of [0, 3]) {
+      g('uniform1f', g('getUniformLocation', pn, 'uLod'), k); g('drawArrays', 4, 0, 3);
+      const got = new Uint8Array(g('readPixels', 0, 0, 8, 1, GL.RGBA, GL.UBYTE)), L = lvl(k); let worst = 0;
+      for (let i = 0; i < 8; i++) {
+        const u = ((i + 0.5) / 8) * 3.7 + 0.21, v = 0.37 + 0.05, fx = (u - Math.floor(u)) * L.s - 0.5, fy = (v - Math.floor(v)) * L.s - 0.5, x0 = Math.floor(fx), y0 = Math.floor(fy), ax = fx - x0, ay = fy - y0, w = (n) => ((n % L.s) + L.s) % L.s;
+        if (i === 0 && k === 0) out('  noise.bin read at u=' + u.toFixed(3) + ' v=' + v.toFixed(3) + ': got ' + Array.from(got.slice(0, 4)).join(',') + ', noise.bin says ' + [0, 1, 2, 3].map((c) => file[(((Math.floor((v - Math.floor(v)) * 256)) * 256) + Math.floor((u - Math.floor(u)) * 256)) * 4 + c]).join(','));
+        for (let c = 0; c < 4; c++) { const at = (x, y) => L.d[(w(y) * L.s + w(x)) * 4 + c]; const want = (at(x0, y0) * (1 - ax) + at(x0 + 1, y0) * ax) * (1 - ay) + (at(x0, y0 + 1) * (1 - ax) + at(x0 + 1, y0 + 1) * ax) * ay; worst = Math.max(worst, Math.abs(got[i * 4 + c] - want)); }
+      }
+      out('noiseLod level ' + k + ' (the mip atlas): worst difference from the same read worked out from noise.bin: ' + worst.toFixed(1) + ' of 255 ' + (worst > 6 ? 'WRONG' : 'OK'));
+    }
+  } catch (err) { out('noise atlas check failed: ' + (err && err.message || err)); }
+  const tm = Date.parse('2026-06-21T17:00:00Z');
+  const screen = () => { const gl2 = canvas.getContext('webgl2'); gl2.bindFramebuffer(gl2.FRAMEBUFFER, null); const px = new Uint8Array(W * H * 4); gl2.readPixels(0, 0, W, H, gl2.RGBA, gl2.UNSIGNED_BYTE, px); let r = 0, gg = 0, b = 0; for (let i = 0; i < px.length; i += 4) { r += px[i]; gg += px[i + 1]; b += px[i + 2]; } const n = px.length / 4; return Math.round(r / n) + ',' + Math.round(gg / n) + ',' + Math.round(b / n); };
+  for (const [name, type] of [['flat ground, clear sky', 'flat'], ['hills', 'hills']]) {
+    e.setLandscapeType(type, 1);
+    e.set({ sim: { base: new Date(tm), startPerf: performance.now(), scale: 0 }, weather: { cover: [0, 0, 0], precip: 0, snowfall: 0, fog: 0, visKm: 30, wind: [0, 0], cloudDark: 0, aod: 0.1, snowCover: 0 } });
+    const t0 = performance.now(); e.render(tm); e.render(tm);
+    out(name + ': ' + e.diagnose() + '; on screen (with glass off) ' + screen() + '   [' + ((performance.now() - t0) / 1000).toFixed(1) + ' s]');
+  }
+} catch (e) { out('engine check failed: ' + (e && (e.stack || e.message) || e)); }
+
 out('');
 out('=== summary (copy everything above, plus these lines) ===');
 out('SUMMARY ' + JSON.stringify(results));

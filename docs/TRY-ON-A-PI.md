@@ -70,7 +70,7 @@ For each Pi: the model and OS (`cat /proc/device-tree/model; dpkg --print-archit
 `wobbly-clock-run --gpu-test` probes the Pi's GPU on the OpenGL ES 2 path and prints what it can do: the driver, its limits and extensions, which render targets work
 (8-bit, half float, float), how big a shader it will compile (loops of 8 to 512 steps, 4 to 128 texture reads), how fast it draws (milliseconds per pass at two sizes),
 how precisely brightness survives being packed into 8 bits, whether every one of the engine's shaders (in their ES 2 form) compiles and links on this GPU, and whether
-vertex shaders can read textures. Run it with the output kept in a file:
+vertex shaders can read textures. It then checks that the ES 2 helper functions (packed sky tables, the hand-made bilinear read, the ridge heights, the noise mip levels) compute on this GPU what they should (against the same numbers worked out on the CPU), and runs the engine itself for two scenes, printing the picture's average colour at each step: that is how a black screen is traced to the stage that makes it. The engine part waits while the driver compiles the big sky shader: expect a few minutes. Run it with the output kept in a file:
 
 ```
 wobbly-clock-run --gpu-test 2>&1 | tee ~/gputest.txt
