@@ -27,3 +27,4 @@ for (const [name, vs, fs] of pairs) {
 }
 if (bad) throw new Error(bad + ' shaders failed to compile as GLSL ES 1.00');
 __print('all ' + pairs.length + ' shaders compile as GLSL ES 1.00');
+__done();

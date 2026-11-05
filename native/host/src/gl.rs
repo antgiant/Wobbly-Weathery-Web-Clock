@@ -119,6 +119,7 @@ impl Gl {
             "vertexAttribDivisor" => { gl!(self, "glVertexAttribDivisor", (u32, u32), u(0), u(1)); undef() }
             "drawArrays" => { gl!(self, "glDrawArrays", (u32, i32, i32), u(0), s(1), s(2)); undef() }
             "drawArraysInstanced" => { gl!(self, "glDrawArraysInstanced", (u32, i32, i32, i32), u(0), s(1), s(2), s(3)); undef() }
+            "scissor" => { gl!(self, "glScissor", (i32, i32, i32, i32), s(0), s(1), s(2), s(3)); undef() }
             "viewport" => { gl!(self, "glViewport", (i32, i32, i32, i32), s(0), s(1), s(2), s(3)); undef() }
             "enable" => { gl!(self, "glEnable", (u32), u(0)); undef() }
             "disable" => { gl!(self, "glDisable", (u32), u(0)); undef() }
