@@ -34,7 +34,7 @@ function init() {
     {
       const qs = new URLSearchParams(location.search), n = (k, d) => (Number.isFinite(parseFloat(qs.get(k))) ? parseFloat(qs.get(k)) : d);
       // ?gov=1 (the Pi's program sets it): the quality governor keeps frames between ?minfps (15) and ?maxfps (60); ?level= starts it somewhere
-      setEngine(new SkyEngine(canvas, { baseUrl: '.', lutScale: n('lut', 1), governor: qs.has('gov') ? { floorFps: n('minfps', 15), ceilFps: n('maxfps', 60), level: qs.has('level') ? n('level', 5) : undefined } : false }));
+      setEngine(new SkyEngine(canvas, { baseUrl: '.', lutScale: n('lut', 1), es2: qs.has('es2'), governor: qs.has('gov') ? { floorFps: n('minfps', 15), ceilFps: n('maxfps', 60), level: qs.has('level') ? n('level', 5) : undefined } : false }));
     }
   } catch (e) {
     startFallback(e.message);

@@ -28,14 +28,14 @@ export function probe(output = 'hdmi') {
 }
 
 const WORDS = {
-  gles3: 'an OpenGL ES 3 GPU', sensors: 'motion and compass sensors (a phone or tablet)', hdmi: 'an HDMI output',
+  gles3: 'an OpenGL ES 2 or 3 GPU', sensors: 'motion and compass sensors (a phone or tablet)', hdmi: 'an HDMI output',
 };
 const describe = (tok) => WORDS[tok] || (/^cores>=(\d+)$/.exec(tok) ? `${/(\d+)/.exec(tok)[1]} or more CPU cores` : /^ram>=(\d+)$/.exec(tok) ? `${/(\d+)/.exec(tok)[1]} MB of memory or more` : tok);
 
 // Which of these needs does the profile not meet?  tokens: ["gles3", "cores>=2", ...]
 export function unmet(tokens, p) {
   return (tokens || []).filter((t) => {
-    if (t === 'gles3') return p.gles < 3;
+    if (t === 'gles3') return p.gles < 2;      // the page's shaders have an OpenGL ES 2 form (js/sky/portable.js): a Pi Zero or 3 draws the same picture on its own GPU
     if (t === 'sensors') return !p.sensors;
     if (t === 'hdmi') return p.output !== 'hdmi';
     let m = /^cores>=(\d+)$/.exec(t); if (m) return p.cores < Number(m[1]);

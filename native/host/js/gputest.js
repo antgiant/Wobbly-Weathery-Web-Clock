@@ -2,7 +2,6 @@
 // It answers, with numbers: what the driver offers, which render targets work, how big a shader it accepts, how fast it draws, whether bright
 // colours survive being packed into 8 bits, whether the engine's real shaders get through a mechanical translation, and what instancing and
 // vertex arrays are available. Everything is printed as it happens; send all of it back.
-import { translate } from 'host/es2translate.js';
 
 const g = (n, ...a) => __gl(n, ...a);
 const out = (s = '') => __print(s);
@@ -125,17 +124,35 @@ for (const prec of ['highp', 'mediump']) {
   out(prec.padEnd(8) + 'values from 0.0001 to 10000, round trip relative error: mean ' + (100 * sum / w).toFixed(3) + ' %, worst ' + (100 * max).toFixed(3) + ' %'); results['pack ' + prec] = { mean: sum / w, worst: max };
 }
 
-// ---- the engine's own shaders, mechanically translated ----
+// ---- the engine's own shaders, in the ES 2 form the program uses on this kind of GPU (js/sky/portable.js), compiled AND linked here ----
 out('');
-out('--- the engine\'s real shaders: translated to GLSL ES 1.00 and offered to this driver ---');
-const sources = {};
-for (const m of ['glsl-atmosphere.js', 'glsl-scene.js', 'glsl-plants.js']) { try { Object.assign(sources, await import('js/sky/' + m)); } catch (e) { out('cannot load ' + m + ': ' + e.message); } }
-for (const [name, src] of Object.entries(sources).filter(([k, v]) => k.startsWith('FRAG_') && typeof v === 'string')) {
-  const tr = translate(src, 'fragment', { lodFallback: !has('EXT_shader_texture_lod') }); const notes = Object.entries(tr.notes).map(([k, v]) => k + ' x' + v).join(', ') || 'none';
-  const r = program(tr.src);
-  out(name.padEnd(18) + String(src.length).padStart(6) + ' chars  ' + (r.ok ? 'COMPILES (' + fmt(r.ms) + ')' : 'fails') + '   ES 3-only features: ' + notes);
-  if (!r.ok) out('      ' + first(r.log, 2).slice(0, 300));
-  results['real ' + name] = { chars: src.length, compiles: r.ok, notes: tr.notes };
+out('--- the engine\'s real shaders: the OpenGL ES 2 form (GLSL ES 1.00), compiled and linked by this driver ---');
+{
+  const A = await import('js/sky/glsl-atmosphere.js'), S = await import('js/sky/glsl-scene.js'), P = await import('js/sky/glsl-plants.js'), M = await import('js/sky/glsl-mask.js');
+  const { toES1 } = await import('js/sky/portable.js');
+  const pairs = [
+    ['transmittance', A.VERT_FULLSCREEN, A.FRAG_TRANSMITTANCE], ['multiscatter', A.VERT_FULLSCREEN, A.FRAG_MULTISCATTER], ['skyview', A.VERT_FULLSCREEN, A.FRAG_SKYVIEW],
+    ['noise (mips)', S.VERT_FULLSCREEN, S.FRAG_NOISE_DOWN], ['mip atlas', S.VERT_FULLSCREEN, S.FRAG_ATLAS_PLACE], ['exposure', S.VERT_FULLSCREEN, S.FRAG_ADAPT],
+    ['scene (sky, ground, clouds)', S.VERT_FULLSCREEN, S.FRAG_SCENE], ['glass and final picture', S.VERT_FULLSCREEN, S.FRAG_BLIT],
+    ['stars', S.VERT_STARS, S.FRAG_STARS], ['plants', P.VERT_PLANTS, P.FRAG_PLANTS],
+    ['LED panel', S.VERT_FULLSCREEN, S.FRAG_LED], ['LED stars', S.VERT_FULLSCREEN, S.FRAG_LED_PEAK], ['LED averages', S.VERT_FULLSCREEN, S.FRAG_LED_AVG],
+    ['glass strokes', M.VERT_STROKE, M.FRAG_STROKE], ['glass lights', M.VERT_LIGHT, M.FRAG_LIGHT], ['raindrops', M.VERT_DROP, M.FRAG_DROP], ['rain trails', M.VERT_TRAIL, M.FRAG_TRAIL],
+  ];
+  let failed = 0; const real = {};
+  for (const [name, vs, fs] of pairs) {
+    const t0 = t();
+    const sh = (type, src) => { const x = g('createShader', type); g('shaderSource', x, src); g('compileShader', x); return { x, ok: g('getShaderParameter', x, GL.COMPILE) !== 0 }; };
+    const v = sh(GL.VERTEX, toES1(vs, 'vertex').src), f = sh(GL.FRAGMENT, toES1(fs, 'fragment').src);
+    let ok = v.ok && f.ok, why = '';
+    if (!v.ok) why += ' vertex: ' + first(String(g('getShaderInfoLog', v.x)), 2);
+    if (!f.ok) why += ' fragment: ' + first(String(g('getShaderInfoLog', f.x)), 2);
+    if (ok) { const pr = g('createProgram'); g('attachShader', pr, v.x); g('attachShader', pr, f.x); g('linkProgram', pr); ok = g('getProgramParameter', pr, GL.LINK) !== 0; if (!ok) why = ' link: ' + first(String(g('getProgramInfoLog', pr)), 2); }
+    out(name.padEnd(30) + (ok ? 'OK (' + fmt(t() - t0) + ')' : 'FAILS' + why.slice(0, 400)));
+    real[name] = ok; if (!ok) failed++;
+  }
+  out(failed ? failed + ' of ' + pairs.length + ' shaders do not build on this GPU: send this whole output' : 'all ' + pairs.length + ' shaders build on this GPU');
+  results.engineShaders = real;
+  lim('MAX_VERTEX_TEXTURE_IMAGE_UNITS (stars and plants read the sky tables in their vertex shaders)', 0x8B4C);
 }
 
 out('');

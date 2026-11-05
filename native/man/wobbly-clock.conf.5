@@ -23,19 +23,19 @@ Count down to (advanced). Values: yyyy\-mm\-ddThh:mm. Default: . countdown: a da
 Name (optional) (advanced). Values: text, up to 40 characters. Default: . countdown: a name shown with it.
 .TP
 .B clockStyle
-Style. Values: auto | glass | stained | solid. Default: auto. auto (liquid glass; coloured tube from Thanksgiving to Christmas) | glass | stained (coloured tube) | solid. Needs an OpenGL ES 3 GPU (Pi 4, 5).
+Style. Values: auto | glass | stained | solid. Default: auto. auto (liquid glass; coloured tube from Thanksgiving to Christmas) | glass | stained (coloured tube) | solid. Needs an OpenGL ES 2 or 3 GPU (any Pi).
 .TP
 .B glassFrost
-Frosting. Values: 0 to 1. Default: 0.35. 0 clear .. 1 heavily frosted. Needs an OpenGL ES 3 GPU (Pi 4, 5).
+Frosting. Values: 0 to 1. Default: 0.35. 0 clear .. 1 heavily frosted. Needs an OpenGL ES 2 or 3 GPU (any Pi).
 .TP
 .B glassGlow
-Light from inside. Values: 0 to 1. Default: 0. light from inside the glass, 0..1 (stained glass always glows a little). Needs an OpenGL ES 3 GPU (Pi 4, 5).
+Light from inside. Values: 0 to 1. Default: 0. light from inside the glass, 0..1 (stained glass always glows a little). Needs an OpenGL ES 2 or 3 GPU (any Pi).
 .TP
 .B legibility
 Keep the time readable. Values: auto | high | off. Default: auto. off | auto (3:1) | high (4.5:1): least brightness contrast between the time and the sky.
 .TP
 .B glassGlowColor
-Colour of the light (liquid glass) (advanced). Values: warm | white | cool | follow. Default: follow. liquid glass: warm | white | cool | follow (the sun / moon light). Needs an OpenGL ES 3 GPU (Pi 4, 5).
+Colour of the light (liquid glass) (advanced). Values: warm | white | cool | follow. Default: follow. liquid glass: warm | white | cool | follow (the sun / moon light). Needs an OpenGL ES 2 or 3 GPU (any Pi).
 .TP
 .B clockColor
 Ink colour (solid style) (advanced). Values: auto | classic | white. Default: auto. solid style only: auto | classic | white.
@@ -45,13 +45,13 @@ Ink colour (solid style) (advanced). Values: auto | classic | white. Default: au
 Landscape. Values: auto | flat | hills | mountains | desert | ocean | city. Default: auto. auto (real terrain when available) | flat | ocean | hills | mountains | desert | city.
 .TP
 .B holidayTree
-Christmas tree. Values: on | off. Default: on. a lit Christmas tree in the scene from Thanksgiving to Christmas. Needs an OpenGL ES 3 GPU (Pi 4, 5).
+Christmas tree. Values: on | off. Default: on. a lit Christmas tree in the scene from Thanksgiving to Christmas. Needs an OpenGL ES 2 or 3 GPU (any Pi).
 .TP
 .B plants
-Plants that suit this place. Values: on | off. Default: on. grass, trees, cacti ... swaying in the wind. Needs an OpenGL ES 3 GPU (Pi 4, 5).
+Plants that suit this place. Values: on | off. Default: on. grass, trees, cacti ... swaying in the wind. Needs an OpenGL ES 2 or 3 GPU (any Pi).
 .TP
 .B quality
-Quality (advanced). Values: auto | low | medium | high. Default: auto. auto | low | medium | high. Needs an OpenGL ES 3 GPU (Pi 4, 5) and two or more cores.
+Quality (advanced). Values: auto | low | medium | high. Default: auto. auto | low | medium | high. Needs an OpenGL ES 2 or 3 GPU (any Pi) and two or more cores.
 .TP
 .B bodySize
 Sun & moon size (advanced). Values: 1 | 2 | 3. Default: 2. sun & moon size multiplier.
@@ -109,7 +109,7 @@ Cloud & water motion (advanced). Values: 1 | 0.25 | 0. Default: 1. 1 real time, 
 Umbrella alert. Values: on | off. Default: off. show an umbrella / slicker indicator when enough rain is coming today.
 .TP
 .B digitWeather
-Rain and snow on the digits (advanced). Values: on | off. Default: on. on | off: rain beads and splashes, snow settling on the digits (glass, tube and LED styles). Needs an OpenGL ES 3 GPU (Pi 4, 5).
+Rain and snow on the digits (advanced). Values: on | off. Default: on. on | off: rain beads and splashes, snow settling on the digits (glass, tube and LED styles). Needs an OpenGL ES 2 or 3 GPU (any Pi).
 .TP
 .B windSway
 Wind sway (advanced). Values: off | lean | full. Default: off. off | lean | full: the digits lean downwind like palm trees (steady lean, or lean and gusts). Needs two or more cores.
@@ -245,6 +245,6 @@ Showcase. Everything turned up: high quality, glowing glass, moving clouds.
 .B saver
 Battery saver. Still sky, flat ink, no plants, dimmed at night, screen not forced on.
 .SH HARDWARE
-Raspberry Pi Zero / Zero W: no OpenGL ES 3; Raspberry Pi Zero 2 W: no OpenGL ES 3; Raspberry Pi 3: no OpenGL ES 3; Raspberry Pi 4: OpenGL ES 3; Raspberry Pi 5: OpenGL ES 3.
+Raspberry Pi Zero / Zero W: OpenGL ES 2 (the shaders have an ES 2 form); Raspberry Pi Zero 2 W: OpenGL ES 2 (the shaders have an ES 2 form); Raspberry Pi 3: OpenGL ES 2 (the shaders have an ES 2 form); Raspberry Pi 4: OpenGL ES 3; Raspberry Pi 5: OpenGL ES 3.
 .SH SEE ALSO
 wobbly\-clock(1)

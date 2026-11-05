@@ -23,7 +23,8 @@ check('iOS standalone meta set', /apple-mobile-web-app-capable/.test(html));
 const sw = read('sw.js');
 const listed = new Set([...sw.matchAll(/'([^']+)'/g)].map((x) => x[1]));
 const walk = (d) => fs.readdirSync(path.join(root, d), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));
-const files = [...walk('js'), ...walk('data')].filter((f) => /\.(js|bin|png|jpg)$/.test(f));
+// (data/noise.bin, 256 KB, is only for GPUs without integer shaders (the Pi Zero and 3): a browser that needs it fetches it, the others are not made to download it)
+const files = [...walk('js'), ...walk('data')].filter((f) => /\.(js|bin|png|jpg)$/.test(f) && f !== 'data/noise.bin');
 const missing = files.filter((f) => !listed.has(f));
 check('service worker precaches every script and data file', missing.length === 0, missing.join(', '));
 const stale = [...listed].filter((f) => /^(js|data|icons)\//.test(f) && !fs.existsSync(path.join(root, f)));

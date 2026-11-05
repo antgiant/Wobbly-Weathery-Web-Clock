@@ -2,12 +2,10 @@
 
 The native clock is the web page's own code run by a small program, `wobbly-clock-run`, with no browser. This is how to try it and what to tell me.
 
-**Measured: the original Pi Zero is too slow.** Three 320x180 frames took 28 minutes on a Pi Zero (one 700 MHz ARMv6 core, drawing in software), so the Zero and Zero W / Pi 1 are not supported by this approach. Test on a Pi 3 (or Zero 2 W, Pi 4, 5).
-
-**What to expect.** Pi 4 and 5 draw on the GPU. Pi 3, Zero 2 and Zero have a GPU too old for the page's shaders (they need OpenGL ES 3), so the program
-says `no OpenGL ES 3 on this GPU ... drawing on the CPU instead` and draws in software: the same picture, slower. The Pi 3 should manage a frame every few
-seconds at a small size; the original Zero (ARMv6, one slow core) may need a minute per frame, which is why step 3 measures before you put it on a screen.
-Nothing here has run on a real Pi yet; the timing is the main thing to learn.
+**What to expect.** Every Pi draws on its GPU. The Pi 4 and 5 (OpenGL ES 3) draw the page's shaders as they are; the Pi 3, Zero 2 and the Zero (OpenGL ES 2) draw the same picture
+with the shaders in their ES 2 form (the program prints `no OpenGL ES 3 on this GPU ...: using its OpenGL ES 2`). A quality governor keeps the clock between 15 and 60 frames per second
+by lowering the picture's size and detail as far as it must. If a Pi falls back to the CPU (`GL: ... llvmpipe`), the GPU driver is not switched on: see the GPU test below.
+The first start on an ES 2 Pi takes a while (the GPU's shader compiler works through the big sky shader); after that frames are quick. Step 3 measures it.
 
 ## 1. Get the package
 On GitHub open the **Actions** tab, the newest green **Native** run on branch `claude/wobbly-clock-sky-simulator-njbc4r` (or `main`), and download the
@@ -66,13 +64,13 @@ from `native/matrix-sink/` against hzeller's library (instructions in that folde
 
 ## What to send back
 For each Pi: the model and OS (`cat /proc/device-tree/model; dpkg --print-architecture`), the `GL:` line, the seconds per frame from step 3, and anything that went wrong
-(the exact message). That tells me whether the CPU path is good enough or the GPU (OpenGL ES 2) version of the shaders is worth writing.
+(the exact message), and the `governor:` lines from step 3 (they say which quality level the Pi settles at).
 
 ## The GPU test (Pi Zero, 1, 3: the OpenGL ES 2 GPUs)
 `wobbly-clock-run --gpu-test` probes the Pi's GPU on the OpenGL ES 2 path and prints what it can do: the driver, its limits and extensions, which render targets work
 (8-bit, half float, float), how big a shader it will compile (loops of 8 to 512 steps, 4 to 128 texture reads), how fast it draws (milliseconds per pass at two sizes),
-how precisely brightness survives being packed into 8 bits, whether the engine's real shaders translate to ES 2 and which ES 3-only features block them, and whether
-instancing and vertex arrays exist. Run it with the output kept in a file:
+how precisely brightness survives being packed into 8 bits, whether every one of the engine's shaders (in their ES 2 form) compiles and links on this GPU, and whether
+vertex shaders can read textures. Run it with the output kept in a file:
 
 ```
 wobbly-clock-run --gpu-test 2>&1 | tee ~/gputest.txt

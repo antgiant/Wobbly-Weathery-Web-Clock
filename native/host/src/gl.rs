@@ -3,11 +3,11 @@
 
 use crate::egl::Egl;
 use rquickjs::{ArrayBuffer, Ctx, Result, Value};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::ffi::{c_char, c_void, CString};
 
-pub struct Gl { egl: Egl, cache: RefCell<HashMap<&'static str, usize>> }
+pub struct Gl { egl: Egl, cache: RefCell<HashMap<&'static str, usize>>, es2: Cell<bool> }
 
 macro_rules! gl {
     ($s:expr, $name:literal, ($($t:ty),*) $(-> $r:ty)?, $($a:expr),*) => {{
@@ -24,7 +24,15 @@ fn bytes<'js>(v: &Value<'js>) -> Option<Vec<u8>> {
 }
 
 impl Gl {
-    pub fn new(egl: Egl) -> Gl { Gl { egl, cache: RefCell::new(HashMap::new()) } }
+    pub fn new(egl: Egl) -> Gl {
+        let g = Gl { egl, cache: RefCell::new(HashMap::new()), es2: Cell::new(false) };
+        let v = gl!(g, "glGetString", (u32) -> *const c_char, 0x1F02u32);                                     // GL_VERSION: "OpenGL ES 2.0 Mesa ..." on a Pi Zero or Pi 3
+        if !v.is_null() { g.es2.set(unsafe { std::ffi::CStr::from_ptr(v) }.to_string_lossy().starts_with("OpenGL ES 2")); }
+        g
+    }
+    /// Is this an OpenGL ES 2 context (no vertex arrays or float targets in core, only the extension versions)? `set_es2` makes any context behave so (for tests).
+    pub fn is_es2(&self) -> bool { self.es2.get() }
+    pub fn set_es2(&self, on: bool) { self.es2.set(on); }
     pub fn version(&self) -> String { self.egl.version.clone() }
     fn addr(&self, name: &'static str) -> usize {
         if let Some(a) = self.cache.borrow().get(name) { return *a; }
@@ -47,7 +55,8 @@ impl Gl {
             "createTexture" => ret(self.gen("glGenTextures") as f64),
             "createBuffer" => ret(self.gen("glGenBuffers") as f64),
             "createFramebuffer" => ret(self.gen("glGenFramebuffers") as f64),
-            "createVertexArray" => ret(self.gen("glGenVertexArrays") as f64),
+            "createVertexArray" => if self.es2.get() { let mut id = 0u32; gl!(self, "glGenVertexArraysOES", (i32, *mut u32), 1, &mut id); ret(id as f64) } else { ret(self.gen("glGenVertexArrays") as f64) },
+            "isES2" => ret(if self.es2.get() { 1.0 } else { 0.0 }),
             "deleteTexture" => { self.del("glDeleteTextures", u(0)); undef() }
             "deleteBuffer" => { self.del("glDeleteBuffers", u(0)); undef() }
             "deleteFramebuffer" => { self.del("glDeleteFramebuffers", u(0)); undef() }
@@ -88,7 +97,8 @@ impl Gl {
             "texImage2D" => {
                 let data = a.get(8).and_then(bytes);
                 let p = data.as_ref().map(|d| d.as_ptr() as *const c_void).unwrap_or(std::ptr::null());
-                gl!(self, "glTexImage2D", (u32, i32, i32, i32, i32, i32, u32, u32, *const c_void), u(0), s(1), s(2), s(3), s(4), s(5), u(6), u(7), p); undef()
+                let internal = if self.es2.get() && s(2) == 0x8058 { 0x1908 } else { s(2) };      // ES 2 has no sized formats: RGBA8 is RGBA with UNSIGNED_BYTE
+                gl!(self, "glTexImage2D", (u32, i32, i32, i32, i32, i32, u32, u32, *const c_void), u(0), s(1), internal, s(3), s(4), s(5), u(6), u(7), p); undef()
             }
             "texParameteri" => { gl!(self, "glTexParameteri", (u32, u32, i32), u(0), u(1), s(2)); undef() }
             "generateMipmap" => { gl!(self, "glGenerateMipmap", (u32), u(0)); undef() }
@@ -103,12 +113,13 @@ impl Gl {
                 else { gl!(self, "glBufferData", (u32, isize, *const c_void, u32), u(0), n(1) as isize, std::ptr::null(), u(2)); }
                 undef()
             }
-            "bindVertexArray" => { gl!(self, "glBindVertexArray", (u32), u(0)); undef() }
+            "bindVertexArray" => { if self.es2.get() { gl!(self, "glBindVertexArrayOES", (u32), u(0)); } else { gl!(self, "glBindVertexArray", (u32), u(0)); } undef() }
             "enableVertexAttribArray" => { gl!(self, "glEnableVertexAttribArray", (u32), u(0)); undef() }
             "vertexAttribPointer" => { gl!(self, "glVertexAttribPointer", (u32, i32, u32, u8, i32, *const c_void), u(0), s(1), u(2), s(3) as u8, s(4), n(5) as usize as *const c_void); undef() }
             "vertexAttribDivisor" => { gl!(self, "glVertexAttribDivisor", (u32, u32), u(0), u(1)); undef() }
             "drawArrays" => { gl!(self, "glDrawArrays", (u32, i32, i32), u(0), s(1), s(2)); undef() }
             "drawArraysInstanced" => { gl!(self, "glDrawArraysInstanced", (u32, i32, i32, i32), u(0), s(1), s(2), s(3)); undef() }
+            "scissor" => { gl!(self, "glScissor", (i32, i32, i32, i32), s(0), s(1), s(2), s(3)); undef() }
             "viewport" => { gl!(self, "glViewport", (i32, i32, i32, i32), s(0), s(1), s(2), s(3)); undef() }
             "enable" => { gl!(self, "glEnable", (u32), u(0)); undef() }
             "disable" => { gl!(self, "glDisable", (u32), u(0)); undef() }

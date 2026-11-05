@@ -33,12 +33,14 @@ check('--help and --version work, and help lists the presets', (await go(w, '--h
 
 const zero = world('pi-zero');
 r = await go(zero, 'set', 'clockStyle', 'glass');
-check('on a Pi Zero, glass is refused with the reason and exit 3, and nothing is written', r.code === 3 && /needs an OpenGL ES 3 GPU/.test(r.err) && !(CONF in zero.files));
-r = await go(zero, 'preset', 'bedside');
-check('a preset on a Zero is lowered to what it can do, and says so', r.code === 0 && /Style.*needs an OpenGL ES 3/.test(r.out) && zero.files[CONF].includes('clockStyle = solid'));
+check('on a Pi Zero, glass is fine (its GPU runs the shaders in their ES 2 form)', r.code === 0 && zero.files[CONF].includes('clockStyle = glass'));
+r = await go(zero, 'set', 'windSway', 'full'); const zero2 = world('pi-zero');
+check('on a Pi Zero, what needs two cores is refused with the reason and exit 3, and nothing is written', r.code === 3 && /needs 2 or more CPU cores/.test(r.err) && !zero2.files[CONF]);
+r = await go(zero2, 'preset', 'bedside');
+check('a preset on a Zero is lowered to what it can do, and says so', r.code === 0 && /needs 2 or more CPU cores/.test(r.out) && /Cloud & water motion|windSway|quality/.test(r.out));
 check('a Pi 4 gets the same preset as designed', (await go(world(), 'preset', 'bedside')).out === 'preset bedside applied');
 r = await go(zero, 'preset', 'nope'); check('an unknown preset exits 1', r.code === 1);
-r = await go(zero, 'capabilities'); check('capabilities lists what the machine cannot do', /clockStyle=glass/.test(r.out) && /windSway/.test(r.out));
+r = await go(zero, 'capabilities'); check('capabilities lists what the machine cannot do', /windSway/.test(r.out) && !/clockStyle=glass/.test(r.out));
 
 // a share link
 const link = S.toLink({ settings: S.normalise({ ...Object.fromEntries(S.SETTINGS_V1.map((x) => [x[0], x[2]])), hideSeconds: true }), place: { lat: 40.7, lon: -74 }, kiosk: true }, 'https://clock.wooleys.us/', 'short');

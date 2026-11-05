@@ -56,12 +56,14 @@ wobbly-clock-run --config my.conf --sink ppm:/tmp/frames --size 960x540 --frames
 * **Live weather** and the other network lookups are the page's own, through `curl`.
 
 **Limits today:** the pills (sunrise countdown, rain alert, countdown name) and the settings drawer are page furniture made of DOM elements
-and are not drawn natively; the LED card's bitmap font is (it is drawn into the canvas). **Which Pis:** measured on a real Pi Zero: three 320x180 frames took 28 minutes (software drawing on one ARMv6 core), so the original Zero, Zero W and Pi 1 are **not supported**.  the Pi 4 and 5 have OpenGL ES 3 in hardware and draw on the GPU. The
-Pi 3, Zero 2 and Zero have OpenGL ES 2 only, and the page's shaders need ES 3 (float render targets, integer arithmetic, instancing), so there
-the program notices (`no OpenGL ES 3 on this GPU`), restarts itself with Mesa's software renderer (llvmpipe, on the CPU; `--software` forces it)
-and draws the same picture more slowly, at a smaller internal size when frames take too long (the page's own adaptive scale). A GPU-accelerated
-ES 2 version of the shaders would need float-free packing of every texture and a rewrite of the integer noise; it is left until a Pi 3 shows that the
-CPU path is too slow (`../TODO.md`). **Not verified on a real Pi:** speed, the drivers, the framebuffer, a real panel.
+and are not drawn natively; the LED card's bitmap font is (it is drawn into the canvas). **Which Pis:** every one with a GPU driver. The Pi 4 and 5 have OpenGL ES 3 and draw the page's shaders as they are. The Pi Zero (all models), Zero 2 and Pi 3 have OpenGL ES 2 only
+(VideoCore IV: no float render targets, no choice of mip level in a shader, no instancing, no integers in shaders), and there the program draws on the GPU too, with the same files:
+the shaders are translated to GLSL ES 1.00 when they are loaded, and the places where the two kinds of GPU differ go through a few helper functions (`../js/sky/portable.js`):
+the sky tables are packed into 8-bit textures (12 bits of log brightness and two colour ratios) and read with a hand-made bilinear blend; the noise's mip levels live in one texture
+(`data/noise.bin` is the noise, made by `tools/make-noise.mjs`, because the GPU cannot make it); the glass's frosting reads the scene's mip levels from separate textures; the plants are
+drawn as six vertices each instead of instances. The program tries ES 3, then ES 2, and only with no GPU context at all does it restart with Mesa's software renderer
+(llvmpipe, on the CPU; `--software` forces it); `--es2` takes the ES 2 path on any GPU, which is how CI checks that it draws what the ES 3 path draws (mean difference under 1 of 255).
+The quality governor (`../js/sky/governor.js`) lowers the picture's size and detail until frames come at 15 per second or better. **Not verified on a real Pi:** speed, the drivers, the framebuffer, a real panel.
 
 ## Builds, releases and CI
 

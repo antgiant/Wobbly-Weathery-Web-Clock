@@ -7,6 +7,7 @@
 // physically (limiting magnitude, scotopic shift, moonlight ...).
 
 import { ATMOS_COMMON, VERT_FULLSCREEN } from './glsl-atmosphere.js';
+import { PORTABLE, MASK_LOD } from './portable.js';
 
 // ---------------------------------------------------------------- shared ---
 // Sky radiance lookup used by the composite, the star vertex shader and the
@@ -15,13 +16,14 @@ export const SKY_LOOKUP = `
 uniform sampler2D uTrans;
 uniform sampler2D uSkySun;
 uniform sampler2D uSkyMoon;
+uniform vec2 uTransPx, uSkyPx;   // sizes of those tables, texels (an ES 2 GPU reads them with its own filtering)
 uniform vec4 uSunA;       // sin(az), cos(az), elevation (rad), illuminance (lux)
 uniform vec4 uMoonA;
 uniform vec3 uNightLum;   // zenith luminance of airglow + zodiacal + starlight, cd/m^2
 uniform vec3 uLPLum;      // zenith luminance of artificial sky glow, cd/m^2
 uniform float uCamH;      // km above sea level
 
-vec3 transmittance(float r, float mu) { return texture(uTrans, transUv(r, mu)).rgb; }
+vec3 transmittance(float r, float mu) { return hdrTex(uTrans, transUv(r, mu), uTransPx); }
 
 vec2 skyUv(float e, float cosPhi) {
   float phi = acos(clamp(cosPhi, -1.0, 1.0));
@@ -35,8 +37,8 @@ vec3 skyLum(vec3 d) {
   float hl = length(h);
   vec2 hn = hl > 1e-4 ? h / hl : vec2(0.0, 1.0);
   vec3 L = vec3(0.0);
-  if (uSunA.w > 0.0)  L += texture(uSkySun,  skyUv(e, dot(hn, uSunA.xy))).rgb  * uSunA.w;
-  if (uMoonA.w > 0.0) L += texture(uSkyMoon, skyUv(e, dot(hn, uMoonA.xy))).rgb * uMoonA.w;
+  if (uSunA.w > 0.0)  L += hdrTex(uSkySun,  skyUv(e, dot(hn, uSunA.xy)), uSkyPx)  * uSunA.w;
+  if (uMoonA.w > 0.0) L += hdrTex(uSkyMoon, skyUv(e, dot(hn, uMoonA.xy)), uSkyPx) * uMoonA.w;
   float ec = max(e, 0.0);
   float sz = cos(ec);
   float vr = 1.0 / sqrt(max(1.0 - 0.9693 * sz * sz, 0.04));   // van Rhijn airglow layer
@@ -80,6 +82,7 @@ vec3 toDisplay(vec3 L, float expo, vec3 addRel) {
 `;
 
 // ----------------------------------------------------------------- noise ---
+// (The noise is made here with integer arithmetic, which an OpenGL ES 2 GPU lacks: it loads the same picture from data/noise.bin, made by tools/make-noise.mjs.)
 export const FRAG_NOISE = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -120,6 +123,29 @@ void main() {
   oColor = vec4(r, g, b, a);
 }`;
 
+// ---- the noise texture's mip levels in one texture (OpenGL ES 2 GPUs cannot pick a mip level in a shader, so portable.js's noiseLod reads them from here) ----
+// Each level is made from the one above it (a bilinear read at the middle of a 2x2 block is its average), then every level is copied into the atlas with a
+// one-texel border that wraps round, so reading next to a tile's edge gives what REPEAT would.
+export const FRAG_NOISE_DOWN = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform vec2 uSize;      // size of the level being made, texels
+out vec4 oColor;
+void main() { oColor = texture(uSrc, (floor(gl_FragCoord.xy) + 0.5) / uSize); }`;
+
+export const FRAG_ATLAS_PLACE = `#version 300 es
+precision highp float;
+uniform sampler2D uSrc;
+uniform vec2 uSize;      // size of the level, texels
+uniform float uY;        // first row of its place in the atlas
+uniform float uWrap;     // 1: the border wraps round (a tiling texture), 0: it repeats the edge texels
+out vec4 oColor;
+void main() {
+  vec2 t = floor(gl_FragCoord.xy - vec2(0.0, uY)) - 1.0;          // the level's texel shown here (-1 and size are the border)
+  t = uWrap > 0.5 ? mod(t + uSize, uSize) : clamp(t, vec2(0.0), uSize - 1.0);
+  oColor = texture(uSrc, (t + 0.5) / uSize);
+}`;
+
 // ------------------------------------------------------------- exposure ----
 // One pixel, RGBA32F: r = smoothed log(adaptation luminance), g = target log.
 export const FRAG_ADAPT = `#version 300 es
@@ -148,10 +174,10 @@ void main() {
     }
   }
   float target = sum / float(NX * NY);
-  float prev = texelFetch(uPrev, ivec2(0), 0).r;
+  float prev = adaptLog(uPrev);
   float k = 1.0 - exp(-uDt / max(uTau, 1e-3));
   float cur = uSnap > 0.5 ? target : mix(prev, target, k);
-  oColor = vec4(cur, target, 0.0, 1.0);
+  oColor = adaptPack(cur, target);
 }`;
 
 // ----------------------------------------------------------------- stars ---
@@ -243,8 +269,10 @@ void main() {
 //                   pixels with black lines between them
 export const FRAG_BLIT = `#version 300 es
 precision highp float;
+${PORTABLE}
+${MASK_LOD}
 uniform sampler2D uTex;
-uniform sampler2D uMask;
+uniform float uTexW;       // width of uTex in texels
 uniform vec4 uGlass;       // x frost 0..1, y mode (0 off, 1 liquid, 2 stained, 3 LED), z stroke width (canvas px), w time
 uniform vec4 uMaskRect;    // clock bounding box in canvas uv, y down: x, y, w, h
 uniform vec2 uMaskPx;      // mask texture size in texels
@@ -272,10 +300,31 @@ vec2 hash22(vec2 p) { return vec2(hash21(p), hash21(p + 17.31)); }
 
 float maskAt(vec2 uv, float lod) {
   vec2 m = (vec2(uv.x, 1.0 - uv.y) - uMaskRect.xy) / uMaskRect.zw;
-  return textureLod(uMask, m, lod).a;
+  return maskLod(m, lod).a;
 }
 float lumaOf(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+#ifdef WOBBLY_ES2
+// An ES 2 GPU cannot pick a detail level in a shader, and a bias on its own choice goes wrong where the position moves unevenly from pixel to pixel (the glass bends it).
+// So the scene's mip levels are separate textures (engine.js makes them) and two of them are blended here.
+uniform sampler2D uMip1, uMip2, uMip3, uMip4, uMip5, uMip6, uMip7;
+vec3 sceneLvl(float k, vec2 uv) {
+  if (k < 0.5) return texture(uTex, uv).rgb;
+  if (k < 1.5) return texture(uMip1, uv).rgb;
+  if (k < 2.5) return texture(uMip2, uv).rgb;
+  if (k < 3.5) return texture(uMip3, uv).rgb;
+  if (k < 4.5) return texture(uMip4, uv).rgb;
+  if (k < 5.5) return texture(uMip5, uv).rgb;
+  if (k < 6.5) return texture(uMip6, uv).rgb;
+  return texture(uMip7, uv).rgb;
+}
+vec3 sceneAt(vec2 uv, float lod) {
+  lod = clamp(lod, 0.0, 7.0);
+  float l0 = floor(lod);
+  return mix(sceneLvl(l0, uv), sceneLvl(min(l0 + 1.0, 7.0), uv), lod - l0);
+}
+#else
 vec3 sceneAt(vec2 uv, float lod) { return textureLod(uTex, uv, lod).rgb; }
+#endif
 
 float linLum(vec3 c) { return dot(pow(max(c, 0.0), vec3(2.2)), vec3(0.2126, 0.7152, 0.0722)); }
 
@@ -299,7 +348,7 @@ vec3 withOutline(vec3 outside, vec3 inside, float cover) {
   float mw = maskAt(vUv, max(log2(t * maskScale), 0.0));
   float inner = m0 * (1.0 - smoothstep(0.55, 0.92, mw));   // inside the glyph, near its edge
   float outer = (1.0 - m0) * smoothstep(0.06, 0.5, mw);    // outside it, near its edge
-  float texScale = float(textureSize(uTex, 0).x) / uRes.x;
+  float texScale = uTexW / uRes.x;
   float Lb = linLum(sceneAt(vUv, max(log2(max(uGlass.z * 0.15, t) * texScale), 0.0)));
   float pol = smoothstep(0.10, 0.26, Lb);                  // 1: bright sky behind, dark outline
   vec3 oc = mix(vec3(0.98, 0.98, 1.0), vec3(0.012), pol);
@@ -310,7 +359,7 @@ vec3 withOutline(vec3 outside, vec3 inside, float cover) {
 
 // gentle, spatially smooth tone for the body of the glass
 vec3 bodyTone(vec3 c, float stroke) {
-  float Lbig = linLum(sceneAt(vUv, max(log2(stroke * 2.5 * float(textureSize(uTex, 0).x) / uRes.x), 0.0)));
+  float Lbig = linLum(sceneAt(vUv, max(log2(stroke * 2.5 * uTexW / uRes.x), 0.0)));
   float dark = smoothstep(0.22, 0.6, Lbig), light = 1.0 - smoothstep(0.03, 0.14, Lbig);
   c *= 1.0 - 0.38 * dark * uContrast;
   return mix(c, vec3(1.0), 0.22 * light * uContrast);
@@ -460,7 +509,7 @@ void body() {
   vec3 emit = uGlowCol;
   if (stained) {
     vec2 mUv = (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw;
-    vec4 mk = textureLod(uMask, mUv, lodH * 0.5);                      // a little blur: glass spreads the light
+    vec4 mk = maskLod(mUv, lodH * 0.5);                      // a little blur: glass spreads the light
     emit = min(mk.rgb / max(mk.a, 0.05), vec3(1.3));
   }
 
@@ -512,7 +561,7 @@ void body() {
   vec3 haloCol = uGlowCol;
   float haloK = 0.30;
   if (stained) {                                                      // the tube's lights colour the air around it
-    vec4 hm = textureLod(uMask, (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw, lodG);
+    vec4 hm = maskLod((vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw, lodG);
     haloCol = hm.rgb / max(hm.a, 0.04); haloK = 0.85;
   }
   shaded += haloCol * halo * glow * (1.0 - cover) * haloK;
@@ -535,8 +584,9 @@ void main() {
 // skipping the blocks the digits are on. It is derived from the normal picture, so a star shows here exactly when it shows there.
 export const FRAG_LED_PEAK = `#version 300 es
 precision highp float;
+${PORTABLE}
+${MASK_LOD}                // uMask: the digits
 uniform sampler2D uComp;   // the normal picture, with mip levels
-uniform sampler2D uMask;   // the digits
 uniform vec2 uRes;         // canvas size in px
 uniform vec4 uLed;         // x columns, y rows
 uniform vec4 uMaskRect;
@@ -554,9 +604,13 @@ void main() {
   if (uMaskOn > 0.5) {                                                      // the clock wins: no star on a digit
     vec2 m = (vec2(cuv.x, 1.0 - cuv.y) - uMaskRect.xy) / uMaskRect.zw;
     float lod = max(log2(cell * uMaskPx.x / (uMaskRect.z * uRes.x)), 0.0);
-    if (textureLod(uMask, m, lod).a > 0.004) { oColor = vec4(0.0); return; }
+    if (maskLod(m, lod).a > 0.004) { oColor = vec4(0.0); return; }
   }
+#ifdef WOBBLY_ES2
+  vec3 sum = vec3(0.0);                                                     // no mip levels to average with: the block is summed below
+#else
   float avg = lumaOf(textureLod(uComp, cuv, max(log2(cell), 0.0)).rgb);
+#endif
   vec3 best = vec3(0.0);
   float top = 0.0;
   int n = int(cell);
@@ -564,17 +618,49 @@ void main() {
     if (j >= n) break;
     for (int i = 0; i < 40; i++) {
       if (i >= n) break;
-      vec3 c = texelFetch(uComp, ivec2(base) + ivec2(i, j), 0).rgb;
+      vec3 c = texel0(uComp, base + vec2(float(i), float(j)), uRes, cell).rgb;
+#ifdef WOBBLY_ES2
+      sum += c;
+#endif
       float l = lumaOf(c);
       if (l > top) { top = l; best = c; }
     }
   }
+#ifdef WOBBLY_ES2
+  float avg = lumaOf(sum / float(n * n));
+#endif
   oColor = vec4(best, clamp(top - avg, 0.0, 1.0));
+}`;
+
+// ---- LED panel on an OpenGL ES 2 GPU: the average of each LED's block (there are no mip levels to read it from), one texel per LED ----
+export const FRAG_LED_AVG = `#version 300 es
+precision highp float;
+${PORTABLE}
+uniform sampler2D uComp;
+uniform vec2 uRes;
+uniform vec4 uLed;
+out vec4 oColor;
+void main() {
+  float cell = max(floor(min(uRes.x / uLed.x, uRes.y / uLed.y)), 2.0);
+  vec2 org = floor((uRes - vec2(uLed.x, uLed.y) * cell) * 0.5);
+  vec2 base = org + floor(gl_FragCoord.xy) * cell;
+  vec3 sum = vec3(0.0);
+  int n = int(cell);
+  for (int j = 0; j < 40; j++) {
+    if (j >= n) break;
+    for (int i = 0; i < 40; i++) {
+      if (i >= n) break;
+      sum += texel0(uComp, base + vec2(float(i), float(j)), uRes, cell).rgb;
+    }
+  }
+  oColor = vec4(sum / float(n * n), 1.0);
 }`;
 
 // ---- LED panel: the finished picture (glass and all) averaged into a grid of square pixels ----
 export const FRAG_LED = `#version 300 es
 precision highp float;
+${PORTABLE}
+uniform sampler2D uAvg;    // (OpenGL ES 2 only) each LED's block averaged, one texel per LED
 uniform sampler2D uComp;   // the normal picture, with mip levels
 uniform vec2 uRes;         // canvas size in px
 uniform vec4 uLed;         // x columns, y rows, z gap as a fraction of a cell, w brightness
@@ -596,27 +682,31 @@ void main() {
   float g = uLed.z * 0.5, aa = 0.9 / cell;
   float lit = smoothstep(g - aa, g + aa, e.x) * smoothstep(g - aa, g + aa, e.y);
   vec2 cuv = (org + (id + 0.5) * cell) / uRes;
+#ifdef WOBBLY_ES2
+  vec3 c = texture(uAvg, (id + 0.5) / uLed.xy).rgb;
+#else
   vec3 c = textureLod(uComp, cuv, max(log2(cell), 0.0)).rgb;                // average the picture over the cell
+#endif
   // LED panels are punchy: more saturation and contrast than the soft picture
   float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
   c = pow(max(mix(vec3(l), c, 1.2), 0.0), vec3(1.08));
   if (uStars > 0.5) {                                                       // a star, the moon or a planet in this LED's block: light the LED
-    vec4 pk = texelFetch(uPeak, ivec2(id), 0);
+    vec4 pk = texel(uPeak, id, uLed.xy);
     float thr = uStars > 1.5 ? 0.06 : 0.14;
     float dark = 1.0 - smoothstep(0.12, 0.32, l);                           // not in daylight, not on a bright cloud
     float k = smoothstep(thr, thr * 2.0, pk.a) * dark;
-    ivec2 sz = textureSize(uPeak, 0);
+    vec2 sz = uLed.xy;
     for (int dj = -1; dj <= 1; dj++) for (int di = -1; di <= 1; di++) {     // one star per neighbourhood: the brightest wins, so they read as stars and not as noise
-      ivec2 q = ivec2(id) + ivec2(di, dj);
-      if ((di != 0 || dj != 0) && q.x >= 0 && q.y >= 0 && q.x < sz.x && q.y < sz.y) {
-        float a = texelFetch(uPeak, q, 0).a;
+      vec2 q = id + vec2(float(di), float(dj));
+      if ((di != 0 || dj != 0) && q.x >= 0.0 && q.y >= 0.0 && q.x < sz.x && q.y < sz.y) {
+        float a = texel(uPeak, q, sz).a;
         if (a > pk.a || (a == pk.a && (dj < 0 || (dj == 0 && di < 0)))) k = 0.0;
       }
     }
     c = mix(c, max(c, pk.rgb * (uStars > 1.5 ? 1.5 : 1.2) + vec3(0.04) * k), k);
   }
   if (uOverlayOn > 0.5) {                                                   // drawn per LED, after averaging, so its pixels stay whole LEDs
-    vec4 o = texelFetch(uOverlay, ivec2(int(id.x), int(uLed.y - 1.0 - id.y)), 0);
+    vec4 o = texel(uOverlay, vec2(id.x, uLed.y - 1.0 - id.y), uLed.xy);
     c = mix(c, o.rgb, o.a);
   }
   oColor = vec4(c * (lit + 0.035) * uLed.w, 1.0);
@@ -696,12 +786,12 @@ vec3 sunTransAt(float h, float elev) {            // sunlight reaching height h 
 
 // ---- clouds ----
 float cloudShape(vec2 uv, float cover, float lod, float sharp) {
-  vec4 n = textureLod(uNoise, uv, lod);
+  vec4 n = noiseLod(uNoise, uv, lod);
   float base = n.r * 0.62 + n.g * 0.28 + n.b * 0.10;
   float th = mix(0.74, 0.02, pow(cover, 0.85));
   float d = smoothstep(th, th + sharp, base);
   // erode the edges with finer detail; thin edges lose more than the dense core
-  float fine = textureLod(uNoise, uv * 3.7 + 0.31, lod).b;
+  float fine = noiseLod(uNoise, uv * 3.7 + 0.31, lod).b;
   return clamp(d - (1.0 - fine) * 0.35 * (1.0 - d), 0.0, 1.0);
 }
 
@@ -839,10 +929,10 @@ vec3 shadeTerrain(int layer, vec3 d) {
     float tdist = uEyeH / max(-d.y, 1e-4);              // km to the water
     vec2 wp = d.xz * tdist * 1000.0;                    // metres
     float fp = pixM * tdist * 1000.0 / max(-d.y, 0.003);
-    vec2 w1 = textureLod(uNoise, wp / 61.0 + vec2(uTime * 0.012, uTime * 0.007), lodFor(fp, 61.0)).rg - 0.5;
-    vec2 w2 = textureLod(uNoise, wp / 17.0 - vec2(uTime * 0.025, 0.0), lodFor(fp, 17.0)).rg - 0.5;
-    vec2 w3 = textureLod(uNoise, wp / 4.3 + vec2(0.0, uTime * 0.05), lodFor(fp, 4.3)).rg - 0.5;
-    vec2 w4 = textureLod(uNoise, wp / 1.3 - vec2(uTime * 0.09, uTime * 0.03), lodFor(fp, 1.3)).rg - 0.5;
+    vec2 w1 = noiseLod(uNoise, wp / 61.0 + vec2(uTime * 0.012, uTime * 0.007), lodFor(fp, 61.0)).rg - 0.5;
+    vec2 w2 = noiseLod(uNoise, wp / 17.0 - vec2(uTime * 0.025, 0.0), lodFor(fp, 17.0)).rg - 0.5;
+    vec2 w3 = noiseLod(uNoise, wp / 4.3 + vec2(0.0, uTime * 0.05), lodFor(fp, 4.3)).rg - 0.5;
+    vec2 w4 = noiseLod(uNoise, wp / 1.3 - vec2(uTime * 0.09, uTime * 0.03), lodFor(fp, 1.3)).rg - 0.5;
     // small ripples roughen with the wind and with rain; the real waves come from the wave trains
     float ripK = clamp(0.25 + uSea.x / 10.0, 0.25, 1.4) * (1.0 + 1.2 * uWet);
     vec2 slope = (w1 * 0.25 + w2 * 0.5 + w3 * 0.8 + w4 * 0.7) * 0.45 * ripK;
@@ -866,8 +956,8 @@ vec3 shadeTerrain(int layer, vec3 d) {
     // whitecaps on the steepest crests once the wind is up, with streaks blown along the wind
     float hgtN = (hA + hB) / max(0.45 * (uWaveA.x + uWaveB.x) + 0.05, 0.05);
     vec2 wdir = uSea.zw;
-    float streak = textureLod(uNoise, vec2(dot(wp, wdir) / 55.0, dot(wp, vec2(-wdir.y, wdir.x)) / 7.0), lodFor(fp, 7.0)).g;
-    float fnoise = textureLod(uNoise, wp / 3.1 + 0.37, lodFor(fp, 3.1)).b;
+    float streak = noiseLod(uNoise, vec2(dot(wp, wdir) / 55.0, dot(wp, vec2(-wdir.y, wdir.x)) / 7.0), lodFor(fp, 7.0)).g;
+    float fnoise = noiseLod(uNoise, wp / 3.1 + 0.37, lodFor(fp, 3.1)).b;
     float steep = length(sA + sB) * 7.0;                       // waves break where they are steep as well as high
     float foam = smoothstep(0.62, 1.05, 0.55 * hgtN + steep + (fnoise - 0.5) * 0.8 + (streak - 0.5) * 0.7) * uSea.y;
     foam *= mix(1.0, 0.55, smoothstep(2.0, 40.0, fp));        // far foam averages into a pale sheen instead of aliasing
@@ -893,11 +983,11 @@ vec3 shadeTerrain(int layer, vec3 d) {
       float tdist = uEyeH / max(-d.y, 1e-4);
       vec2 gp = d.xz * tdist * 1000.0;                  // metres
       float fp = pixM * tdist * 1000.0 / max(-d.y, 0.003);
-      float sp = textureLod(uNoise, gp / 6.0, lodFor(fp, 6.0)).b * 0.6 + textureLod(uNoise, gp / 1.1, lodFor(fp, 1.1)).a * 0.4;
+      float sp = noiseLod(uNoise, gp / 6.0, lodFor(fp, 6.0)).b * 0.6 + noiseLod(uNoise, gp / 1.1, lodFor(fp, 1.1)).a * 0.4;
       float sm = exp(-tdist * 4.0);
       // patchy cover: two ground colours blended by large and medium scale noise
-      float pa = textureLod(uNoise, gp / 37.0 + 0.2, lodFor(fp, 37.0)).r;
-      float pb = textureLod(uNoise, gp / 9.0 + 0.6, lodFor(fp, 9.0)).g;
+      float pa = noiseLod(uNoise, gp / 37.0 + 0.2, lodFor(fp, 37.0)).r;
+      float pb = noiseLod(uNoise, gp / 9.0 + 0.6, lodFor(fp, 9.0)).g;
       alb = mix(uGround, uGround2, smoothstep(0.38, 0.62, pa * 0.7 + pb * 0.3));
       alb *= mix(1.0, 0.62 + 0.9 * sp, sm);
       alb = mix(alb, vec3(0.30, 0.28, 0.25), step(0.985, hash12(floor(gp * 7.0))) * sm * 0.55);   // pebbles
@@ -919,13 +1009,13 @@ vec3 shadeTerrain(int layer, vec3 d) {
     } else {
       // ridge face: tilt the normal by the local skyline slope so slopes catch the sun differently
       float du = 6.0 / 2048.0;
-      vec3 sl = texture(uSkyline, vec2(u - du, 0.5)).rgb;
-      vec3 sr = texture(uSkyline, vec2(u + du, 0.5)).rgb;
+      vec3 sl = skylineAt(uSkyline, u - du);
+      vec3 sr = skylineAt(uSkyline, u + du);
       float dh = (layer == 0 ? sr.r - sl.r : (layer == 1 ? sr.g - sl.g : sr.b - sl.b)) / (2.0 * du * 2.0 * PI);
       vec3 side = normalize(cross(vec3(0.0, 1.0, 0.0), hdir));
       n = normalize(-hdir * 0.75 + vec3(0.0, 0.55, 0.0) - side * clamp(dh, -3.0, 3.0) * 0.6);
       float hz = clamp(d.y / max(ridgeTop, 0.004), 0.0, 1.0);          // 0 at the foot, 1 at the crest
-      float rr = textureLod(uNoise, vec2(az * 7.0, d.y * 70.0), 1.0).g;
+      float rr = noiseLod(uNoise, vec2(az * 7.0, d.y * 70.0), 1.0).g;
       vec3 rock = vec3(0.26, 0.23, 0.20);
       alb = mix(alb, rock, smoothstep(0.25, 0.8, hz) * (0.4 + 0.6 * float(layer > 0)));
       alb *= 0.65 + 0.7 * rr;
@@ -960,7 +1050,7 @@ vec3 shadeSky(vec3 d, out float skyMask) {
   float dec = asin(clamp(eq.z, -1.0, 1.0));
   vec2 muv = vec2(ra / (2.0 * PI), 0.5 - dec / PI);
   float mw = texture(uMilky, muv).r;
-  float mott = textureLod(uNoise, muv * vec2(10.0, 5.0), 1.5).g;
+  float mott = noiseLod(uNoise, muv * vec2(10.0, 5.0), 1.5).g;
   mw = clamp(mw * (0.45 + 1.1 * mott), 0.0, 1.4);
   float sE = max(d.y, 0.0);
   float am = 1.0 / (sE + 0.025 * exp(-11.0 * sE));
@@ -1006,13 +1096,13 @@ void main() {
   // Display adaptation is deliberately incomplete: a pure auto-exposure would make
   // a moonlit night as bright as dusk. Compress the curve so the sky stays dark at
   // night (but readable), and let the user lift it with uBoost.
-  La = exp(texelFetch(uAdapt, ivec2(0), 0).r);
+  La = exp(adaptLog(uAdapt));
   expo = calcExpo(La, uKey, uBoost);
 
   pixM = 2.0 * uTan.y / uRes.y;                         // radians per pixel
   az = atan(d.x, d.z);
   u = az / (2.0 * PI) + 0.5;
-  sk = texture(uSkyline, vec2(u, 0.5)).rgb;             // near, mid, far ridge elevations (cumulative)
+  sk = skylineAt(uSkyline, u);             // near, mid, far ridge elevations (cumulative)
   // far swell crests rise and fall along the sea horizon
   swellUp = 0.0;
   if (abs(uLandType - 1.0) < 0.1) {

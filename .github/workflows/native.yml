@@ -78,6 +78,22 @@ jobs:
           WOBBLY_STORE="$RUNNER_TEMP/store.json" native/target/release/wobbly-clock-run . "$RUNNER_TEMP/app-host.ppm" --app --w=480 --h=270 "--search=t=2026-06-21T17:00:00Z&speed=0&lat=40.7&lon=-74&weather=clear" --out="$RUNNER_TEMP/app-host.ppm" --frames=2 --tz=UTC --seed=1 --offline=1 "--conf=$CONF"
           node native/host/tests/app-chromium.mjs "$RUNNER_TEMP/app-chrome.ppm" 480 270 "t=2026-06-21T17:00:00Z&speed=0&lat=40.7&lon=-74&weather=clear" "$CONF"
           node native/host/tests/ppm-diff.mjs "$RUNNER_TEMP/app-host.ppm" "$RUNNER_TEMP/app-chrome.ppm" 12 "$RUNNER_TEMP/app-diff.ppm" --max-mean 1.5 --max-over 1
+      - name: The OpenGL ES 2 form of every shader compiles (GLSL ES 1.00), and data/noise.bin is the noise the shader makes
+        env:
+          GALLIUM_DRIVER: softpipe
+        run: |
+          WOBBLY_SCRIPT=native/host/tests/es1-compile.js native/target/release/wobbly-clock-run . "$RUNNER_TEMP/x.ppm" 64 36
+          WOBBLY_SCRIPT=native/host/tests/noise-check.js native/target/release/wobbly-clock-run . "$RUNNER_TEMP/x.ppm" 64 36
+      - name: The ES 2 path (what a Pi Zero or 3 runs) draws what the ES 3 path draws
+        env:
+          GALLIUM_DRIVER: softpipe
+        run: |
+          CONF='{"plants":true,"landscape":"hills","antiBurnIn":"off","cloudMotion":"0"}'
+          for m in 3 2; do
+            EXTRA=""; [ $m = 2 ] && EXTRA="--es2=1"
+            WOBBLY_STORE="$RUNNER_TEMP/store.json" native/target/release/wobbly-clock-run . "$RUNNER_TEMP/es$m.ppm" --app $EXTRA --w=480 --h=270 "--search=t=2026-06-21T17:00:00Z&speed=0&lat=40.7&lon=-74&weather=clear" --out="$RUNNER_TEMP/es$m.ppm" --frames=2 --tz=UTC --seed=1 --offline=1 "--conf=$CONF"
+          done
+          node native/host/tests/ppm-diff.mjs "$RUNNER_TEMP/es3.ppm" "$RUNNER_TEMP/es2.ppm" 12 "$RUNNER_TEMP/es-diff.ppm" --max-mean 1.0 --max-over 1
       - name: Soak - time-warped hours of running leave memory and canvases flat
         run: |
           set -e
