@@ -63,7 +63,7 @@ export function initGlass(engine, getBasis) {
     inkCtx.clearRect(0, 0, gw, gh);
     if (lastPolys) {                                                // the glass was drawn on the GPU: the physics needs only a coarse picture, drawn here from the same polylines
       const q = gw / mW; inkCtx.strokeStyle = '#fff'; inkCtx.lineCap = 'round'; inkCtx.lineJoin = 'round';
-      for (const pl of lastPolys) { inkCtx.lineWidth = Math.max(1, 2 * pl.r * q); inkCtx.beginPath(); pl.px.forEach(([x, y], i) => (i ? inkCtx.lineTo(x * q, y * q) : inkCtx.moveTo(x * q, y * q))); inkCtx.stroke(); }
+      for (const pl of lastPolys) { inkCtx.lineWidth = Math.max(1, 2 * pl.r * q); inkCtx.beginPath(); for (let i = 0; i < pl.pts.length; i += 2) (i ? inkCtx.lineTo(pl.pts[i] * q, pl.pts[i + 1] * q) : inkCtx.moveTo(pl.pts[i] * q, pl.pts[i + 1] * q)); inkCtx.stroke(); }
     } else inkCtx.drawImage(mask, 0, 0, gw, gh);
     const px = inkCtx.getImageData(0, 0, gw, gh).data, grid = new Uint8Array(gw * gh);
     for (let i = 0; i < grid.length; i++) grid[i] = px[i * 4 + 3];
@@ -99,7 +99,14 @@ export function initGlass(engine, getBasis) {
 
   // Positions are measured against the canvas's own rectangle on every redraw, so scrolling,
   // zooming or a changing mobile toolbar can never leave the glass at a stale position.
+  let measured = null, measuredV = -1;
   function measure() {
+    const v = window.__domVersion;                                   // (the Pi's DOM numbers its changes: nothing changed since the last answer, so it still holds. A browser has no such number.)
+    if (v !== undefined && measured && v === measuredV) return measured;
+    measured = measureNow(); measuredV = v;
+    return measured;
+  }
+  function measureNow() {
     const cr = canvasEl.getBoundingClientRect();
     const W = cr.width, H = cr.height;
     const svgs = [];
@@ -167,32 +174,69 @@ export function initGlass(engine, getBasis) {
   }
 
   // The same picture as vertices for the GPU (glsl-mask.js): every digit's polylines in mask pixels, as quads around each segment, and a quad per light.
+  // This runs for every frame a digit moves, so it is written for a slow CPU (a Pi Zero's JavaScript is about 40 times slower than a laptop's): the curves come
+  // as numbers from the clock (clock.js keeps them beside the path string), the quads are written straight into one reused typed array, and a curve that is small on
+  // the screen is cut into fewer pieces.
+  let sbuf = new Float32Array(8192);
+  const flatCache = new Map();                                     // path string -> polyline in path units, for the paths that never change (the colon's dots)
+  function curvePx(c, k0, kk, ox, oy) {                              // a cubic's points in mask pixels: [x, y, x, y, ...]
+    const x0 = c[k0], y0 = c[k0 + 1], x1 = c[k0 + 2], y1 = c[k0 + 3], x2 = c[k0 + 4], y2 = c[k0 + 5], x3 = c[k0 + 6], y3 = c[k0 + 7];
+    const len = (Math.hypot(x1 - x0, y1 - y0) + Math.hypot(x2 - x1, y2 - y1) + Math.hypot(x3 - x2, y3 - y2)) * kk;
+    const n = Math.max(3, Math.min(14, Math.ceil(Math.sqrt(len) * 0.8)));
+    const out = new Array(2 * (n + 1));
+    out[0] = ox + x0 * kk; out[1] = oy + y0 * kk;
+    for (let j = 1; j <= n; j++) {
+      const u = j / n, v = 1 - u, a = v * v * v, b = 3 * v * v * u, d = 3 * v * u * u, e = u * u * u;
+      out[2 * j] = ox + (a * x0 + b * x1 + d * x2 + e * x3) * kk; out[2 * j + 1] = oy + (a * y0 + b * y1 + d * y2 + e * y3) * kk;
+    }
+    return out;
+  }
   function geometry(L, stained) {
-    const strokes = [], lights = [], polys = [];
-    const quad = (out, x0, y0, x1, y1, tail) => { for (const [x, y] of [[x0, y0], [x1, y0], [x0, y1], [x1, y0], [x1, y1], [x0, y1]]) out.push(x, y, ...tail); };
+    const lights = [], polys = [];
+    let n = 0;                                                       // floats written into sbuf
     for (const s of L.svgs) {
-      const k = s.k * 0.2 * L.scale, ox = (s.ox - L.x0) * L.scale, oy = (s.oy - L.y0) * L.scale, r = 8 * s.k * L.scale;    // 80 path units wide
+      const kk = s.k * 0.2 * L.scale, ox = (s.ox - L.x0) * L.scale, oy = (s.oy - L.y0) * L.scale, r = 8 * s.k * L.scale;    // 80 path units wide
       const lines = [];
       for (const p of s.paths) {
-        const d = p.el.getAttribute('d');
-        if (!d) continue;
-        const pts = flatten(d);
-        if (!pts.length) continue;
-        const px = pts.map(([x, y]) => [ox + x * k, oy + y * k]);
-        polys.push({ px, r });
-        for (let i = 0; i < px.length; i++) {
-          const a = px[i], b = px[Math.min(i + 1, px.length - 1)];                   // (a single point is a dot)
-          if (i === px.length - 1 && i > 0) break;
-          quad(strokes, Math.min(a[0], b[0]) - r - 1, Math.min(a[1], b[1]) - r - 1, Math.max(a[0], b[0]) + r + 1, Math.max(a[1], b[1]) + r + 1, [a[0], a[1], b[0], b[1], r]);
+        const el = p.el;
+        let px, pts = null;                                          // px: the polyline in mask pixels; pts (only for the lights): in path units, as pairs
+        if (el.__c && el.__ck !== undefined && el.__d !== undefined) px = curvePx(el.__c, el.__ck, kk, ox, oy);
+        else {
+          const d = el.getAttribute('d');
+          if (!d) continue;
+          let f = flatCache.get(d);
+          if (!f) { f = flatten(d); flatCache.set(d, f); if (flatCache.size > 64) flatCache.clear(); }
+          if (!f.length) continue;
+          px = new Array(f.length * 2);
+          for (let i = 0; i < f.length; i++) { px[2 * i] = ox + f[i][0] * kk; px[2 * i + 1] = oy + f[i][1] * kk; }
+          pts = f;
         }
-        if (stained && pts.length >= 2) lines.push({ pts, dot: p.round });
+        const np = px.length / 2;
+        polys.push({ pts: px, r });
+        if (n + np * 42 > sbuf.length) { const nb = new Float32Array(Math.max(sbuf.length * 2, n + np * 42)); nb.set(sbuf.subarray(0, n)); sbuf = nb; }
+        for (let i = 0; i < np; i++) {
+          if (i === np - 1 && i > 0) break;                          // (a single point is a dot)
+          const ax = px[2 * i], ay = px[2 * i + 1], j = i + 1 < np ? i + 1 : i, bx = px[2 * j], by = px[2 * j + 1];
+          const x0 = (ax < bx ? ax : bx) - r - 1, y0 = (ay < by ? ay : by) - r - 1, x1 = (ax > bx ? ax : bx) + r + 1, y1 = (ay > by ? ay : by) + r + 1;
+          for (let q = 0; q < 6; q++) {                              // two triangles: (x0,y0) (x1,y0) (x0,y1)  (x1,y0) (x1,y1) (x0,y1)
+            sbuf[n] = q === 0 || q === 2 || q === 5 ? x0 : x1; sbuf[n + 1] = q === 0 || q === 1 || q === 3 ? y0 : y1;
+            sbuf[n + 2] = ax; sbuf[n + 3] = ay; sbuf[n + 4] = bx; sbuf[n + 5] = by; sbuf[n + 6] = r; n += 7;
+          }
+        }
+        if (stained && np >= 2) {
+          if (!pts) { pts = []; const m = px.length / 2; for (let i = 0; i < m; i++) pts.push([(px[2 * i] - ox) / kk, (px[2 * i + 1] - oy) / kk]); }
+          lines.push({ pts, dot: p.round });
+        }
       }
       if (stained) {
-        const { lights: ls, R } = computeLights(s, lines), rp = R * k;
-        for (const l of ls) { const c = LED_COLORS[l.c], cx = ox + l.x * k, cy = oy + l.y * k; quad(lights, cx - rp, cy - rp, cx + rp, cy + rp, [cx, cy, rp, c[0] / 255, c[1] / 255, c[2] / 255]); }
+        const { lights: ls, R } = computeLights(s, lines), rp = R * kk;
+        for (const l of ls) {
+          const c = LED_COLORS[l.c], cx = ox + l.x * kk, cy = oy + l.y * kk;
+          for (const [x, y] of [[cx - rp, cy - rp], [cx + rp, cy - rp], [cx - rp, cy + rp], [cx + rp, cy - rp], [cx + rp, cy + rp], [cx - rp, cy + rp]]) lights.push(x, y, cx, cy, rp, c[0] / 255, c[1] / 255, c[2] / 255);
+        }
       }
     }
-    return { strokes: new Float32Array(strokes), lights: new Float32Array(lights), polys };
+    return { strokes: sbuf.subarray(0, n), lights: new Float32Array(lights), polys };
   }
 
   function draw() {

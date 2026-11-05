@@ -7,6 +7,12 @@ const RAW = new Set(['script', 'style']);
 const camel = (s) => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 const dash = (s) => s.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
 
+// A number that goes up whenever the page's structure, attributes or styles change (not for the digits' path data, which changes every frame and moves nothing).
+// Boxes and computed styles are worked out once per number: the glass asks for them on every frame, and each answer is a walk over the tree.
+let VER = 1;
+export const bump = () => { VER++; };
+Object.defineProperty(globalThis, '__domVersion', { get: () => VER, configurable: true });
+
 // ---------------------------------------------------------------- events ----
 export class Evt {
   constructor(type, init = {}) { this.type = type; this.bubbles = !!init.bubbles; this.cancelable = !!init.cancelable; this.detail = init.detail; Object.assign(this, init); this.defaultPrevented = false; this.target = null; this.currentTarget = null; this._stop = false; this.timeStamp = performance.now(); }
@@ -30,7 +36,7 @@ export class Style {
   constructor(el) { Object.defineProperty(this, '_el', { value: el, enumerable: false }); Object.defineProperty(this, '_m', { value: new Map(), enumerable: false }); }
   get cssText() { return [...this._m].map(([k, v]) => `${k}: ${v};`).join(' '); }
   set cssText(t) { this._m.clear(); String(t).split(';').forEach((d) => { const i = d.indexOf(':'); if (i > 0) this._m.set(d.slice(0, i).trim().toLowerCase().startsWith('--') ? d.slice(0, i).trim() : d.slice(0, i).trim().toLowerCase(), d.slice(i + 1).trim().replace(/\s*!important$/, '')); }); this._sync(); }
-  _sync() { if (this._el) this._el._attrs.set('style', this.cssText); }
+  _sync() { VER++; if (globalThis.__bumpLog) globalThis.__bumpLog('style', this._el); if (this._el) this._el._attrs.set('style', this.cssText); }
   getPropertyValue(k) { return this._m.get(k.startsWith('--') ? k : k.toLowerCase()) || ''; }
   setProperty(k, v) { v = v == null ? '' : String(v); if (!v) return this.removeProperty(k); this._m.set(k.startsWith('--') ? k : k.toLowerCase(), v.replace(/\s*!important$/, '')); this._sync(); }
   removeProperty(k) { const o = this.getPropertyValue(k); this._m.delete(k.startsWith('--') ? k : k.toLowerCase()); this._sync(); return o; }
@@ -52,9 +58,9 @@ export class Node_ extends EventTarget_ {
   insertBefore(c, ref) {
     if (c instanceof Fragment) { [...c.childNodes].forEach((x) => this.insertBefore(x, ref)); return c; }
     if (c.parentNode) c.parentNode.removeChild(c);
-    const i = ref ? this.childNodes.indexOf(ref) : -1; if (i < 0) this.childNodes.push(c); else this.childNodes.splice(i, 0, c); c.parentNode = this; return c;
+    const i = ref ? this.childNodes.indexOf(ref) : -1; if (i < 0) this.childNodes.push(c); else this.childNodes.splice(i, 0, c); c.parentNode = this; VER++; return c;
   }
-  removeChild(c) { const i = this.childNodes.indexOf(c); if (i >= 0) { this.childNodes.splice(i, 1); c.parentNode = null; } return c; }
+  removeChild(c) { const i = this.childNodes.indexOf(c); if (i >= 0) { this.childNodes.splice(i, 1); c.parentNode = null; VER++; } return c; }
   replaceChild(n, o) { this.insertBefore(n, o); return this.removeChild(o); }
   remove(i) { if (typeof i === 'number' && this.localName === 'select') { const o = this.querySelectorAll('option')[i]; if (o) o.remove(); return; } if (this.parentNode) this.parentNode.removeChild(this); }
   contains(n) { while (n) { if (n === this) return true; n = n.parentNode; } return false; }
@@ -85,8 +91,8 @@ export class Element extends Node_ {
     this.dataset = new Proxy({}, { get: (_, k) => (typeof k === 'string' && el._attrs.has('data-' + dash(k)) ? el._attrs.get('data-' + dash(k)) : undefined), set: (_, k, v) => { el.setAttribute('data-' + dash(k), String(v)); return true; }, deleteProperty: (_, k) => { el.removeAttribute('data-' + dash(k)); return true; }, has: (_, k) => el._attrs.has('data-' + dash(k)), ownKeys: () => [...el._attrs.keys()].filter((k) => k.startsWith('data-')).map((k) => camel(k.slice(5))), getOwnPropertyDescriptor: (_, k) => (el._attrs.has('data-' + dash(String(k))) ? { enumerable: true, configurable: true, value: el._attrs.get('data-' + dash(String(k))) } : undefined) });
   }
   getAttribute(k) { return this._attrs.has(k) ? this._attrs.get(k) : null; }
-  setAttribute(k, v) { v = String(v); this._attrs.set(k, v); if (k === 'style' && this.style.cssText !== v) { this.style._m.clear(); String(v).split(';').forEach((d) => { const i = d.indexOf(':'); if (i > 0) this.style._m.set(d.slice(0, i).trim(), d.slice(i + 1).trim()); }); } }
-  removeAttribute(k) { this._attrs.delete(k); if (k === 'style') this.style._m.clear(); }
+  setAttribute(k, v) { v = String(v); this._attrs.set(k, v); if (k !== 'd') { VER++; if (globalThis.__bumpLog) globalThis.__bumpLog(k, this); } if (k === 'style' && this.style.cssText !== v) { this.style._m.clear(); String(v).split(';').forEach((d) => { const i = d.indexOf(':'); if (i > 0) this.style._m.set(d.slice(0, i).trim(), d.slice(i + 1).trim()); }); } }
+  removeAttribute(k) { VER++; this._attrs.delete(k); if (k === 'style') this.style._m.clear(); }
   hasAttribute(k) { return this._attrs.has(k); }
   toggleAttribute(k, force) { const want = force === undefined ? !this.hasAttribute(k) : !!force; if (want) this.setAttribute(k, ''); else this.removeAttribute(k); return want; }
   get attributes() { return [...this._attrs].map(([name, value]) => ({ name, value })); }
@@ -117,7 +123,7 @@ export class Element extends Node_ {
   scrollIntoView() {} scrollTo() {} scrollBy() {} setPointerCapture() {} releasePointerCapture() {} hasPointerCapture() { return false; } showModal() { this.setAttribute('open', ''); } close() { this.removeAttribute('open'); }
   animate() { return { cancel() {}, finished: Promise.resolve(), addEventListener() {} }; } getAnimations() { return []; }
   get isContentEditable() { return false; }
-  getBoundingClientRect() { return layoutHook(this); }
+  getBoundingClientRect() { if (this._rv !== VER) { this._rc = layoutHook(this); this._rv = VER; } return this._rc; }
   getClientRects() { return [this.getBoundingClientRect()]; }
   get offsetWidth() { return this.getBoundingClientRect().width; } get offsetHeight() { return this.getBoundingClientRect().height; }
   get clientWidth() { return this.getBoundingClientRect().width; } get clientHeight() { return this.getBoundingClientRect().height; }
@@ -164,7 +170,11 @@ export class Doc extends Element {
   createTextNode(t) { return new Text(String(t)); }
   createDocumentFragment() { return new Fragment(); }
   createComment() { return new Text(''); }
-  getElementById(id) { return queryAll(this, '#' + id, true)[0] || null; }
+  getElementById(id) {
+    const c = (this._ids ||= new Map()).get(id);
+    if (c && c.isConnected && c.getAttribute('id') === id) return c;
+    const e = queryAll(this, '#' + id, true)[0] || null; if (e) this._ids.set(id, e); return e;
+  }
   get documentElement() { return this.children.find((c) => c.localName === 'html') || null; }
   get body() { const h = this.documentElement; return h ? h.children.find((c) => c.localName === 'body') || null : null; }
   get head() { const h = this.documentElement; return h ? h.children.find((c) => c.localName === 'head') || null : null; }
@@ -291,9 +301,12 @@ export function setLayoutHook(fn) { layoutHook = fn; }
 let makeCanvasElement = () => { throw new Error('no canvas factory'); };
 export function setCanvasFactory(fn) { makeCanvasElement = fn; }
 export function computedStyle(el) {
+  if (el._csv === VER && el._cs) return el._cs;
   const own = (k) => { let n = el; while (n instanceof Element) { const v = n.style.getPropertyValue(k); if (v) return v; n = n.parentNode; } return ''; };
   const cls = el.getAttribute && el.getAttribute('class') || '';
   const display = el.style.display || (el.hasAttribute && el.hasAttribute('hidden') ? 'none' : /(^|\s)hidden(\s|$)/.test(cls) && el.localName === 'svg' ? 'none' : el.localName === 'span' || el.localName === 'a' ? 'inline' : 'block');
   const o = { display, visibility: el.style.visibility || 'visible', opacity: el.style.opacity || '1', transform: el.style.transform || 'none', position: 'static', getPropertyValue: (k) => (k.startsWith('--') ? own(k) : el.style.getPropertyValue(k) || ''), setProperty() {}, removeProperty() {}, fontSize: '16px', direction: 'ltr' };
-  return new Proxy(o, { get: (t, k) => (k in t ? t[k] : typeof k === 'string' ? el.style.getPropertyValue(dash(k)) : undefined) });
+  const cs = new Proxy(o, { get: (t, k) => (k in t ? t[k] : typeof k === 'string' ? el.style.getPropertyValue(dash(k)) : undefined) });
+  el._cs = cs; el._csv = VER;
+  return cs;
 }

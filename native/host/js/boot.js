@@ -135,7 +135,12 @@ if (A.present) {
     const rt0 = performance.now(); const px = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); if (A.profile) G.__pt['readPixels (picture off the GPU)'] = (G.__pt['readPixels (picture off the GPU)'] || 0) + performance.now() - rt0;
     const dim = $('dimmer'), level = dim && !dim.hidden ? Math.max(0, 1 - (parseFloat(dim.style.opacity) || 0)) : 1;
     { const t0 = performance.now(); __present(w, h, px.buffer, level); if (A.profile) G.__pt['output (the sink: picture file, framebuffer or panel)'] = (G.__pt['output (the sink: picture file, framebuffer or panel)'] || 0) + performance.now() - t0; } presented++;
-    if (A.timing) __print('[' + Math.round(performance.now()) + ' ms] frame ' + presented + ' presented');
+    if (A.timing) {
+      let r = 0, g = 0, b = 0, n = 0; const step = Math.max(1, Math.floor(w * h / 2000)) * 4;           // the average colour of the picture, to see a black screen from a dark one
+      for (let i = 0; i < px.length; i += step) { r += px[i]; g += px[i + 1]; b += px[i + 2]; n++; }
+      if ((presented === 2 || presented === 12) && G.__sky && G.__sky.diagnose) { try { __print('diagnose: ' + G.__sky.diagnose()); } catch (e) { __print('diagnose failed: ' + e); } }
+      __print('[' + Math.round(performance.now()) + ' ms] frame ' + presented + ' presented ' + w + 'x' + h + ', average colour ' + Math.round(r / n) + ',' + Math.round(g / n) + ',' + Math.round(b / n) + ', dimmer ' + level.toFixed(2));
+    }
     if (A.profile && G.__profDump) G.__profDump();
   };
   await until(() => !!G.__sky, 30000);
