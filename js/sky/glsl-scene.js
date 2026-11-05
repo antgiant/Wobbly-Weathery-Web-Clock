@@ -538,7 +538,7 @@ void bodyGlass() {
         glass = rainOn(glass, vec4(dr.r, dr.g, dr.b, 0.0), uLightCol, sceneAtL(vUv + vec2(0.0, stroke * 0.3) * px, sceneLv(1.0)));       // (a drop shows the sky upside down and shifted)
       }
 #ifndef WOBBLY_ES2
-      else else glass = rainOn(glass, rainBeads(stroke, uWx.y), uLightCol, sceneAtL(vUv - (gl_FragCoord.xy / (stroke * 0.42) - floor(gl_FragCoord.xy / (stroke * 0.42)) - 0.5) * (stroke * 0.42) * px * 1.4, sceneLv(1.0)));
+      else glass = rainOn(glass, rainBeads(stroke, uWx.y), uLightCol, sceneAtL(vUv - (gl_FragCoord.xy / (stroke * 0.42) - floor(gl_FragCoord.xy / (stroke * 0.42)) - 0.5) * (stroke * 0.42) * px * 1.4, sceneLv(1.0)));
 #endif
     }
   }
