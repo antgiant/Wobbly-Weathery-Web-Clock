@@ -12,13 +12,21 @@ G.performance = { now: () => __now() - t0, mark(n) { if (G.__args && G.__args.ti
 
 // ---- timers, pumped by the host ------------------------------------------------------------------------------------
 let timers = [], tid = 1;
-G.setTimeout = (fn, ms = 0, ...a) => { const id = tid++; timers.push({ id, at: __now() + ms, fn: () => fn(...a) }); return id; };
+G.setTimeout = (fn, ms = 0, ...a) => { const id = tid++; timers.push({ id, at: __now() + ms, fn: () => fn(...a), src: fn }); return id; };
 G.clearTimeout = (id) => { timers = timers.filter(t => t.id !== id); };
-G.setInterval = (fn, ms) => { const id = tid++; const re = () => { timers.push({ id, at: __now() + ms, fn: () => { re(); fn(); } }); }; re(); return id; };
+G.setInterval = (fn, ms) => { const id = tid++; const re = () => { timers.push({ id, at: __now() + ms, fn: () => { re(); fn(); }, src: fn }); }; re(); return id; };
 G.clearInterval = G.clearTimeout;
 G.requestAnimationFrame = (fn) => G.setTimeout(() => fn(performance.now()), 0);
 G.cancelAnimationFrame = G.clearTimeout;
-G.__pump = () => { const now = __now(); const due = timers.filter(t => t.at <= now); timers = timers.filter(t => t.at > now); due.forEach(t => t.fn()); return timers.length; };
+// --profile: the time each kind of timer callback takes (named by the start of its source), so the page's own work shows up besides the GPU's
+const timerTime = {};
+G.__timerTime = timerTime;
+G.__pump = () => {
+  const now = __now(); const due = timers.filter(t => t.at <= now); timers = timers.filter(t => t.at > now);
+  if (G.__args && G.__args.profile) due.forEach(t => { const t0 = __now(); t.fn(); const k = String(t.src || t.fn).replace(/\s+/g, ' ').slice(0, 110); const e = timerTime[k] || (timerTime[k] = { ms: 0, n: 0 }); e.ms += __now() - t0; e.n++; });
+  else due.forEach(t => t.fn());
+  return timers.length;
+};
 
 // ---- files and images ----------------------------------------------------------------------------------------------
 const resolve = (u) => String(u).replace(/^file:\/\//, '');
@@ -193,7 +201,7 @@ function makeGL(canvas) {
     for (const k of ['drawArrays', 'drawArraysInstanced', 'generateMipmap', 'texImage2D', 'readPixels', 'blitFramebuffer']) {
       const f = gl[k]; gl[k] = (...a) => { const t = __now(); const r = f(...a); call('finish'); const d = __now() - t; const key = k + (k.startsWith('draw') ? ' prog' + cur + ' (' + (names[cur] || []).join('+') + ' chars)' : ''); const e = (prof[key] ||= { n: 0, ms: 0 }); e.n++; e.ms += d; return r; };
     }
-    G.__profDump = () => { const pt = G.__pt; __print('--- CPU time besides drawing, this frame ---'); for (const k in pt) { __print(String(Math.round(pt[k])).padStart(8) + '  ' + k); delete pt[k]; }; const rows = Object.entries(prof).sort((a, b) => b[1].ms - a[1].ms).slice(0, 14); __print('--- GL time by call (ms, count) ---'); rows.forEach(([k, v]) => __print(String(Math.round(v.ms)).padStart(8) + '  x' + String(v.n).padEnd(5) + k)); for (const k in prof) delete prof[k]; };
+    G.__profDump = () => { const pt = G.__pt; { const rows = Object.entries(G.__timerTime).sort((x, y) => y[1].ms - x[1].ms).slice(0, 8); if (rows.length) { __print('--- timer callbacks since the last dump (ms, count, start of source) ---'); for (const [k, v] of rows) __print(String(Math.round(v.ms)).padStart(8) + '  x' + String(v.n).padEnd(4) + k); } for (const k in G.__timerTime) delete G.__timerTime[k]; } __print('--- CPU time besides drawing, this frame ---'); for (const k in pt) { __print(String(Math.round(pt[k])).padStart(8) + '  ' + k); delete pt[k]; }; const rows = Object.entries(prof).sort((a, b) => b[1].ms - a[1].ms).slice(0, 14); __print('--- GL time by call (ms, count) ---'); rows.forEach(([k, v]) => __print(String(Math.round(v.ms)).padStart(8) + '  x' + String(v.n).padEnd(5) + k)); for (const k in prof) delete prof[k]; };
   }
   return gl;
 }

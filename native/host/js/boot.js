@@ -132,9 +132,9 @@ if (A.present) {
   const send = () => {
     const e = G.__sky; if (!e) return;
     const w = sky.width, h = sky.height; gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    const px = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    const rt0 = performance.now(); const px = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); if (A.profile) G.__pt['readPixels (picture off the GPU)'] = (G.__pt['readPixels (picture off the GPU)'] || 0) + performance.now() - rt0;
     const dim = $('dimmer'), level = dim && !dim.hidden ? Math.max(0, 1 - (parseFloat(dim.style.opacity) || 0)) : 1;
-    __present(w, h, px.buffer, level); presented++;
+    { const t0 = performance.now(); __present(w, h, px.buffer, level); if (A.profile) G.__pt['output (the sink: picture file, framebuffer or panel)'] = (G.__pt['output (the sink: picture file, framebuffer or panel)'] || 0) + performance.now() - t0; } presented++;
     if (A.timing) __print('[' + Math.round(performance.now()) + ' ms] frame ' + presented + ' presented');
     if (A.profile && G.__profDump) G.__profDump();
   };
