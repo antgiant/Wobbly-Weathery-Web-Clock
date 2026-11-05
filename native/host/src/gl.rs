@@ -133,7 +133,8 @@ impl Gl {
                 if a.len() > 6 && a[6].as_number().is_some() {
                     gl!(self, "glReadPixels", (i32, i32, i32, i32, u32, u32, *mut c_void), s(0), s(1), s(2), s(3), u(4), u(5), n(6) as usize as *mut c_void); undef()
                 } else {
-                    let mut out = vec![0u8; (s(2) * s(3) * 4) as usize];
+                    let comp = match u(5) { 0x1406 => 4, 0x140B => 2, _ => 1 };          // (a float or half-float read has more bytes to a pixel than a byte read)
+                    let mut out = vec![0u8; (s(2) * s(3) * 4 * comp) as usize];
                     gl!(self, "glReadPixels", (i32, i32, i32, i32, u32, u32, *mut c_void), s(0), s(1), s(2), s(3), u(4), u(5), out.as_mut_ptr() as *mut c_void);
                     Ok(ArrayBuffer::new_copy(ctx.clone(), out)?.into_value())
                 }

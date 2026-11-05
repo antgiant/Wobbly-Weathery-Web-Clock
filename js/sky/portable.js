@@ -72,9 +72,13 @@ vec3 hdrTex(sampler2D s, vec2 uv, vec2 px) {
   vec3 b = hdrRaw(texture(s, (vec2(hi.x, lo.y) + 0.5) / px));
   vec3 c = hdrRaw(texture(s, (vec2(lo.x, hi.y) + 0.5) / px));
   vec3 d = hdrRaw(texture(s, (hi + 0.5) / px));
-  vec3 m = mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-  float S = exp2(HDR_LO + (HDR_HI - HDR_LO) * m.x / 4095.0), pp = m.y / 1023.0, qq = m.z / 1023.0;
-  return S * vec3(pp, max(1.0 - pp - qq, 0.0), qq);
+  // the brightness is blended as brightness (a texel the sun cannot light holds almost nothing; blending its logarithm with a lit neighbour's would make the pair almost dark,
+  // and twilight, whose light comes from the edge of the earth's shadow, came out twenty times too dim), the two colour ratios by how bright each texel is
+  vec4 w = vec4((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y);
+  vec4 sv = w * exp2(HDR_LO + (HDR_HI - HDR_LO) * vec4(a.x, b.x, c.x, d.x) / 4095.0);
+  float S = sv.x + sv.y + sv.z + sv.w;
+  vec2 pq = (sv.x * a.yz + sv.y * b.yz + sv.z * c.yz + sv.w * d.yz) / max(S, 1e-30) / 1023.0;
+  return S * vec3(pq.x, max(1.0 - pq.x - pq.y, 0.0), pq.y);
 }
 // ---- the exposure: one texel, the log adaptation luminance in three bytes ----
 vec4 adaptPack(float a, float target) {

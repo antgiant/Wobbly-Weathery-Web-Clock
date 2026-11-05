@@ -1278,8 +1278,14 @@ export class SkyEngine {
       const a = rd(ad); o += ', exposure log ' + ((a[0] * 65536 + a[1] * 256 + a[2]) / 16777215 * 64 - 32).toFixed(2);
       const cs = rd(this.tConsts), big = (t) => t.split(' ').map((v) => (+v * 16384).toPrecision(3)).join(' '); o += ', light (cd/m2) zenith ' + big(hdr(cs, 0)) + ' | ambient ' + big(hdr(cs, 4)) + ' | sun ' + big(hdr(cs, 8)) + ' | moon ' + big(hdr(cs, 12)) + ' | haze north ' + big(hdr(cs, (CONSTS_N + HAZE_N / 2) * 4));
       const sk = rd(this.tSkySun), tr = rd(this.tTrans);
-      o += ', sky table centre ' + hdr(sk, ((this.tSkySun.h >> 1) * this.tSkySun.w + (this.tSkySun.w >> 1)) * 4) + ', transmittance centre ' + hdr(tr, ((this.tTrans.h >> 1) * this.tTrans.w + (this.tTrans.w >> 1)) * 4);
-    } else { const a = rd(ad); o += ' (ES 3: tables are half floats)'; void a; }
+      { const ms = rd(this.tMS), T2 = this.tTrans; o += ', MS centre ' + hdr(ms, ((this.tMS.h >> 1) * this.tMS.w + (this.tMS.w >> 1)) * 4) + ', trans row 0 ' + hdr(tr, (T2.w >> 1) * 4) + ', trans row 1/8 ' + hdr(tr, ((T2.h >> 3) * T2.w + (T2.w >> 1)) * 4) + ', trans col 3/4 mid ' + hdr(tr, ((T2.h >> 1) * T2.w + (3 * T2.w >> 2)) * 4); }
+      o += ', sky table row 1/4 ' + hdr(sk, ((this.tSkySun.h >> 2) * this.tSkySun.w + (this.tSkySun.w >> 1)) * 4) + ', sky table centre ' + hdr(sk, ((this.tSkySun.h >> 1) * this.tSkySun.w + (this.tSkySun.w >> 1)) * 4) + ', transmittance centre ' + hdr(tr, ((this.tTrans.h >> 1) * this.tTrans.w + (this.tTrans.w >> 1)) * 4);
+    } else {
+      const rf = (t) => { gl.bindFramebuffer(gl.FRAMEBUFFER, t.fbo); const px = new Float32Array(t.w * t.h * 4); gl.readPixels(0, 0, t.w, t.h, gl.RGBA, gl.FLOAT, px); gl.bindFramebuffer(gl.FRAMEBUFFER, null); return px; };
+      const a = rf(ad), cs = rf(this.tConsts), f = (px, i) => [px[i], px[i + 1], px[i + 2]].map((v) => v.toPrecision(3)).join(' ');
+      const sk = rf(this.tSkySun), tr = rf(this.tTrans); o += ', sky table centre ' + f(sk, ((this.tSkySun.h >> 1) * this.tSkySun.w + (this.tSkySun.w >> 1)) * 4) + ', sky table row 1/4 ' + f(sk, ((this.tSkySun.h >> 2) * this.tSkySun.w + (this.tSkySun.w >> 1)) * 4) + ', transmittance centre ' + f(tr, ((this.tTrans.h >> 1) * this.tTrans.w + (this.tTrans.w >> 1)) * 4) + ', MS centre ' + f(rf(this.tMS), ((this.tMS.h >> 1) * this.tMS.w + (this.tMS.w >> 1)) * 4) + ', trans row 0 ' + f(tr, (this.tTrans.w >> 1) * 4) + ', trans row 1/8 ' + f(tr, ((this.tTrans.h >> 3) * this.tTrans.w + (this.tTrans.w >> 1)) * 4) + ', trans col 3/4 mid ' + f(tr, ((this.tTrans.h >> 1) * this.tTrans.w + (3 * this.tTrans.w >> 2)) * 4);
+      o += ', exposure log ' + a[0].toFixed(2) + ', light (cd/m2) zenith ' + f(cs, 0) + ' | ambient ' + f(cs, 4) + ' | sun ' + f(cs, 8) + ' | moon ' + f(cs, 12);
+    }
     return o;
   }
 
