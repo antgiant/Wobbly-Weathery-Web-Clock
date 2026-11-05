@@ -360,7 +360,6 @@ float linLum(vec3 c) { return dot(pow(max(c, 0.0), vec3(2.2)), vec3(0.2126, 0.71
 // uContrast is the strength: 0 off, 0.85 normal, 1 extra strong.
 vec3 withOutline(vec3 outside, vec3 inside, float cover) {
   float k = uContrast;
-  if (k < 0.01) return mix(outside, inside, cover);
   float cell = uGlow.y;                                    // LED cell size in px (0 when the LED panel is off)
   float t = max(uGlass.z * 0.085, 1.6);                    // outline width in canvas px: about 8% of the stroke
   if (cell > 0.0) t = max(t, cell);                        // on the LED panel never thinner than one LED
@@ -375,7 +374,7 @@ vec3 withOutline(vec3 outside, vec3 inside, float cover) {
   vec3 oc = mix(vec3(0.98, 0.98, 1.0), vec3(0.012), pol);
   vec3 o = mix(outside, oc, outer * k * 0.85);
   vec3 i = mix(inside, oc, inner * k * 0.6);
-  return mix(o, i, cover);
+  return k < 0.01 ? mix(outside, inside, cover) : mix(o, i, cover);
 }
 
 // gentle, spatially smooth tone for the body of the glass
@@ -395,7 +394,6 @@ vec3 bodyTone(vec3 c, float stroke) {
 float vnoise(float x) { float i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(hash21(vec2(i, 7.1)), hash21(vec2(i + 1.0, 7.1)), f); }
 
 float snowCap(float stroke, float amount) {
-  if (amount < 0.01) return 0.0;
   float lump = 0.7 + 0.6 * vnoise(gl_FragCoord.x / (stroke * 0.30));
   float depth = stroke * (0.06 + 0.24 * amount) * lump;           // canvas px: at most about 30% of the stroke
   float cap = 0.0;
@@ -404,7 +402,7 @@ float snowCap(float stroke, float amount) {
     float m = maskA0(vUv + vec2(0.0, depth * f / uRes.y));
     cap = max(cap, (1.0 - smoothstep(0.2, 0.8, m)) * (1.0 - 0.5 * f));
   }
-  return cap;
+  return amount < 0.01 ? 0.0 : cap;
 }
 
 vec3 snowOn(vec3 col, float cap, vec3 sky) {
@@ -456,16 +454,14 @@ vec3 rainOn(vec3 col, vec4 b, vec3 lightCol, vec3 skyHere) {
 
 // drops bouncing off the top edge of a digit: a few tiny flashes just above it, never the same place twice
 float splash(float stroke, float rate) {
-  if (rate < 0.02) return 0.0;
   float r = stroke * 0.12;
   float above = 1.0 - smoothstep(0.1, 0.4, maskA0(vUv));
   float below = maskA0(vUv - vec2(0.0, r * 0.7 / uRes.y));
   float edge = above * smoothstep(0.5, 0.95, below);
-  if (edge < 0.01) return 0.0;
   float cx = floor(gl_FragCoord.x / (stroke * 0.18));
   float tt = floor(uWx.w * 6.0 + hash21(vec2(cx, 2.0)) * 5.0);
   float on = step(1.0 - rate * 0.45, hash21(vec2(cx, tt)));
-  return edge * on * (0.6 + 0.4 * hash21(vec2(cx, tt + 9.0)));
+  return rate < 0.02 ? 0.0 : edge * on * (0.6 + 0.4 * hash21(vec2(cx, tt + 9.0)));
 }
 
 // The final pass is built in three forms, so that a GPU only has to hold the one in use: no clock glass (a plain copy), the flat ink of the LED panel's solid style,
@@ -510,7 +506,9 @@ void bodyGlass() {
   float cover = maskA0(vUv);
   float wide = maskA(vUv, lvS);
   float halo = glow > 0.002 ? maskA(vUv, lvG) : 0.0;     // light spilling out of the glass onto the sky
-  if (cover < 0.004 && wide < 0.004 && shadow < 0.004 && halo * glow < 0.004) { oColor = vec4(base, 1.0); return; }
+  oColor = vec4(base, 1.0);
+  bool near = !(cover < 0.004 && wide < 0.004 && shadow < 0.004 && halo * glow < 0.004);   // (no early return: on the Pi Zero's driver the pixels that took it came out black)
+  if (near) {
 
   // height field = blurred coverage; gradient = bevel
   float d = stroke * 0.22;
@@ -603,6 +601,7 @@ void bodyGlass() {
   if (uWx.y > 0.01) shaded += splash(stroke, uWx.y) * vec3(0.8, 0.9, 1.0) * 0.55;
   oColor = vec4(withOutline(shaded, glass, cover), 1.0);
 #endif
+  }
 }
 
 // The ES 2 glass in three passes (each small enough for a Pi Zero's GPU): the body above (BLIT_GBODY), then snow and rain on the digits, then the readability outline.
