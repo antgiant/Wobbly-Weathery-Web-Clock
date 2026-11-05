@@ -187,7 +187,7 @@ impl Loader for Load {
 /// Start this program again with Mesa's software renderer (the environment must be set before the driver loads).
 fn reexec_software() -> ! {
     use std::os::unix::process::CommandExt;
-    { extern "C" { fn dup2(a: i32, b: i32) -> i32; } let o = ORIG_STDERR.load(std::sync::atomic::Ordering::Relaxed); if o >= 0 { unsafe { dup2(o, 2); } } }      // (the new program must get the real stderr, not our filter's pipe)
+    { extern "C" { fn dup2(a: i32, b: i32) -> i32; } let o = ORIG_STDERR.load(std::sync::atomic::Ordering::Relaxed); if o >= 0 { unsafe { dup2(o, 2); } std::thread::sleep(std::time::Duration::from_millis(80)); } }      // (the new program must get the real stderr, not our filter's pipe; and the filter is given a moment to pass on what it holds)
     let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("wobbly-clock-run"));
     let err = std::process::Command::new(exe).args(std::env::args().skip(1)).env("WOBBLY_SOFTWARE", "1").env("LIBGL_ALWAYS_SOFTWARE", "1").env("GALLIUM_DRIVER", std::env::var("GALLIUM_DRIVER").unwrap_or_else(|_| "llvmpipe".into())).exec();
     eprintln!("wobbly-clock-run: cannot restart with software rendering: {err}"); leave(1)
