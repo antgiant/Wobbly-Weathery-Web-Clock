@@ -156,6 +156,7 @@ if (A.debug) {
   for (const id of ['h0p3', 'h1p3', 'm0p3', 'm1p3']) console.log(id + ' d=' + (doc.getElementById(id) || { getAttribute() {} }).getAttribute('d'));
   console.log('clock box ' + JSON.stringify(doc.getElementById('clock').getBoundingClientRect()) + ' svg0 ' + JSON.stringify(doc.getElementById('clock').children[1].getBoundingClientRect()));
   console.log('title: ' + doc.title);
+  if (e) console.log('state: ' + JSON.stringify({ light: e.glass.light, lightCol: e.glass.lightCol, glowCol: e.glass.glowCol, ink: e.glass.ink, frost: e.glass.frost, contrast: e.glass.contrast, glow: e.glass.glow, mode: e.glass.mode, rect: e.glass.rect, maskW: e.glass.maskW, maskH: e.glass.maskH, stroke: e.glass.stroke, view: e.s.view && [e.s.view.heading, e.s.view.pitch], scale: e.s.scale, mips: e._mipsValid, dropsOn: e.glass.dropsOn }));
 }
 if (A.out) {
   const gl = sky.getContext('webgl2'); gl.bindFramebuffer(gl.FRAMEBUFFER, null);
