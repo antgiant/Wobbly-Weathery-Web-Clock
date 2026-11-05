@@ -56,6 +56,7 @@ impl Gl {
             "createBuffer" => ret(self.gen("glGenBuffers") as f64),
             "createFramebuffer" => ret(self.gen("glGenFramebuffers") as f64),
             "createVertexArray" => if self.es2.get() { let mut id = 0u32; gl!(self, "glGenVertexArraysOES", (i32, *mut u32), 1, &mut id); ret(id as f64) } else { ret(self.gen("glGenVertexArrays") as f64) },
+            "regFails" => ret(crate::REG_FAILS.load(std::sync::atomic::Ordering::Relaxed) as f64),
             "isES2" => ret(if self.es2.get() { 1.0 } else { 0.0 }),
             "deleteTexture" => { self.del("glDeleteTextures", u(0)); undef() }
             "deleteBuffer" => { self.del("glDeleteBuffers", u(0)); undef() }
