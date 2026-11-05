@@ -267,7 +267,7 @@ void main() {
 //                   varying colours (placed by glass.js) glow through the glass, no lines on it
 //   LED panel     - the whole picture sampled onto a 64x32 (or 32x64) grid of square
 //                   pixels with black lines between them
-export const FRAG_BLIT = `#version 300 es
+const BLIT_SOURCE = `
 precision highp float;
 ${PORTABLE}
 ${MASK_LOD}
@@ -425,11 +425,13 @@ float splash(float stroke, float rate) {
   return edge * on * (0.6 + 0.4 * hash21(vec2(cx, tt + 9.0)));
 }
 
-void body() {
+// The final pass is built in three forms, so that a GPU only has to hold the one in use: no clock glass (a plain copy), the flat ink of the LED panel's solid style,
+// and glass (liquid or stained).
+void bodyOff() { oColor = vec4(texture(uTex, vUv).rgb, 1.0); }
+
+void bodyInk() {                                             // flat ink: the LED panel has no glass here, but the digits still need drawing
   vec3 base = texture(uTex, vUv).rgb;
-  float mode = uGlass.y;
-  if (mode < 0.5) { oColor = vec4(base, 1.0); return; }
-  if (mode > 2.5) {                                          // flat ink: the LED panel has no glass here, but the digits still need drawing
+  {
     float cv = smoothstep(0.1, 0.9, maskA0(vUv));
     vec3 ink = uInk, bs = base;
     float stk = uGlass.z;
@@ -437,14 +439,19 @@ void body() {
     if (uWx.y > 0.01 && stk > 0.0) {
       if (cv > 0.02) {
         if (uDropsOn > 0.5) { vec4 dr = texture(uDrops, (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw); ink = rainOn(ink, vec4(dr.r * 0.7, dr.g * 0.8, dr.b, 0.0), uLightCol, base); }
+#ifndef WOBBLY_ES2
         else ink = rainOn(ink, rainBeads(stk, uWx.y) * vec4(0.7, 0.8, 0.0, 0.8), uLightCol, base);
+#endif
       }
       bs += splash(stk, uWx.y) * vec3(0.8, 0.9, 1.0) * 0.55;
     }
     oColor = vec4(withOutline(bs, mix(bs, ink, cv), cv), 1.0);
-    return;
   }
+}
 
+void bodyGlass() {
+  vec3 base = texture(uTex, vUv).rgb;
+  float mode = uGlass.y;
   vec2 px = 1.0 / uRes;
   float stroke = uGlass.z;                                  // canvas px
   float maskScale = uMaskPx.x / (uMaskRect.z * uRes.x);     // mask texels per canvas px
@@ -529,7 +536,10 @@ void body() {
       if (uDropsOn > 0.5) {                                              // drops that run, merge and are shed with the digit (drops.js)
         vec4 dr = texture(uDrops, (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw);
         glass = rainOn(glass, vec4(dr.r, dr.g, dr.b, 0.0), uLightCol, sceneAtL(vUv + vec2(0.0, stroke * 0.3) * px, sceneLv(1.0)));       // (a drop shows the sky upside down and shifted)
-      } else glass = rainOn(glass, rainBeads(stroke, uWx.y), uLightCol, sceneAtL(vUv - (gl_FragCoord.xy / (stroke * 0.42) - floor(gl_FragCoord.xy / (stroke * 0.42)) - 0.5) * (stroke * 0.42) * px * 1.4, sceneLv(1.0)));
+      }
+#ifndef WOBBLY_ES2
+      else else glass = rainOn(glass, rainBeads(stroke, uWx.y), uLightCol, sceneAtL(vUv - (gl_FragCoord.xy / (stroke * 0.42) - floor(gl_FragCoord.xy / (stroke * 0.42)) - 0.5) * (stroke * 0.42) * px * 1.4, sceneLv(1.0)));
+#endif
     }
   }
 
@@ -548,12 +558,21 @@ void body() {
 }
 
 void main() {
-  body();
+#if defined(BLIT_GLASS)
+  bodyGlass();
+#elif defined(BLIT_INK)
+  bodyInk();
+#else
+  bodyOff();
+#endif
   if (uFullOn > 0.5) {
     vec4 o = texture(uFull, vec2(vUv.x, 1.0 - vUv.y));
     oColor.rgb = mix(oColor.rgb, o.rgb, o.a);
   }
 }`;
+/** The final pass: kind 'off' (no clock glass), 'ink' (flat ink on the LED panel's solid style) or 'glass'. */
+export const fragBlit = (kind) => `#version 300 es\n#define BLIT_${kind.toUpperCase()} 1${BLIT_SOURCE}`;
+
 
 
 // ---- LED panel: stars. A star is far smaller than an LED, so averaging a block of pixels loses it. This pass finds, for every LED,
@@ -690,8 +709,11 @@ void main() {
 }`;
 
 // ------------------------------------------------------------- composite ---
-export const FRAG_SCENE = `#version 300 es
-${ATMOS_COMMON}
+// The sky, the ground and the weather are drawn by two programs into the same picture, because one program with all of it is too big for a small GPU (the Pi Zero's
+// cannot fit it in its registers, and draws nothing). Each has the whole of what it needs and nothing else; they share the pieces below. The sky program draws every pixel
+// that is not wholly terrain; the terrain program draws every pixel that is not wholly sky and blends over it by how much of the pixel is terrain (only the one-pixel
+// edge of the skyline is both). To change the sky or the weather, change SCENE_SKY; the ground, SCENE_TERRAIN; what both need, SCENE_HEAD and SCENE_SETUP.
+const SCENE_HEAD = `${ATMOS_COMMON}
 ${SKY_LOOKUP}
 ${DISPLAY_FNS}
 uniform sampler2D uMilky;
@@ -761,7 +783,17 @@ vec3 sunTransAt(float h, float elev) {            // sunlight reaching height h 
   return transmittance(r, mu) * earthShadow(r, mu);
 }
 
-// ---- clouds ----
+// per-pixel values shared by the terrain and sky shaders (assigned in setup)
+float swellUp;
+float La, expo, pixM, az, u;
+vec3 sk, hdir, hazeL, zenL, ambLux, sunIg, moonIg;
+
+vec3 gD;                 // this pixel's direction, how much of it is terrain (0 sky .. 1), and which terrain layer (setup())
+float gCov;
+int gLayer;
+`;
+
+const SCENE_SKY = `// ---- clouds ----
 float cloudShape(vec2 uv, float cover, float lod, float sharp) {
   vec4 n = noiseLod(uNoise, uv, lod);
   float base = n.r * 0.62 + n.g * 0.28 + n.b * 0.10;
@@ -858,7 +890,60 @@ vec4 moonDisc(vec3 d, float expo) {
   return vec4(min(phys, cap + vec3(uEarthshine) * alb / PI), cov);
 }
 
-// ---- terrain ----
+// Everything above the skyline. skyMask = how much of the sky is still open to stars.
+vec3 shadeSky(vec3 d, out float skyMask) {
+  vec3 L;
+  skyMask = 1.0;
+  L = skyLum(d);
+
+  // Milky Way (equatorial map) behind everything, extinguished near the horizon
+  vec3 eq = transpose(uEqj) * d;
+  float ra = atan(eq.y, eq.x);
+  float dec = asin(clamp(eq.z, -1.0, 1.0));
+  vec2 muv = vec2(ra / (2.0 * PI), 0.5 - dec / PI);
+  float mw = texture(uMilky, muv).r;
+  float mott = noiseLod(uNoise, muv * vec2(10.0, 5.0), 1.5).g;
+  mw = clamp(mw * (0.45 + 1.1 * mott), 0.0, 1.4);
+  float sE = max(d.y, 0.0);
+  float am = 1.0 / (sE + 0.025 * exp(-11.0 * sE));
+  L += vec3(0.85, 0.92, 1.1) * mw * uMWLum * exp(-0.22 * am) * step(-0.01, d.y);
+
+  // sun: disc + soft glare, tinted by the atmosphere's own transmittance
+  float cs = dot(d, uSunDir);
+  float angS = acos(clamp(cs, -1.0, 1.0));
+  vec3 Ts = transmittance(BOT + uCamH, clamp(sin(uSunA.z), -0.2, 1.0));
+  float limb = sqrt(max(0.0, 1.0 - pow(angS / uSunAngR, 2.0)));
+  float disc = 1.0 - smoothstep(uSunAngR * 0.96, uSunAngR * 1.04, angS);
+  float glare = 0.05 / (1.0 + pow(angS / (uSunAngR * 4.0), 2.0));
+  float sunUp = smoothstep(-0.02, 0.01, uSunA.z);
+  L += Ts * (uSunDisc / expo) * (disc * mix(0.62, 1.0, limb) + glare) * sunUp;
+
+  // moon
+  vec4 mo = moonDisc(d, expo);
+  L += mo.rgb * mo.a;               // added on top: the air in front of the moon still glows
+  skyMask *= 1.0 - mo.a;
+
+  // clouds, high to low
+  vec3 wd = vec3(uWind.x, 0.0, uWind.y);
+  float cc = 0.0;
+  vec4 cH = cloudLayer(d, uCover.z, 9.5, 120.0, vec2(1.0, 0.32), 1.1, uCover.x, ambLux, hazeL, 1.6);
+  L = mix(L, cH.rgb, cH.a);
+  vec4 cM = cloudLayer(d, uCover.y, 5.0, 70.0, vec2(1.0, 0.8), 2.4, uCover.x, ambLux, hazeL, 1.2);
+  L = mix(L, cM.rgb, cM.a);
+  vec4 cL = cloudLayer(d, uCover.x, 1.8, 40.0, vec2(1.0, 1.0), 5.0, uCover.x, ambLux, hazeL, 1.0);
+  L = mix(L, cL.rgb, cL.a);
+  skyMask *= (1.0 - cH.a * 0.9) * (1.0 - cM.a) * (1.0 - cL.a);
+
+  // fog
+  float fogMix = max(0.75 * uFog * uFog, uFog * 0.92 * (1.0 - smoothstep(0.0, 0.25, d.y)));
+  L = mix(L, hazeL, fogMix);
+  skyMask *= 1.0 - fogMix;
+  return L;
+}
+
+`;
+
+const SCENE_TERRAIN = `// ---- terrain ----
 vec3 terrainLit(vec3 albedo, vec3 n, vec3 sunI, vec3 moonI, vec3 ambLux) {
   float ns = max(dot(n, uSunDir), 0.0);
   float nm = max(dot(n, uMoonDir), 0.0);
@@ -891,11 +976,6 @@ void waveTrain(vec4 W, vec2 p, float fp, out vec2 slope, out float hgt) {
     slope += dv * (a * k * cos(ph) * 2.4);
   }
 }
-
-// per-pixel values shared by the terrain and sky shaders (assigned in main)
-float swellUp;
-float La, expo, pixM, az, u;
-vec3 sk, hdir, hazeL, zenL, ambLux, sunIg, moonIg;
 
 // Terrain, water and city layers; layer 0 is the nearest.
 vec3 shadeTerrain(int layer, vec3 d) {
@@ -1015,58 +1095,10 @@ vec3 shadeTerrain(int layer, vec3 d) {
   return L;
 }
 
-// Everything above the skyline. skyMask = how much of the sky is still open to stars.
-vec3 shadeSky(vec3 d, out float skyMask) {
-  vec3 L;
-  skyMask = 1.0;
-  L = skyLum(d);
+`;
 
-  // Milky Way (equatorial map) behind everything, extinguished near the horizon
-  vec3 eq = transpose(uEqj) * d;
-  float ra = atan(eq.y, eq.x);
-  float dec = asin(clamp(eq.z, -1.0, 1.0));
-  vec2 muv = vec2(ra / (2.0 * PI), 0.5 - dec / PI);
-  float mw = texture(uMilky, muv).r;
-  float mott = noiseLod(uNoise, muv * vec2(10.0, 5.0), 1.5).g;
-  mw = clamp(mw * (0.45 + 1.1 * mott), 0.0, 1.4);
-  float sE = max(d.y, 0.0);
-  float am = 1.0 / (sE + 0.025 * exp(-11.0 * sE));
-  L += vec3(0.85, 0.92, 1.1) * mw * uMWLum * exp(-0.22 * am) * step(-0.01, d.y);
-
-  // sun: disc + soft glare, tinted by the atmosphere's own transmittance
-  float cs = dot(d, uSunDir);
-  float angS = acos(clamp(cs, -1.0, 1.0));
-  vec3 Ts = transmittance(BOT + uCamH, clamp(sin(uSunA.z), -0.2, 1.0));
-  float limb = sqrt(max(0.0, 1.0 - pow(angS / uSunAngR, 2.0)));
-  float disc = 1.0 - smoothstep(uSunAngR * 0.96, uSunAngR * 1.04, angS);
-  float glare = 0.05 / (1.0 + pow(angS / (uSunAngR * 4.0), 2.0));
-  float sunUp = smoothstep(-0.02, 0.01, uSunA.z);
-  L += Ts * (uSunDisc / expo) * (disc * mix(0.62, 1.0, limb) + glare) * sunUp;
-
-  // moon
-  vec4 mo = moonDisc(d, expo);
-  L += mo.rgb * mo.a;               // added on top: the air in front of the moon still glows
-  skyMask *= 1.0 - mo.a;
-
-  // clouds, high to low
-  vec3 wd = vec3(uWind.x, 0.0, uWind.y);
-  float cc = 0.0;
-  vec4 cH = cloudLayer(d, uCover.z, 9.5, 120.0, vec2(1.0, 0.32), 1.1, uCover.x, ambLux, hazeL, 1.6);
-  L = mix(L, cH.rgb, cH.a);
-  vec4 cM = cloudLayer(d, uCover.y, 5.0, 70.0, vec2(1.0, 0.8), 2.4, uCover.x, ambLux, hazeL, 1.2);
-  L = mix(L, cM.rgb, cM.a);
-  vec4 cL = cloudLayer(d, uCover.x, 1.8, 40.0, vec2(1.0, 1.0), 5.0, uCover.x, ambLux, hazeL, 1.0);
-  L = mix(L, cL.rgb, cL.a);
-  skyMask *= (1.0 - cH.a * 0.9) * (1.0 - cM.a) * (1.0 - cL.a);
-
-  // fog
-  float fogMix = max(0.75 * uFog * uFog, uFog * 0.92 * (1.0 - smoothstep(0.0, 0.25, d.y)));
-  L = mix(L, hazeL, fogMix);
-  skyMask *= 1.0 - fogMix;
-  return L;
-}
-
-void main() {
+// The values both programs start from: the direction, exposure, the skyline, which side of it the pixel is on, and the light that reaches the ground.
+const SCENE_SETUP = `void setup() {
   vec2 ndc = (gl_FragCoord.xy / uRes) * 2.0 - 1.0;
   vec3 d = normalize(uCam * normalize(vec3(ndc.x * uTan.x, ndc.y * uTan.y, 1.0)));
 
@@ -1107,13 +1139,11 @@ void main() {
   // How much of the pixel is terrain: all of it below the silhouette, none above, a blend within a pixel of it. Sky and terrain are each shaded at most once (a GPU that
   // cannot skip work shades both only on that one-pixel edge; and each is in the program once, which matters on a small GPU: it has to fit it).
   float cov = (layer >= 0 && edge > 1.0) ? 1.0 : ((layer < 0 && edge < -1.0) ? 0.0 : clamp(edge + 0.5, 0.0, 1.0));
-  vec3 L = vec3(0.0), Lt = vec3(0.0);
-  float skyMask = 0.0, m = 1.0;
-  if (cov > 0.0) Lt = shadeTerrain(layer >= 0 ? layer : topLayer, d);
-  if (cov < 1.0) L = shadeSky(d, m);
-  L = mix(L, Lt, cov);
-  skyMask = m * (1.0 - cov);
+  gD = d; gCov = cov; gLayer = layer >= 0 ? layer : topLayer;
+}
 
+// Exposure, tonemap, the falling rain or snow, a little dither: the picture's colour for a luminance (cd/m^2), with alpha as its fourth channel.
+vec4 finish(vec3 L, float alpha) {
   // ---------- precipitation overlay (screen space, display-referred) ----------
   vec3 rainRel = vec3(0.0);
   if (uPrecip > 0.01) {
@@ -1144,7 +1174,31 @@ void main() {
   float n2 = hash12(gl_FragCoord.yx + uFrame * 2.17 + 11.0);
   c += (n1 + n2 - 1.0) / 255.0;
 
-  oColor = vec4(clamp(c, 0.0, 1.0), skyMask);
+  return vec4(clamp(c, 0.0, 1.0), alpha);
+}`;
+
+/** The sky: everything above the skyline (and the sun, moon, stars' mask, clouds, fog). */
+export const FRAG_SCENE_SKY = `#version 300 es
+${SCENE_HEAD}
+${SCENE_SKY}
+${SCENE_SETUP}
+void main() {
+  setup();
+  if (gCov >= 1.0) discard;                      // wholly terrain: the terrain program has it
+  float m;
+  vec3 L = shadeSky(gD, m);
+  oColor = finish(L, m);                         // alpha: how much of the sky is open to stars
+}`;
+
+/** The ground, water and city layers, blended over the sky by coverage (alpha: the share of the pixel that is terrain). */
+export const FRAG_SCENE_TERRAIN = `#version 300 es
+${SCENE_HEAD}
+${SCENE_TERRAIN}
+${SCENE_SETUP}
+void main() {
+  setup();
+  if (gCov <= 0.0) discard;                      // wholly sky
+  oColor = finish(shadeTerrain(gLayer, gD), gCov);
 }`;
 
 export { VERT_FULLSCREEN };

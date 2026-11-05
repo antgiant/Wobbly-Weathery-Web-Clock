@@ -17,7 +17,7 @@ import {
   VERT_FULLSCREEN, FRAG_TRANSMITTANCE, FRAG_MULTISCATTER, FRAG_SKYVIEW,
 } from './glsl-atmosphere.js';
 import {
-  FRAG_NOISE, FRAG_NOISE_DOWN, FRAG_ATLAS_PLACE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, FRAG_BLIT, FRAG_LED, FRAG_LED_PEAK, FRAG_LED_AVG, FRAG_SCENE,
+  FRAG_NOISE, FRAG_NOISE_DOWN, FRAG_ATLAS_PLACE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, fragBlit, FRAG_LED, FRAG_LED_PEAK, FRAG_LED_AVG, FRAG_SCENE_SKY, FRAG_SCENE_TERRAIN,
 } from './glsl-scene.js';
 import { toES1, packSkyline, NOISE_ATLAS } from './portable.js';
 import { VERT_PLANTS, FRAG_PLANTS } from './glsl-plants.js';
@@ -134,6 +134,8 @@ export class SkyEngine {
     if (!(name in P.locs)) P.locs[name] = this.gl.getUniformLocation(P.prog, name);
     return P.locs[name];
   }
+  /** The final pass in its form for what is on the screen: 'off' (no clock glass), 'ink' (the LED panel's flat ink) or 'glass'; each made the first time it is needed. */
+  _blitProgram(kind) { return this.pBlits[kind] || (this.pBlits[kind] = this._program(VERT_FULLSCREEN, fragBlit(kind))); }
   _use(P) { this._ready(P); this.gl.useProgram(P.prog); this._cur = P; }
   // Uniform setters. A program keeps its uniforms between draws, so a value that has not changed is not sent again: most of the hundreds of values set for a
   // frame are the same as the last frame's, and on a slow machine each call across to the driver costs. (`vals` holds what each program was last given.)
@@ -219,8 +221,9 @@ export class SkyEngine {
     this.pSkyView = this._program(VERT_FULLSCREEN, FRAG_SKYVIEW);
     this.pNoise = this.es2 ? null : this._program(VERT_FULLSCREEN, FRAG_NOISE);          // (an ES 2 GPU has no integer arithmetic: data/noise.bin has the same picture)
     this.pAdapt = this._program(VERT_FULLSCREEN, FRAG_ADAPT);
-    this.pScene = this._program(VERT_FULLSCREEN, FRAG_SCENE);
-    this.pBlit = this._program(VERT_FULLSCREEN, FRAG_BLIT);
+    this.pSceneSky = this._program(VERT_FULLSCREEN, FRAG_SCENE_SKY);          // the sky and the ground are two programs into one picture (glsl-scene.js: one is too big for a small GPU)
+    this.pSceneTerrain = this._program(VERT_FULLSCREEN, FRAG_SCENE_TERRAIN);
+    this.pBlits = {};                                            // the final pass in the form that is needed (_blitProgram)
     performance.mark('sky:programs-compiled');
     this.pLed = this._program(VERT_FULLSCREEN, FRAG_LED);
     this.pLedPeak = this._program(VERT_FULLSCREEN, FRAG_LED_PEAK);
@@ -707,7 +710,8 @@ export class SkyEngine {
     const T = this.sceneTarget;
     gl.bindFramebuffer(gl.FRAMEBUFFER, T.fbo);
     gl.viewport(0, 0, T.w, T.h);
-    this._use(this.pScene);
+    const frameNo = this.frameNo++ % 1024;
+    const setScene = () => {                                  // the same uniforms for both programs
     this._1f('uMie', s.mie);
     this._bindSkyUniforms(sky, sunAz, sunAlt, sunLux, moonAz, moonAlt, moonLux, natural, lp, camH);
     this._1i('uMilky', 4); this._bind(4, this.texMilky);
@@ -763,8 +767,16 @@ export class SkyEngine {
     this._1f('uEyeH', eyeKm);
     this._1f('uDip', dip);
     this._1f('uAdaptScale', adaptScale);
-    this._1f('uFrame', this.frameNo++ % 1024);
+    this._1f('uFrame', frameNo);
+    };
+    gl.disable(gl.BLEND);
+    this._use(this.pSceneSky); setScene();                    // every pixel that is not wholly terrain
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.enable(gl.BLEND);                                      // the ground, over it by coverage; the fourth channel (the stars' sky-visibility) shrinks by the same share
+    gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
+    this._use(this.pSceneTerrain); setScene();
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.disable(gl.BLEND);
 
     // ---- plants: alpha-blended sprites that also knock the stars' visibility mask down ----
     this._drawPlants(sky, sunAz, sunAlt, sunLux, moonAz, moonAlt, moonLux, natural, lp, camH, cam, perfNow, w, eyeKm);
@@ -804,7 +816,7 @@ export class SkyEngine {
     if (led) this._ensureComp(cw, ch);
     gl.bindFramebuffer(gl.FRAMEBUFFER, led ? this.compTarget.fbo : null);
     gl.viewport(0, 0, cw, ch);
-    this._use(this.pBlit);
+    this._use(this._blitProgram(!glassOn ? 'off' : g.mode > 2.5 ? 'ink' : 'glass'));
     this._1i('uTex', 0); this._bind(0, T.tex);
     this._1f('uTexW', T.w);
     if (glassOn && this.es2) this._bindMipAtlas('scene', 5);
