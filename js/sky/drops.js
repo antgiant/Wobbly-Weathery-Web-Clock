@@ -19,6 +19,8 @@ export class DropSim {
     this.drops = [];
     this.gw = 0; this.gh = 0; this.grid = null; this.w = 1; this.h = 1; this.inkCells = 0;
     this.stroke = 30;
+    this.maxDrops = MAX_DROPS;          // the quality governor lowers this on a slow machine
+    this.wet = null;                    // water left on the glass by running drops (0..1 per cell of the ink grid); later drops are drawn along it
   }
 
   /** The digits' ink as a grid of alpha 0..255 (gw x gh, row by row) covering w x h mask pixels. Drops that lost their glass are shed. */
@@ -26,7 +28,32 @@ export class DropSim {
     this.grid = grid; this.gw = gw; this.gh = gh; this.w = w; this.h = h; this.stroke = Math.max(4, stroke);
     let n = 0; for (let i = 0; i < grid.length; i++) if (grid[i] > 200) n++;
     this.inkCells = n;
-    for (const d of this.drops) if (!d.dying && this.inkAt(d.x, d.y) < 0.3) { d.dying = true; d.fall = 0; }       // the glass moved away from under it
+    if (!this.wet || this.wet.length !== gw * gh) this.wet = new Float32Array(gw * gh);
+    for (const d of this.drops) if (!d.dying && this.inkAt(d.x, d.y) < 0.3) this._shed(d);       // the glass moved away from under it
+  }
+
+  /** A drop that lost its glass is thrown off: away from the nearest glass that is left (the edge it was just on), faster the more the glass has moved. */
+  _shed(d) {
+    d.dying = true; d.fall = 0; d.run = false; d.hang = 0;
+    const S = this.stroke, reach = Math.max(2, Math.ceil(S * 1.5 / this.w * this.gw));            // look as far as one and a half stroke widths
+    const cx = Math.floor(d.x / this.w * this.gw), cy = Math.floor(d.y / this.h * this.gh);
+    let best = 1e9, bx = 0, by = 0;
+    for (let j = Math.max(0, cy - reach); j <= Math.min(this.gh - 1, cy + reach); j++) {
+      for (let i = Math.max(0, cx - reach); i <= Math.min(this.gw - 1, cx + reach); i++) {
+        if (this.grid[j * this.gw + i] < 128) continue;
+        const dd = (i - cx) * (i - cx) + (j - cy) * (j - cy);
+        if (dd < best) { best = dd; bx = i - cx; by = j - cy; }
+      }
+    }
+    const v0 = S * (1.0 + 1.6 * this.rand());
+    if (best < 1e9 && best > 0) { const l = Math.sqrt(best); d.vx = -bx / l * v0; d.vy = -by / l * v0 * 0.6 + S * 0.2; d.thrown = true; }   // flung out and a little down
+    else { d.vx = 0; d.vy = S * 0.4; d.thrown = false; }                                               // no glass nearby to leave: it just falls
+  }
+
+  _wetAt(x, y) {
+    if (!this.wet) return 0;
+    const i = Math.floor(x / this.w * this.gw), j = Math.floor(y / this.h * this.gh);
+    return i < 0 || j < 0 || i >= this.gw || j >= this.gh ? 0 : this.wet[j * this.gw + i];
   }
 
   /** Ink (alpha 0..1) under a point of the mask. */
@@ -52,7 +79,7 @@ export class DropSim {
   target(rain) {
     const cellArea = (this.w / this.gw) * (this.h / this.gh), ink = this.inkCells * cellArea;
     const r = this.stroke * 0.09;
-    return Math.min(MAX_DROPS, Math.round(rain * ink / (Math.PI * r * r) * 0.06));
+    return Math.min(this.maxDrops, Math.round(rain * ink / (Math.PI * r * r) * 0.06));
   }
 
   /**
@@ -62,7 +89,8 @@ export class DropSim {
    */
   step(dt, rain) {
     dt = Math.min(0.15, Math.max(0, dt));
-    const S = this.stroke, rRun = S * 0.15, drops = this.drops;
+    const S = this.stroke, rRun = S * 0.15, drops = this.drops, beads = [];
+    if (this.wet) { const k = Math.exp(-dt / 3); for (let i = 0; i < this.wet.length; i++) this.wet[i] *= k; }       // the water dries in a few seconds
     // new drops where there are fewer than the rain calls for
     const want = this.target(rain);
     let alive = 0; for (const d of drops) if (!d.dying) alive++;
@@ -72,7 +100,12 @@ export class DropSim {
     }
     for (const d of drops) {
       d.age += dt;
-      if (d.dying) { d.fall += dt; d.vy += GRAVITY * S * dt * 1.5; d.y += d.vy * dt; continue; }
+      if (d.dying) {
+        d.fall += dt; d.vy += GRAVITY * S * dt * 1.5; d.y += d.vy * dt;
+        if (d.vx) { d.x += d.vx * dt; d.vx *= Math.exp(-dt * 1.5); }
+        if (d.thrown && d.fall > 0.03 && this.inkAt(d.x, d.y) > 0.9) { d.dying = false; d.thrown = false; d.fall = 0; d.vx = 0; d.vy = 0; d.run = false; d.hang = 0; d.r *= 0.85; d.y0 = d.y; d.trail.length = 0; }   // it lands on other glass and sticks
+        continue;
+      }
       if (!d.run && !d.hang) {                                       // sitting: grows while it rains, until it is heavy enough to run
         d.r += dt * S * (0.004 + 0.03 * rain);
         if (d.r >= rRun * (0.85 + 0.3 * ((d.age * 7.13) % 1))) { d.run = true; d.vy = S * 0.15; d.y0 = d.y; d.wait = 0; d.trail.length = 0; }
@@ -83,21 +116,30 @@ export class DropSim {
         if (d.hang > 0.7 + 0.5 * ((d.age * 3.7) % 1)) { d.dying = true; d.fall = 0; d.vy = S * 0.4; }
         continue;
       }
-      // running: jerky, like a real drop (it sticks, then slips), faster the bigger it is
+      // running: jerky, like a real drop (it sticks, then slips), faster the bigger it is, and faster and straighter on water that is already there
       if (d.wait > 0) { d.wait -= dt; }
       else {
-        d.vy = Math.min(S * 4.5, d.vy + GRAVITY * S * dt * (d.r / rRun));
+        const ahead = this._wetAt(d.x, d.y + d.r * 1.5);
+        d.vy = Math.min(S * 4.5 * (1 + 0.6 * ahead), d.vy + GRAVITY * S * dt * (d.r / rRun) * (1 + 1.2 * ahead));
         const ny = d.y + d.vy * dt;
         if (this.inkAt(d.x, ny + d.r) < 0.35) { d.hang = 0.001; d.vy = 0; }       // the stroke ends: hang there
         else {
           d.trail.push([d.x, d.y, d.age]); if (d.trail.length > 40) d.trail.shift();
           d.y = ny;
+          // it drifts towards water on either side of its way (a drop follows an earlier drop's track)
+          const lat = this._wetAt(d.x + S * 0.3, ny + d.r * 1.5) - this._wetAt(d.x - S * 0.3, ny + d.r * 1.5);
+          if (Math.abs(lat) > 0.05) { const nx = d.x + lat * S * 0.9 * dt; if (this.inkAt(nx, ny) > 0.9) d.x = nx; }
+          if (this.wet) { const i = Math.floor(d.x / this.w * this.gw), j = Math.floor(d.y / this.h * this.gh); if (i >= 0 && j >= 0 && i < this.gw && j < this.gh) this.wet[j * this.gw + i] = Math.min(1, this.wet[j * this.gw + i] + 0.6); }
           d.r = Math.max(S * 0.045, d.r - dt * S * 0.012);                 // it leaves water behind
-          if (this.rand() < dt * 3) { d.wait = 0.05 + 0.25 * this.rand(); d.vy *= 0.3; }   // sticks
+          if (this.rand() < dt * 0.9 * (d.r / rRun) && drops.length < this.maxDrops) {   // ... and sometimes a small bead stays where it passed
+            beads.push({ x: d.x + (this.rand() - 0.5) * d.r, y: d.y - d.r * 1.3, r: S * (0.015 + 0.015 * this.rand()), vy: 0, run: false, y0: d.y, hang: 0, wait: 0, dying: false, fall: 0, age: 0, trail: [] });
+          }
+          if (this.rand() < dt * 3 * (1 - 0.6 * ahead)) { d.wait = 0.05 + 0.25 * this.rand(); d.vy *= 0.3; }   // sticks (less on wet glass)
           if (d.vy < S * 0.05 && d.r < S * 0.07) { d.run = false; d.trail.length = 0; }   // too small to keep going: it sits again
         }
       }
     }
+    for (const b of beads) if (this.inkAt(b.x, b.y) > 0.9) drops.push(b);
     // a drop that meets another swallows it
     for (let i = 0; i < drops.length; i++) {
       const a = drops[i]; if (!a || a.dying) continue;
@@ -108,7 +150,8 @@ export class DropSim {
           const big = a.r >= b.r ? a : b, small = big === a ? b : a, ma = big.r * big.r, mb = small.r * small.r;
           big.x = (big.x * ma + small.x * mb) / (ma + mb); big.y = (big.y * ma + small.y * mb) / (ma + mb);
           big.r = Math.sqrt(ma + mb);
-          if (small.run && !big.run) { big.run = true; big.vy = Math.max(big.vy, small.vy); big.y0 = Math.min(big.y0, small.y0); }
+          big.vy = (big.vy * ma + small.vy * mb) / (ma + mb);                     // momentum is kept: a fast little drop barely speeds a big slow one
+          if (small.run && !big.run) { big.run = true; big.vy = Math.max(big.vy, small.vy * 0.5, S * 0.1); big.y0 = Math.min(big.y0, small.y0); }
           small.dying = true; small.gone = true;                    // absorbed (removed below, not shown falling)
         }
       }
@@ -154,4 +197,28 @@ export function drawDrops(ctx, sim, light = [-0.5, 0.8]) {
   }
   ctx.globalCompositeOperation = 'source-over';
   void S;
+}
+
+/**
+ * The same picture as drawDrops, as vertex lists for the GPU (glsl-mask.js): `drops` has 6 vertices per drop of 8 floats (x, y, centre x, centre y, radius, fade, light x, light y),
+ * `trails` 6 vertices per trail segment of 8 floats (x, y, ax, ay, bx, by, half width, brightness). Pure, so it is tested in node.
+ */
+export function dropGeometry(sim, light = [-0.5, 0.8]) {
+  const drops = [], trails = [];
+  const quad = (out, x0, y0, x1, y1, tail) => { for (const [x, y] of [[x0, y0], [x1, y0], [x0, y1], [x1, y0], [x1, y1], [x0, y1]]) out.push(x, y, ...tail); };
+  for (const d of sim.drops) {
+    const fade = d.dying ? Math.max(0, 1 - d.fall / 0.35) : 1;
+    if (fade <= 0) continue;
+    if (d.run && d.trail.length > 1) {
+      for (let i = 1; i < d.trail.length; i++) {
+        const a = d.trail[i - 1], b = d.trail[i], age = Math.max(0, 1 - (d.age - b[2]) / 1.6);
+        if (age <= 0) continue;
+        const hw = Math.max(1, d.r * 0.5) / 2, m = hw + 1;
+        quad(trails, Math.min(a[0], b[0]) - m, Math.min(a[1], b[1]) - m, Math.max(a[0], b[0]) + m, Math.max(a[1], b[1]) + m, [a[0], a[1], b[0], b[1], hw, 0.45 * age * fade]);
+      }
+    }
+    const r = Math.max(1, d.r), m = r * 1.1 + 2;
+    quad(drops, d.x - m, d.y - m, d.x + m, d.y + m, [d.x, d.y, r, fade, light[0], light[1]]);
+  }
+  return { drops: new Float32Array(drops), trails: new Float32Array(trails) };
 }

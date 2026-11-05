@@ -15,7 +15,7 @@
 import { conf, clockStyleNow } from '../config.js';
 import { getSim } from '../simtime.js';
 import { every } from './scheduler.js';
-import { DropSim, drawDrops } from './drops.js';
+import { DropSim, drawDrops, dropGeometry } from './drops.js';
 import { applyLedPanel } from './ledpanel.js';
 
 const VB_W = 100, VB_H = 116, VB_Y0 = -8;      // viewBox of each digit svg: "0 -8 100 116"
@@ -58,12 +58,16 @@ export function initGlass(engine, getBasis) {
   let inkStale = true, inkStroke = 30, lastDropT = 0;
   function refreshInk() {                                          // the digits' alpha, as a small grid for the simulation
     inkStale = false;
-    const gw = Math.min(96, mask.width), gh = Math.max(2, Math.round(gw * mask.height / mask.width));
+    const gw = Math.min(96, mW), gh = Math.max(2, Math.round(gw * mH / mW));
     if (inkCanvas.width !== gw || inkCanvas.height !== gh) { inkCanvas.width = gw; inkCanvas.height = gh; }
-    inkCtx.clearRect(0, 0, gw, gh); inkCtx.drawImage(mask, 0, 0, gw, gh);
+    inkCtx.clearRect(0, 0, gw, gh);
+    if (lastPolys) {                                                // the glass was drawn on the GPU: the physics needs only a coarse picture, drawn here from the same polylines
+      const q = gw / mW; inkCtx.strokeStyle = '#fff'; inkCtx.lineCap = 'round'; inkCtx.lineJoin = 'round';
+      for (const pl of lastPolys) { inkCtx.lineWidth = Math.max(1, 2 * pl.r * q); inkCtx.beginPath(); pl.px.forEach(([x, y], i) => (i ? inkCtx.lineTo(x * q, y * q) : inkCtx.moveTo(x * q, y * q))); inkCtx.stroke(); }
+    } else inkCtx.drawImage(mask, 0, 0, gw, gh);
     const px = inkCtx.getImageData(0, 0, gw, gh).data, grid = new Uint8Array(gw * gh);
     for (let i = 0; i < grid.length; i++) grid[i] = px[i * 4 + 3];
-    sim.setInk(grid, gw, gh, mask.width, mask.height, inkStroke);
+    sim.setInk(grid, gw, gh, mW, mH, inkStroke);
   }
   function stepDrops() {                                           // once per rendered frame while it rains
     const rain = engine.wx ? engine.wx.rain : 0;
@@ -71,14 +75,21 @@ export function initGlass(engine, getBasis) {
     const t = performance.now(), dt = lastDropT ? (t - lastDropT) / 1000 : 0.016;
     lastDropT = t;
     if (inkStale) refreshInk();
+    if (engine.knobs) sim.maxDrops = engine.knobs.drops;               // the quality governor's limit
     sim.step(dt, rain);
-    if (dropCanvas.width !== mask.width || dropCanvas.height !== mask.height) { dropCanvas.width = mask.width; dropCanvas.height = mask.height; }
     const L = engine.glass.light || [-0.5, 0.8, 0.6];
+    if (engine.canDrawMask && !window.__canvasMask) {                // the GPU draws the drops (glsl-mask.js); the CPU only lists them
+      engine.setGlassDropsGeometry({ w: mW, h: mH, ...dropGeometry(sim, [L[0], L[1]]) });
+      return;
+    }
+    if (dropCanvas.width !== mW || dropCanvas.height !== mH) { dropCanvas.width = mW; dropCanvas.height = mH; }
     drawDrops(dropCtx, sim, [L[0], L[1]]);
     engine.setGlassDrops(dropCanvas);
   }
 
   let raf = 0;
+  let mW = 1, mH = 1;                                              // the mask's size in pixels (the canvas path resizes `mask` to it; the GPU path has no canvas)
+  let lastPolys = null;                                            // the last drawn digits as polylines in mask pixels (GPU path), for the drops' coarse ink
 
   // The LED panel is the normal picture, glass and all, averaged into pixels. With the solid style the
   // shader has to draw the digits itself (flat ink), because the SVG cannot be pixelated.
@@ -108,13 +119,13 @@ export function initGlass(engine, getBasis) {
     x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(W, x1 + pad); y1 = Math.min(H, y1 + pad);
     const scale = Math.min(window.devicePixelRatio || 1, 1.5);
     const mw = Math.max(2, Math.round((x1 - x0) * scale)), mh = Math.max(2, Math.round((y1 - y0) * scale));
-    if (mask.width !== mw || mask.height !== mh) { mask.width = mw; mask.height = mh; }
-    return { svgs, x0, y0, scale, strokePx, rect: [x0 / W, y0 / H, (x1 - x0) / W, (y1 - y0) / H] };
+    return { svgs, x0, y0, scale, strokePx, mw, mh, rect: [x0 / W, y0 / H, (x1 - x0) / W, (y1 - y0) / H] };
   }
 
   // Evenly spaced along the digit as one line, at fixed fractions of its length: the lights stick to their place
   // in the line while the digit moves. (The two colon dots are lines of their own, one light each.)
-  function paintLights(s, lines) {
+  // Returns the lights in path units ({x, y, c: colour index}) and the radius of each.
+  function computeLights(s, lines) {
     const strokes = lines.filter(l => !l.dot), dots = lines.filter(l => l.dot);
     const segs = [];
     let total = 0;
@@ -137,6 +148,11 @@ export function initGlass(engine, getBasis) {
       const m = l.pts[Math.floor(l.pts.length / 2)];
       lights.push({ x: m[0], y: m[1], c: (s.idx * 2 + i + 3) % LED_COLORS.length });
     });
+    return { lights, R };
+  }
+
+  function paintLights(s, lines) {
+    const { lights, R } = computeLights(s, lines);
     ctx.globalCompositeOperation = 'source-atop';                   // only ever paints inside the tube
     for (const L of lights) {
       const c = LED_COLORS[L.c], hot = c.map(v => Math.round(v + (255 - v) * 0.45));
@@ -150,6 +166,35 @@ export function initGlass(engine, getBasis) {
     ctx.globalCompositeOperation = 'source-over';
   }
 
+  // The same picture as vertices for the GPU (glsl-mask.js): every digit's polylines in mask pixels, as quads around each segment, and a quad per light.
+  function geometry(L, stained) {
+    const strokes = [], lights = [], polys = [];
+    const quad = (out, x0, y0, x1, y1, tail) => { for (const [x, y] of [[x0, y0], [x1, y0], [x0, y1], [x1, y0], [x1, y1], [x0, y1]]) out.push(x, y, ...tail); };
+    for (const s of L.svgs) {
+      const k = s.k * 0.2 * L.scale, ox = (s.ox - L.x0) * L.scale, oy = (s.oy - L.y0) * L.scale, r = 8 * s.k * L.scale;    // 80 path units wide
+      const lines = [];
+      for (const p of s.paths) {
+        const d = p.el.getAttribute('d');
+        if (!d) continue;
+        const pts = flatten(d);
+        if (!pts.length) continue;
+        const px = pts.map(([x, y]) => [ox + x * k, oy + y * k]);
+        polys.push({ px, r });
+        for (let i = 0; i < px.length; i++) {
+          const a = px[i], b = px[Math.min(i + 1, px.length - 1)];                   // (a single point is a dot)
+          if (i === px.length - 1 && i > 0) break;
+          quad(strokes, Math.min(a[0], b[0]) - r - 1, Math.min(a[1], b[1]) - r - 1, Math.max(a[0], b[0]) + r + 1, Math.max(a[1], b[1]) + r + 1, [a[0], a[1], b[0], b[1], r]);
+        }
+        if (stained && pts.length >= 2) lines.push({ pts, dot: p.round });
+      }
+      if (stained) {
+        const { lights: ls, R } = computeLights(s, lines), rp = R * k;
+        for (const l of ls) { const c = LED_COLORS[l.c], cx = ox + l.x * k, cy = oy + l.y * k; quad(lights, cx - rp, cy - rp, cx + rp, cy + rp, [cx, cy, rp, c[0] / 255, c[1] / 255, c[2] / 255]); }
+      }
+    }
+    return { strokes: new Float32Array(strokes), lights: new Float32Array(lights), polys };
+  }
+
   function draw() {
     raf = 0;
     if (!active()) return;
@@ -157,6 +202,16 @@ export function initGlass(engine, getBasis) {
     if (!L) return;
     const { svgs, x0, y0, scale } = L;
     const stained = style() === 'stained';
+    mW = L.mw; mH = L.mh;
+    if (engine.canDrawMask && !window.__canvasMask) {              // the GPU draws the strokes (glsl-mask.js); the CPU only lists the geometry
+      const geo = geometry(L, stained);
+      lastPolys = geo.polys;
+      inkStroke = L.strokePx * L.scale; inkStale = true;
+      engine.setGlassGeometry({ w: L.mw, h: L.mh, rect: L.rect, strokeCssPx: L.strokePx, strokes: geo.strokes, lights: geo.lights, black: stained });
+      return;
+    }
+    lastPolys = null;
+    if (mask.width !== L.mw || mask.height !== L.mh) { mask.width = L.mw; mask.height = L.mh; }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, mask.width, mask.height);
     ctx.strokeStyle = '#fff';

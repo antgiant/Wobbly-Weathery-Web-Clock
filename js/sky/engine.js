@@ -11,6 +11,8 @@
 // one (drifting clouds, water, twinkle) ~15 fps, and look-around modes run at
 // the display rate with the render scale adapting to hold the frame rate.
 
+import { Governor } from './governor.js';
+import { VERT_STROKE, FRAG_STROKE, VERT_LIGHT, FRAG_LIGHT, VERT_DROP, FRAG_DROP, VERT_TRAIL, FRAG_TRAIL } from './glsl-mask.js';
 import {
   VERT_FULLSCREEN, FRAG_TRANSMITTANCE, FRAG_MULTISCATTER, FRAG_SKYVIEW,
 } from './glsl-atmosphere.js';
@@ -37,9 +39,14 @@ const norm3 = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0]
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 
 export class SkyEngine {
-  constructor(canvas, { baseUrl = '.', lutScale = 1 } = {}) {
+  constructor(canvas, { baseUrl = '.', lutScale = 1, governor = false } = {}) {
     this.canvas = canvas;
     this.baseUrl = baseUrl;
+    // The quality governor (governor.js), when asked for: keeps frames between a floor and a ceiling by moving along a ladder of quality levels.
+    // Off by default (the page then behaves as it always did); the Pi's program switches it on.
+    this.gov = governor ? new Governor(typeof governor === 'object' ? governor : {}) : null;
+    this.onTick = null;                                   // (ms) => void: how long the clock should wait between frames while something moves
+    if (this.gov) lutScale = this.gov.knobs.lut;
     this.lutScale = Math.min(1, Math.max(0.1, lutScale));       // the sky tables' size: 1 is full; a slow machine (a CPU doing the drawing) asks for less, at the cost of finer detail in the sky's colour gradients
     const gl = canvas.getContext('webgl2', {
       alpha: false, antialias: false, depth: false, stencil: false,
@@ -78,8 +85,10 @@ export class SkyEngine {
     this.perf = { acc: 0, n: 0, last: 0 };
     this.fast = false;              // look-around / drag: render every display frame
     this.listeners = new Set();
+    this.presenters = new Set();
     this.exposure = { adaptSnap: true };
     this._init();
+    if (this.gov) this.applyKnobs();
   }
 
   // ------------------------------------------------------------- setup ----
@@ -118,12 +127,19 @@ export class SkyEngine {
     return P.locs[name];
   }
   _use(P) { this._ready(P); this.gl.useProgram(P.prog); this._cur = P; }
-  _1f(n, v) { this.gl.uniform1f(this._u(this._cur, n), v); }
-  _1i(n, v) { this.gl.uniform1i(this._u(this._cur, n), v); }
-  _2f(n, a, b) { this.gl.uniform2f(this._u(this._cur, n), a, b); }
-  _3f(n, v) { this.gl.uniform3f(this._u(this._cur, n), v[0], v[1], v[2]); }
-  _4f(n, a, b, c, d) { this.gl.uniform4f(this._u(this._cur, n), a, b, c, d); }
-  _m3(n, m) { this.gl.uniformMatrix3fv(this._u(this._cur, n), false, m); }
+  // Uniform setters. A program keeps its uniforms between draws, so a value that has not changed is not sent again: most of the hundreds of values set for a
+  // frame are the same as the last frame's, and on a slow machine each call across to the driver costs. (`vals` holds what each program was last given.)
+  _same(n, a) {
+    const P = this._cur, c = P.vals || (P.vals = {}), o = c[n];
+    if (o !== undefined) { let eq = o.length === a.length; for (let i = 0; eq && i < a.length; i++) if (o[i] !== a[i]) eq = false; if (eq) return true; }
+    c[n] = a; return false;
+  }
+  _1f(n, v) { if (!this._same(n, [v])) this.gl.uniform1f(this._u(this._cur, n), v); }
+  _1i(n, v) { if (!this._same(n, [v])) this.gl.uniform1i(this._u(this._cur, n), v); }
+  _2f(n, a, b) { if (!this._same(n, [a, b])) this.gl.uniform2f(this._u(this._cur, n), a, b); }
+  _3f(n, v) { if (!this._same(n, [v[0], v[1], v[2]])) this.gl.uniform3f(this._u(this._cur, n), v[0], v[1], v[2]); }
+  _4f(n, a, b, c, d) { if (!this._same(n, [a, b, c, d])) this.gl.uniform4f(this._u(this._cur, n), a, b, c, d); }
+  _m3(n, m) { if (!this._same(n, Array.from(m))) this.gl.uniformMatrix3fv(this._u(this._cur, n), false, m); }
 
   _target(w, h, internal, format, type, filter = this.gl.LINEAR, wrap = this.gl.CLAMP_TO_EDGE) {
     const gl = this.gl;
@@ -250,12 +266,13 @@ export class SkyEngine {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    this.dropsTex = gl.createTexture();                                   // raindrops on the digits (drops.js), same shape and place as the mask
+    this.dropsTex = this.dropsTexCanvas = gl.createTexture();             // raindrops on the digits (drops.js), same shape and place as the mask
     gl.bindTexture(gl.TEXTURE_2D, this.dropsTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    this.maskTex = gl.createTexture();
+    this.canDrawMask = true;                       // setGlassGeometry works (glass.js uses it unless told not to)
+    this.maskTex = this.maskTexCanvas = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.maskTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
     this._applySkyline();
@@ -346,7 +363,29 @@ export class SkyEngine {
 
   get now() { return simNow(); }
 
+  /**
+   * The host says what a frame cost to make and show (ms; a host that copies frames out measures this; a browser cannot). `kind` is 'glass' (only the
+   * digits moved) or 'scene' (the sky was redrawn too: it happens rarely, so a hitch of four frames' worth counts as one).
+   */
+  reportFrame(costMs, kind = 'glass') {
+    const g = this.gov; if (!g) return;
+    if (g.report(kind === 'scene' ? costMs * 0.25 : costMs, performance.now())) this.applyKnobs();
+    if (this.onTick) this.onTick(g.tickMs);
+  }
+  /** Puts the governor's current level into effect. */
+  applyKnobs() {
+    const g = this.gov; if (!g) return;
+    const k = g.knobs;
+    this.s.scale = k.scale;
+    this.s.outScale = this.glass.led.on ? 1 : k.outScale;          // an LED panel needs its cells at the size they are read back
+    this.starFrac = k.stars;
+    this.knobs = k;
+    this.dirty = true;
+  }
   onFrame(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
+  /** Called after anything changed what is on the canvas: a full render, or only the glass pass (a digit moved). A host that has to copy frames somewhere (the Pi) listens to this. */
+  onPresent(fn) { this.presenters.add(fn); return () => this.presenters.delete(fn); }
+  _presented(kind) { for (const fn of this.presenters) fn(this, kind); }
 
   // ----------------------------------------------------------- astronomy ---
   _updateAstro(perfNow, force) {
@@ -459,6 +498,7 @@ export class SkyEngine {
   interval() {
     const sim = getSim();
     if (this.fast || (sim && sim.scale > 1)) return 0;
+    if (this.gov) { const k = this.gov.knobs; return this._animated() ? Math.max(1000 / this.s.fps, k.skyMs * 0.25) : k.skyMs; }     // the governor decides how often the sky is redrawn
     if (this._animated()) return this.s.lowPower ? 900 : 1000 / this.s.fps;    // saving power: an animated scene (the sea) redraws only with the clock's tick, once a second
     return 1000;
   }
@@ -523,8 +563,9 @@ export class SkyEngine {
 
     // canvas / scene size
     const dpr = Math.min(window.devicePixelRatio || 1, s.maxDpr);
-    const cw = Math.max(2, Math.floor(this.canvas.clientWidth * dpr));
-    const ch = Math.max(2, Math.floor(this.canvas.clientHeight * dpr));
+    const out = this.glass.led.on || this.s.outScale == null ? 1 : this.s.outScale;       // the output's own size, below 1 when the governor saves work (the screen enlarges it)
+    const cw = Math.max(2, Math.floor(this.canvas.clientWidth * dpr * out));
+    const ch = Math.max(2, Math.floor(this.canvas.clientHeight * dpr * out));
     if (this.canvas.width !== cw || this.canvas.height !== ch) { this.canvas.width = cw; this.canvas.height = ch; }
     const rw = Math.max(2, Math.round(cw * s.scale)), rh = Math.max(2, Math.round(ch * s.scale));
     this._ensureScene(rw, rh);
@@ -658,6 +699,7 @@ export class SkyEngine {
     }
     this._autoScale(perfNow);
     for (const fn of this.listeners) fn(this);
+    this._presented('scene');
   }
 
   /** Scene -> canvas, with the glass clock. `scene` is true right after the scene was redrawn. */
@@ -785,6 +827,7 @@ export class SkyEngine {
   /** Clock glyph mask (alpha channel) covering rect = [x, y, w, h] in canvas uv, y down. */
   setGlassMask(canvas, rect, strokeCssPx) {
     const gl = this.gl, g = this.glass;
+    this.maskTex = this.maskTexCanvas;                  // (setGlassGeometry draws into a texture of its own)
     gl.bindTexture(gl.TEXTURE_2D, this.maskTex);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
@@ -797,9 +840,99 @@ export class SkyEngine {
     this.redrawGlass();
   }
 
+  /**
+   * The glass mask drawn on the GPU (glsl-mask.js) from the digits' geometry, instead of a 2D canvas stroked by the CPU and uploaded.
+   * `strokes`: 6 vertices per segment, 7 floats each (x, y, ax, ay, bx, by, r); `lights`: 6 vertices per light, 8 floats each (x, y, cx, cy, radius, r, g, b);
+   * all in mask pixels. `black` strokes (the coloured tube) are black, the glass styles white. Same arguments as setGlassMask otherwise.
+   */
+  setGlassGeometry({ w, h, rect, strokeCssPx, strokes, lights, black }) {
+    const gl = this.gl, g = this.glass;
+    if (!this.pStroke) {                                                    // compiled the first time it is needed (a slow machine need not wait for it at start-up)
+      this.pStroke = this._program(VERT_STROKE, FRAG_STROKE, { aPos: 0, aSeg: 1, aR: 2 });
+      this.pLight = this._program(VERT_LIGHT, FRAG_LIGHT, { aPos: 0, aLight: 1, aCol: 2 });
+      this.maskBuf = gl.createBuffer();
+      this.vaoStroke = gl.createVertexArray(); this.vaoLight = gl.createVertexArray();
+    }
+    if (!this.maskTarget || this.maskTarget.w !== w || this.maskTarget.h !== h) {
+      if (this.maskTarget) { gl.deleteTexture(this.maskTarget.tex); gl.deleteFramebuffer(this.maskTarget.fbo); }
+      this.maskTarget = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.LINEAR_MIPMAP_LINEAR, gl.CLAMP_TO_EDGE);
+      this.maskTex = this.maskTarget.tex;
+    }
+    const T = this.maskTarget;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, T.fbo);
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.maskBuf);
+    if (strokes.length) {                                                  // the strokes: the union (MAX) of every segment's capsule
+      gl.blendEquation(gl.MAX); gl.blendFunc(gl.ONE, gl.ONE);
+      this._use(this.pStroke); this._2f('uSize', w, h); this._3f('uCol', black ? [0, 0, 0] : [1, 1, 1]);
+      gl.bindVertexArray(this.vaoStroke);
+      gl.bufferData(gl.ARRAY_BUFFER, strokes, gl.DYNAMIC_DRAW);
+      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 28, 0);
+      gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 28, 8);
+      gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 28, 24);
+      gl.drawArrays(gl.TRIANGLES, 0, strokes.length / 7);
+    }
+    if (lights && lights.length) {                                         // the tube's lights, only where the tube is (source-atop)
+      gl.blendEquation(gl.FUNC_ADD); gl.blendFuncSeparate(gl.DST_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
+      this._use(this.pLight); this._2f('uSize', w, h);
+      gl.bindVertexArray(this.vaoLight);
+      gl.bufferData(gl.ARRAY_BUFFER, lights, gl.DYNAMIC_DRAW);
+      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 32, 0);
+      gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 32, 8);
+      gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 32, 20);
+      gl.drawArrays(gl.TRIANGLES, 0, lights.length / 8);
+    }
+    gl.bindVertexArray(null);
+    gl.blendEquation(gl.FUNC_ADD); gl.disable(gl.BLEND);
+    gl.bindTexture(gl.TEXTURE_2D, T.tex); gl.generateMipmap(gl.TEXTURE_2D);
+    g.rect = rect; g.maskW = w; g.maskH = h; g.stroke = strokeCssPx; g.hasMask = true;
+    this.redrawGlass();
+  }
+
+  /**
+   * The raindrops drawn on the GPU (glsl-mask.js) from dropGeometry()'s vertex lists, into a picture the size of the glass mask. Picked up by the next draw,
+   * like setGlassDrops (which does the same from a canvas).
+   */
+  setGlassDropsGeometry({ w, h, drops, trails }) {
+    const gl = this.gl;
+    if (!this.pDrop) {
+      this.pDrop = this._program(VERT_DROP, FRAG_DROP, { aPos: 0, aD: 1, aL: 2 });
+      this.pTrail = this._program(VERT_TRAIL, FRAG_TRAIL, { aPos: 0, aSeg: 1, aW: 2 });
+      this.dropBuf = gl.createBuffer(); this.vaoDrop = gl.createVertexArray(); this.vaoTrail = gl.createVertexArray();
+    }
+    if (!this.dropsTarget || this.dropsTarget.w !== w || this.dropsTarget.h !== h) {
+      if (this.dropsTarget) { gl.deleteTexture(this.dropsTarget.tex); gl.deleteFramebuffer(this.dropsTarget.fbo); }
+      this.dropsTarget = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.LINEAR, gl.CLAMP_TO_EDGE);
+    }
+    const T = this.dropsTarget;
+    this.dropsTex = T.tex;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, T.fbo);
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND); gl.blendEquation(gl.FUNC_ADD); gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ZERO, gl.ONE);       // the channels add up where drops and trails overlap
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.dropBuf);
+    const run = (P, vao, data, f1, f2) => {
+      if (!data.length) return;
+      this._use(P); this._2f('uSize', w, h);
+      gl.bindVertexArray(vao);
+      gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 32, 0);
+      gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 8);
+      gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 32, 24);
+      gl.drawArrays(gl.TRIANGLES, 0, data.length / 8);
+    };
+    run(this.pTrail, this.vaoTrail, trails);
+    run(this.pDrop, this.vaoDrop, drops);
+    gl.bindVertexArray(null); gl.disable(gl.BLEND);
+    this.glass.dropsOn = true;
+  }
+
   /** The raindrops (a canvas the size of the glass mask, drawn by drops.js). Picked up by the next draw; does not redraw by itself. */
   setGlassDrops(canvas) {
     const gl = this.gl;
+    this.dropsTex = this.dropsTexCanvas;
     gl.bindTexture(gl.TEXTURE_2D, this.dropsTex);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
@@ -840,6 +973,7 @@ export class SkyEngine {
     if (!this.sceneTarget) { this.dirty = true; return; }
     this._blit(!this._mipsValid && this.glass.mode > 0);
     if (this.glass.mode > 0) this._mipsValid = true;
+    this._presented('glass');
   }
 
   _bindSkyUniforms(sky, sunAz, sunAlt, sunLux, moonAz, moonAlt, moonLux, natural, lp, camH) {
@@ -935,7 +1069,7 @@ export class SkyEngine {
     this._1f('uExtraK', Math.max(0, (w.aod - 0.12) * 1.1));
     this._1f('uWorld', 0);
     gl.bindVertexArray(this.vaoStars);
-    gl.drawArrays(gl.POINTS, 0, this.starCount);
+    gl.drawArrays(gl.POINTS, 0, Math.max(1, Math.floor(this.starCount * (this.starFrac == null ? 1 : this.starFrac))));      // (the file is brightest first: fewer stars are the brightest ones)
 
     if (sky.planets.length) {
       const data = new Float32Array(sky.planets.length * 5);
@@ -953,7 +1087,7 @@ export class SkyEngine {
   // ------------------------------------------------ adaptive resolution ----
   _autoScale(perfNow) {
     const s = this.s, p = this.perf;
-    if (s.quality !== 'auto') return;
+    if (s.quality !== 'auto' || this.gov) return;           // (the governor, when there is one, owns the scale)
     if (p.last) {
       const dt = perfNow - p.last;
       const target = this.fast ? 1000 / 58 : this.interval() || 16.7;

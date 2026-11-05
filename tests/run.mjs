@@ -38,7 +38,7 @@ const WORKERS = Math.max(1, Number(process.env.WORKERS) || 1);
 // rough seconds each suite takes in its tier: the longest start first, so the workers finish together
 const COST = { options: 30, alerts: 20, led: 18, startup: 14, sky: 14, clock: 12, wind: 12, settings: 12, offline: 13, digitweather: 10, smoke: 6 };
 // seconds each suite takes in the full run on a CI machine (docs/TESTS.md, GitHub Actions run 63; share and place re-measured after they grew)
-const FULL_COST = { clocklayout: 20, alerts: 115, digitweather: 105, led: 90, options: 98, perf: 95, christmas: 86, countdown: 42, share: 55, wind: 38, startup: 42, visual: 40, idle: 38, clock: 29, place: 30, sky: 24, settings: 24, offline: 23, smoke: 5 };
+const FULL_COST = { dropsgpu: 15, maskgpu: 20, clocklayout: 20, alerts: 115, digitweather: 105, led: 90, options: 98, perf: 95, christmas: 86, countdown: 42, share: 55, wind: 38, startup: 42, visual: 40, idle: 38, clock: 29, place: 30, sky: 24, settings: 24, offline: 23, smoke: 5 };
 let failed = 0, passed = 0;
 const timings = { when: new Date().toISOString(), node: process.version, kind: '', unit: [], browser: [] };       // where the time goes (written to test-results/timings.json, summarised at the end)
 const started = Date.now();

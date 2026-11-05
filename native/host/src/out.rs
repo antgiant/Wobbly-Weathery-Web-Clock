@@ -63,8 +63,12 @@ impl Out {
                 std::fs::write(format!("{dir}/brightness-{n:04}.txt"), format!("{:.3}\n", level)).map_err(|e| e.to_string())
             }
             Kind::Fb { dev, fmt } => {
-                let mut rgb = Vec::with_capacity(w * h * 3);
-                for y in 0..h { for x in 0..w { for c in 0..3 { rgb.push((at(x, y, c) as f64 * level).round() as u8); } } }     // dimming: the framebuffer has no other way
+                // the page may have drawn smaller than the screen (the quality governor saves work that way): enlarge to the screen's size, nearest pixel (cheap)
+                let (fw, fh) = (fmt.width, fmt.height);
+                let xs: Vec<usize> = (0..fw).map(|x| (x * w / fw).min(w - 1)).collect();
+                let lut: Vec<u8> = (0..256).map(|v| (v as f64 * level).round() as u8).collect();                             // dimming: the framebuffer has no other way
+                let mut rgb = Vec::with_capacity(fw * fh * 3);
+                for y in 0..fh { let sy = (y * h / fh).min(h - 1); for &sx in &xs { for c in 0..3 { rgb.push(lut[at(sx, sy, c) as usize]); } } }
                 let bytes = to_framebuffer(&rgb, fmt)?;
                 let mut f = std::fs::OpenOptions::new().write(true).open(&*dev).map_err(|e| format!("{dev}: {e}"))?;
                 f.write_all(&bytes).map_err(|e| e.to_string())

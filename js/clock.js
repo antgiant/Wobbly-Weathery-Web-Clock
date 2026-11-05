@@ -216,7 +216,7 @@ function loop() {
   var morphing = clock();
   if (document.hidden) return;                 // the visibilitychange below restarts it
   var sim = getSim();
-  var delay = morphing || sway.flutter || (sim && sim.scale > 1) ? vars.step : 1005 - simNow().getMilliseconds();
+  var delay = morphing || sway.flutter || (sim && sim.scale > 1) ? (vars.tick || vars.step) : 1005 - simNow().getMilliseconds();     // vars.tick: the quality governor's pace (js/sky/governor.js), when there is one
   clockTimer = setTimeout(loop, delay);
 }
 function kickClock() {

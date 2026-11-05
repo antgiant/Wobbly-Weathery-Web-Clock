@@ -19,7 +19,7 @@ const PRECACHE = [
   'js/index.js', 'js/clock.js', 'js/clocklayout.js', 'js/config.js', 'js/easing.js', 'js/install.js', 'js/offline.js', 'js/location.js', 'js/season.js', 'js/countdown.js', 'js/settings_gear.js', 'js/simtime.js', 'js/share.js', 'js/timezone.js', 'js/qr.js', 'js/cities.js', 'js/quiet.js', 'js/units.js', 'js/wakelock.js', 'js/wind.js',
   'js/virgo/virgo.js', 'js/virgo/lib/timezone_centroids.js', 'js/virgo/lib/timezone_links.js',
   'js/sky/alerts.js', 'js/sky/app.js', 'js/sky/appearance.js', 'js/sky/astro.js', 'js/sky/bindings.js', 'js/sky/biome.js', 'js/sky/controls.js', 'js/sky/core.js',
-  'js/sky/data.js', 'js/sky/dim.js', 'js/sky/engine.js', 'js/sky/glass.js', 'js/sky/glsl-atmosphere.js', 'js/sky/glsl-plants.js', 'js/sky/glsl-scene.js',
+  'js/sky/data.js', 'js/sky/dim.js', 'js/sky/engine.js', 'js/sky/glass.js', 'js/sky/glsl-atmosphere.js', 'js/sky/glsl-plants.js', 'js/sky/glsl-scene.js', 'js/sky/governor.js', 'js/sky/glsl-mask.js',
   'js/sky/burnin.js', 'js/sky/sharebox.js', 'js/sky/drops.js', 'js/sky/pillroom.js', 'js/sky/windsway.js', 'js/sky/landscape.js', 'js/sky/ledcard.js', 'js/sky/ledgrid.js', 'js/sky/ledpanel.js', 'js/sky/lightpollution.js', 'js/sky/orientation.js', 'js/sky/plants.js', 'js/sky/presets.js', 'js/sky/rain.js',
   'js/sky/scheduler.js', 'js/sky/sunpath.js', 'js/sky/view.js', 'js/sky/weather.js',
 ];
