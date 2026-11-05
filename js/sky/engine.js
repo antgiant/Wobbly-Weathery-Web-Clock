@@ -851,32 +851,38 @@ export class SkyEngine {
       gl.bindFramebuffer(gl.FRAMEBUFFER, out ? out.fbo : null);
       gl.viewport(0, 0, cw, ch);
       this._use(this._blitProgram(pass));
-      this._1i('uTex', 0); this._bind(0, T.tex);
-      this._1f('uTexW', T.w);
-      if (glassOn && this.es2) this._bindMipAtlas('scene', 5);
-      this._1i('uMask', 1); this._bind(1, this.maskTex);
-      if (glassOn && this.es2) this._bindMipAtlas('mask', 6);
-      this._4f('uGlass', g.frost, glassOn ? g.mode : 0, g.stroke * dpr, 0);
-      this._4f('uMaskRect', g.rect[0], g.rect[1], g.rect[2], g.rect[3]);
-      this._2f('uMaskPx', g.maskW, g.maskH);
-      this._2f('uRes', cw, ch);
-      this._3f('uLight', g.light);
-      this._3f('uLightCol', g.lightCol);
-      this._4f('uGlow', g.glow, led ? Math.max(2, Math.floor(Math.min(cw / g.led.cols, ch / g.led.rows))) : 0, 0, 0);
-      this._3f('uGlowCol', g.glowCol);
-      this._3f('uInk', g.ink);
-      this._1f('uContrast', g.contrast);
-      this._4f('uWx', this.wx.snow, this.wx.rain, 0, (performance.now() / 1000) % 3600);
-      this._1i('uDrops', 4); this._bind(4, this.dropsTex);
-      this._1f('uDropsOn', g.dropsOn ? 1 : 0);
-      this._1i('uFull', 3); this._bind(3, this.overlayFullTex);
-      this._1f('uFullOn', last && led && g.overlayFull ? 1 : 0);
-      this._1i('uPrev', 7); if (prev) this._bind(7, prev.tex);
+      this._blitUniforms(T, glassOn, led, cw, ch, dpr, prev, last);
       gl.bindVertexArray(this.vaoEmpty);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       prev = out;
     });
     if (led) this._ledPass(cw, ch);
+  }
+
+  /** The uniforms and textures of a final pass (the program is already in use); `prev` is the picture the pass before it made. */
+  _blitUniforms(T, glassOn, led, cw, ch, dpr, prev, last) {
+    const gl = this.gl, g = this.glass;
+    this._1i('uTex', 0); this._bind(0, T.tex);
+    this._1f('uTexW', T.w);
+    if (glassOn && this.es2) this._bindMipAtlas('scene', 5);
+    this._1i('uMask', 1); this._bind(1, this.maskTex);
+    if (glassOn && this.es2) this._bindMipAtlas('mask', 6);
+    this._4f('uGlass', g.frost, glassOn ? g.mode : 0, g.stroke * dpr, 0);
+    this._4f('uMaskRect', g.rect[0], g.rect[1], g.rect[2], g.rect[3]);
+    this._2f('uMaskPx', g.maskW, g.maskH);
+    this._2f('uRes', cw, ch);
+    this._3f('uLight', g.light);
+    this._3f('uLightCol', g.lightCol);
+    this._4f('uGlow', g.glow, led ? Math.max(2, Math.floor(Math.min(cw / g.led.cols, ch / g.led.rows))) : 0, 0, 0);
+    this._3f('uGlowCol', g.glowCol);
+    this._3f('uInk', g.ink);
+    this._1f('uContrast', g.contrast);
+    this._4f('uWx', this.wx.snow, this.wx.rain, 0, (performance.now() / 1000) % 3600);
+    this._1i('uDrops', 4); this._bind(4, this.dropsTex);
+    this._1f('uDropsOn', g.dropsOn ? 1 : 0);
+    this._1i('uFull', 3); this._bind(3, this.overlayFullTex);
+    this._1f('uFullOn', last && led && g.overlayFull ? 1 : 0);
+    this._1i('uPrev', 7); if (prev) this._bind(7, prev.tex);
   }
 
   /**
@@ -1216,6 +1222,16 @@ export class SkyEngine {
       this._use(this._blitProgram('off')); this._1i('uTex', 0); this._bind(0, T.tex); this._1f('uTexW', T.w); this._1f('uFullOn', 0);
       gl.bindVertexArray(this.vaoEmpty); gl.drawArrays(gl.TRIANGLES, 0, 3);
       const d = new Uint8Array(cw * ch * 4); gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, d);
+      if (this.es2 && g.mode > 0 && g.hasMask && this.pingT) {
+        const dpr = cw / Math.max(1, this.canvas.clientWidth), led = g.led.on;
+        for (const [k, what] of [['dbgtex', 'uTex read as it is'], ['dbgscene', 'the scene mip atlas (level 1)'], ['dbgmask', 'the mask coverage'], ['dbgprev', 'the picture of the pass before']]) {
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, cw, ch); gl.clearColor(1, 0, 1, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+          this._use(this._blitProgram(k)); this._blitUniforms(T, true, led, cw, ch, dpr, this.pingT[0], true);
+          gl.bindVertexArray(this.vaoEmpty); gl.drawArrays(gl.TRIANGLES, 0, 3);
+          const e = new Uint8Array(cw * ch * 4); gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, e);
+          probe += '\nexperiment ' + k + ' (' + what + '):\n' + grid(e, cw, ch);
+        }
+      }
       probe += '\nplain copy of the scene on the screen:\n' + grid(d, cw, ch) + '\nGL error before the probe ' + err0 + ', after ' + gl.getError();
     } catch (e) { probe += '\nprobe failed: ' + e; }
     return mk + '\nfinal pass: ' + (!(g.mode > 0 && g.hasMask) ? 'off (no glass: mode ' + g.mode + ', mask ' + g.hasMask + ')' : g.mode > 2.5 ? 'ink' : 'glass') + '; scene ' + T.w + 'x' + T.h + ' (top row first):\n' + grid(a, T.w, T.h) + '\nscreen ' + cw + 'x' + ch + ':\n' + grid(b, cw, ch) + probe;
