@@ -17,7 +17,7 @@ import {
   VERT_FULLSCREEN, FRAG_TRANSMITTANCE, FRAG_MULTISCATTER, FRAG_SKYVIEW,
 } from './glsl-atmosphere.js';
 import {
-  FRAG_NOISE, FRAG_NOISE_DOWN, FRAG_ATLAS_PLACE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, fragBlit, FRAG_LED, FRAG_LED_PEAK, FRAG_LED_AVG, FRAG_SCENE_SKY, FRAG_SCENE_TERRAIN, FRAG_CONSTS, CONSTS_N, HAZE_N,
+  FRAG_NOISE, FRAG_NOISE_DOWN, FRAG_ATLAS_PLACE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, fragBlit, FRAG_LED, FRAG_LED_PEAK, FRAG_LED_AVG, FRAG_SCENE_SKY, FRAG_SCENE_CLOUD, FRAG_SCENE_FOG, FRAG_SCENE_TERRAIN, FRAG_CONSTS, CONSTS_N, HAZE_N,
 } from './glsl-scene.js';
 import { toES1, packSkyline, NOISE_ATLAS } from './portable.js';
 import { VERT_PLANTS, FRAG_PLANTS } from './glsl-plants.js';
@@ -223,6 +223,8 @@ export class SkyEngine {
     this.pAdapt = this._program(VERT_FULLSCREEN, FRAG_ADAPT);
     this.pConsts = this._program(VERT_FULLSCREEN, FRAG_CONSTS);
     this.pSceneSky = this._program(VERT_FULLSCREEN, FRAG_SCENE_SKY);          // the sky and the ground are two programs into one picture (glsl-scene.js: one is too big for a small GPU)
+    this.pSceneCloud = this._program(VERT_FULLSCREEN, FRAG_SCENE_CLOUD);        // one cloud layer, drawn up to three times
+    this.pSceneFog = this._program(VERT_FULLSCREEN, FRAG_SCENE_FOG);
     this.pSceneTerrain = this._program(VERT_FULLSCREEN, FRAG_SCENE_TERRAIN);
     this.pBlits = {};                                            // the final pass in the form that is needed (_blitProgram)
     performance.mark('sky:programs-compiled');
@@ -783,8 +785,15 @@ export class SkyEngine {
     gl.disable(gl.BLEND);
     this._use(this.pSceneSky); setScene();                    // every pixel that is not wholly terrain
     gl.drawArrays(gl.TRIANGLES, 0, 3);
-    gl.enable(gl.BLEND);                                      // the ground, over it by coverage; the fourth channel (the stars' sky-visibility) shrinks by the same share
+    gl.enable(gl.BLEND);                                      // everything after the sky goes over it by its own coverage; the fourth channel (the stars' sky-visibility) shrinks by the same share
     gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
+    for (const [cov, height, tile, sx, sy, tau, wind] of [[w.cover[2], 9.5, 120, 1, 0.32, 1.1, 1.6], [w.cover[1], 5.0, 70, 1, 0.8, 2.4, 1.2], [w.cover[0], 1.8, 40, 1, 1, 5.0, 1.0]]) {      // clouds, high to low
+      if (!(cov >= 0.01)) continue;
+      this._use(this.pSceneCloud); setScene();
+      this._4f('uCloudP', cov, height, tile, tau); this._4f('uCloudQ', sx, sy, wind, 0);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+    if (w.fog > 0.005) { this._use(this.pSceneFog); setScene(); gl.drawArrays(gl.TRIANGLES, 0, 3); }
     this._use(this.pSceneTerrain); setScene();
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.disable(gl.BLEND);

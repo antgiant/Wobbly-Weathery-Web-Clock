@@ -830,7 +830,7 @@ float gCov;
 int gLayer;
 `;
 
-const SCENE_SKY = `// ---- clouds ----
+const SCENE_CLOUDS = `// ---- clouds ----
 float cloudShape(vec2 uv, float cover, float lod, float sharp) {
   vec4 n = noiseLod(uNoise, uv, lod);
   float base = n.r * 0.62 + n.g * 0.28 + n.b * 0.10;
@@ -884,7 +884,9 @@ vec4 cloudLayer(vec3 d, float cover, float H, float tile, vec2 stretch, float ta
   return vec4(rad, a);
 }
 
-// ---- moon ----
+`;
+
+const SCENE_SKY = `// ---- moon ----
 vec4 moonDisc(vec3 d, float expo) {
   float cm = dot(d, uMoonDir);
   float sr = sin(uMoonAngR);
@@ -959,22 +961,6 @@ vec3 shadeSky(vec3 d, out float skyMask) {
   vec4 mo = moonDisc(d, expo);
   L += mo.rgb * mo.a;               // added on top: the air in front of the moon still glows
   skyMask *= 1.0 - mo.a;
-
-  // clouds, high to low
-  vec3 wd = vec3(uWind.x, 0.0, uWind.y);
-  float cc = 0.0;
-  vec4 cH = cloudLayer(d, uCover.z, 9.5, 120.0, vec2(1.0, 0.32), 1.1, uCover.x, ambLux, hazeL, 1.6);
-  L = mix(L, cH.rgb, cH.a);
-  vec4 cM = cloudLayer(d, uCover.y, 5.0, 70.0, vec2(1.0, 0.8), 2.4, uCover.x, ambLux, hazeL, 1.2);
-  L = mix(L, cM.rgb, cM.a);
-  vec4 cL = cloudLayer(d, uCover.x, 1.8, 40.0, vec2(1.0, 1.0), 5.0, uCover.x, ambLux, hazeL, 1.0);
-  L = mix(L, cL.rgb, cL.a);
-  skyMask *= (1.0 - cH.a * 0.9) * (1.0 - cM.a) * (1.0 - cL.a);
-
-  // fog
-  float fogMix = max(0.75 * uFog * uFog, uFog * 0.92 * (1.0 - smoothstep(0.0, 0.25, d.y)));
-  L = mix(L, hazeL, fogMix);
-  skyMask *= 1.0 - fogMix;
   return L;
 }
 
@@ -1224,6 +1210,36 @@ void main() {
   float m;
   vec3 L = shadeSky(gD, m);
   oColor = finish(L, m);                         // alpha: how much of the sky is open to stars
+}`;
+
+/**
+ * One cloud layer (the three are the same program drawn three times with different numbers, high to low), blended over the sky by the layer's own coverage. Blending
+ * happens on the finished picture rather than in brightness (a cloud's edge is a little darker than if the two were mixed before the tonemap), because a program with the
+ * sky and three clouds in it is too big for a small GPU. The fourth channel, the stars' sky-visibility, shrinks by the cloud's coverage.
+ */
+export const FRAG_SCENE_CLOUD = `#version 300 es
+${SCENE_HEAD}
+${SCENE_CLOUDS}
+${SCENE_SETUP}
+uniform vec4 uCloudP;      // this layer: cover, height (km), tile (km), optical depth
+uniform vec4 uCloudQ;      // stretch x, stretch y, how fast the wind moves it
+void main() {
+  setup();
+  if (gCov >= 1.0) discard;
+  vec4 c = cloudLayer(gD, uCloudP.x, uCloudP.y, uCloudP.z, uCloudQ.xy, uCloudP.w, uCover.x, ambLux, hazeL, uCloudQ.z);
+  if (c.a < 0.003) discard;
+  oColor = finish(c.rgb, c.a);
+}`;
+
+/** Fog: the haze colour over the sky by the fog's share (thick near the horizon). Drawn only when there is fog. */
+export const FRAG_SCENE_FOG = `#version 300 es
+${SCENE_HEAD}
+${SCENE_SETUP}
+void main() {
+  setup();
+  if (gCov >= 1.0) discard;
+  float fogMix = max(0.75 * uFog * uFog, uFog * 0.92 * (1.0 - smoothstep(0.0, 0.25, gD.y)));
+  oColor = finish(hazeL, fogMix);
 }`;
 
 /** The ground, water and city layers, blended over the sky by coverage (alpha: the share of the pixel that is terrain). */
