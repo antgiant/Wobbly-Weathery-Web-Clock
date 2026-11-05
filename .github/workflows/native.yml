@@ -90,13 +90,14 @@ jobs:
         run: |
           CONF='{"plants":true,"landscape":"hills","antiBurnIn":"off","cloudMotion":"0"}'
           # (dusk: the sky's light comes from the edge of the earth's shadow, where a table read that blends a dark texel with a lit one the wrong way comes out far too dim)
-          for when in 2026-06-21T17:00:00Z 2026-06-22T01:10:00Z; do
+          for pair in day:2026-06-21T17:00:00Z dusk:2026-06-22T01:10:00Z; do
+            name="${pair%%:*}"; when="${pair#*:}"          # (no colons in the picture's name: an artifact's file names cannot have them)
             for m in 3 2; do
               EXTRA=""; [ $m = 2 ] && EXTRA="--es2=1"
-              WOBBLY_STORE="$RUNNER_TEMP/store.json" native/target/release/wobbly-clock-run . "$RUNNER_TEMP/es$m.ppm" --app $EXTRA --w=480 --h=270 "--search=t=$when&speed=0&lat=40.7&lon=-74&weather=clear" --out="$RUNNER_TEMP/es$m.ppm" --frames=2 --tz=UTC --seed=1 --offline=1 "--conf=$CONF"
+              WOBBLY_STORE="$RUNNER_TEMP/store.json" native/target/release/wobbly-clock-run . "$RUNNER_TEMP/es$m-$name.ppm" --app $EXTRA --w=480 --h=270 "--search=t=$when&speed=0&lat=40.7&lon=-74&weather=clear" --out="$RUNNER_TEMP/es$m-$name.ppm" --frames=2 --tz=UTC --seed=1 --offline=1 "--conf=$CONF"
             done
-            echo "$when"
-            node native/host/tests/ppm-diff.mjs "$RUNNER_TEMP/es3.ppm" "$RUNNER_TEMP/es2.ppm" 12 "$RUNNER_TEMP/es-diff-$when.ppm" --max-mean 1.5 --max-over 2
+            echo "$name ($when)"
+            node native/host/tests/ppm-diff.mjs "$RUNNER_TEMP/es3-$name.ppm" "$RUNNER_TEMP/es2-$name.ppm" 12 "$RUNNER_TEMP/es-diff-$name.ppm" --max-mean 1.5 --max-over 2
           done
       - name: Soak - time-warped hours of running leave memory and canvases flat
         run: |
