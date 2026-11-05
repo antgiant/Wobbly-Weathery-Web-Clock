@@ -14,11 +14,12 @@ var clockChanged = false;
 // Hiding / showing the leading hour digit changes how many digits share the row, so the widths
 // must be recomputed (this used to be done by a MutationObserver that also fired on every path write).
 var layoutStale = false;
-function setCurve(id, val) {
+function setCurve(id, val, nums, from) {
   var e = document.getElementById(id);
   // skip identical writes: most ticks nothing moves, and the glass renderer redraws on change
   if (e !== null && e.__d !== val) {
     e.__d = val;
+    e.__c = nums; e.__ck = from;                  // the same curve as numbers (8 from `from`), so the glass need not read it back out of the string
     e.setAttribute("d", val);
     clockChanged = true;
   }
@@ -29,7 +30,7 @@ var PHASE = { h0: 0.4, h1: 2.1, m0: 3.7, m1: 5.2, s0: 1.3, s1: 4.4 };
 function setDigit(t, d, nowMs) {
   if (sway.mode !== 'off') d = bend(d, topOffset(nowMs, PHASE[t] || 0));
   for (var i = 0; i < 4; i++) {
-    setCurve(t + "p" + i, ci(d, i));
+    setCurve(t + "p" + i, ci(d, i), d, i * 6);
   }
 }
 
@@ -41,8 +42,8 @@ function ease(x, t, b, c, d) {
 }
 
 function morph(a, b, s) {
+  var e = ease(null, s, 0, 1, conf.steps);      // the same for every number of the digit
   return a.map(function(v, i) {
-    var e = ease(null, s, 0, 1, conf.steps);
     return v + e * (b[i] - v);
   });
 }
@@ -152,6 +153,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Draws the digits for this instant. Returns true while any visible digit is morphing into the next one (the digits
 // that change at the next second morph all through this one), which is when it needs ~15 frames a second.
+var still = {};          // per digit slot: the shape it was last drawn as when it was standing still
 function clock() {
   if (document.hidden) return false;           // nothing to animate in a background tab
   var now = simNow();
@@ -187,7 +189,10 @@ function clock() {
       var d = time[t][i],
         nd = nTime[t][i];
       if (d != nd) morphing = true;
-      setDigit(t + i, morph(dd[d], dd[nd], cStep), performance.now());   // gusts run on the real clock, even while time travel holds the time still
+      var key = t + i;
+      if (d == nd && sway.mode === 'off' && still[key] === dd[d]) continue;     // a digit that is not changing and is already drawn: nothing to work out
+      still[key] = d == nd && sway.mode === 'off' ? dd[d] : null;
+      setDigit(key, morph(dd[d], dd[nd], cStep), performance.now());   // gusts run on the real clock, even while time travel holds the time still
     }
   });
   updateTimerPill(counting, left, done);

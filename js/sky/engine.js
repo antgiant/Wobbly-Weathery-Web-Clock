@@ -1162,6 +1162,23 @@ export class SkyEngine {
     return c;
   }
 
+  /** One line about what the GPU made so far (for the Pi's timing log, to tell a black screen from a dark sky): the scene's average colour, the exposure and, on ES 2, the packed tables decoded. */
+  diagnose() {
+    const gl = this.gl, T = this.sceneTarget;
+    if (!T) return 'no scene yet';
+    const rd = (t) => { gl.bindFramebuffer(gl.FRAMEBUFFER, t.fbo); const px = new Uint8Array(t.w * t.h * 4); gl.readPixels(0, 0, t.w, t.h, gl.RGBA, gl.UNSIGNED_BYTE, px); gl.bindFramebuffer(gl.FRAMEBUFFER, null); return px; };
+    const mean = (px) => { const m = [0, 0, 0, 0]; for (let i = 0; i < px.length; i += 4) for (let c = 0; c < 4; c++) m[c] += px[i + c]; return m.map((v) => Math.round(v / (px.length / 4))).join(','); };
+    const hdr = (px, i) => { const R = px[i], G = px[i + 1], B = px[i + 2], A = px[i + 3], Bh = Math.floor(B / 16), Gh = Math.floor(G / 4); const L = A * 16 + Bh, P = (B - Bh * 16) * 64 + Gh, Q = (G - Gh * 4) * 256 + R; const sum = 2 ** (-30 + 36 * L / 4095), p = P / 1023, q = Q / 1023; return [sum * p, sum * Math.max(1 - p - q, 0), sum * q].map((v) => v.toPrecision(3)).join(' '); };
+    let o = 'scene ' + T.w + 'x' + T.h + ' average rgba ' + mean(rd(T)) + ', sun at ' + (this.sky ? this.sky.sun.alt.toFixed(1) : '?') + ' deg';
+    const ad = this.tAdapt[this.adaptIdx];
+    if (this.es2) {
+      const a = rd(ad); o += ', exposure log ' + ((a[0] * 65536 + a[1] * 256 + a[2]) / 16777215 * 64 - 32).toFixed(2);
+      const sk = rd(this.tSkySun), tr = rd(this.tTrans);
+      o += ', sky table centre ' + hdr(sk, ((this.tSkySun.h >> 1) * this.tSkySun.w + (this.tSkySun.w >> 1)) * 4) + ', transmittance centre ' + hdr(tr, ((this.tTrans.h >> 1) * this.tTrans.w + (this.tTrans.w >> 1)) * 4);
+    } else { const a = rd(ad); o += ' (ES 3: tables are half floats)'; void a; }
+    return o;
+  }
+
   /** Cheap repaint: only the final pass, reusing the last scene. */
   redrawGlass() {
     if (!this.sceneTarget) { this.dirty = true; return; }
