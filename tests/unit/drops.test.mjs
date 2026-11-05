@@ -76,4 +76,64 @@ const big1 = make(13); big1.drops.push({ x: 50, y: 20, r: S * 0.16, vy: 10, run:
 const y1 = big1.drops[0].y; big1.step(10, 0);
 check('a very long frame moves a drop only as far as a short one (no teleporting)', big1.drops[0].y - y1 < 5, `${(big1.drops[0].y - y1).toFixed(1)} px`);
 check('with no ink at all nothing is made and nothing breaks', (() => { const z = new DropSim(1); z.step(0.1, 1); z.setInk(new Uint8Array(4), 2, 2, 10, 10, 10); z.step(0.1, 1); return z.drops.length === 0; })());
+// ---- thrown off when the glass moves (the digit changes) ----
+const sitting = (x, y, r = 3) => ({ x, y, r, vy: 0, run: false, y0: y, hang: 0, wait: 0, dying: false, fall: 0, age: 1, trail: [] });
+{
+  // glass at x 62..80 only; a drop at x 50 has lost its glass, which is to its right: it is flung to the left, away from it
+  s = new DropSim(21); const g = new Uint8Array(W * H); for (let y = 10; y < 90; y++) for (let x = 62; x < 80; x++) g[y * W + x] = 255;
+  const dr = sitting(55, 50); s.drops.push(dr); s.setInk(g, W, H, W, H, S);
+  check('a drop that loses its glass is thrown away from the glass that is left (to the left, the glass being on its right)', dr.dying && dr.thrown && dr.vx < -S * 0.5, `vx ${dr.vx && dr.vx.toFixed(1)}`);
+  const x0 = dr.x; s.step(0.05, 0); s.step(0.05, 0);
+  check('...and it really flies sideways, and down', dr.x < x0 - 1 && dr.y > 50, `x ${x0} -> ${dr.x.toFixed(1)}, y ${dr.y.toFixed(1)}`);
+  run(s, 0.7, 0);
+  check('...and is gone soon after', !s.drops.includes(dr));
+}
+{
+  // thrown onto other glass it sticks: glass on its right (the drop's own is gone) and a second stroke close on its left
+  s = new DropSim(22); const g = new Uint8Array(W * H);
+  for (let y = 10; y < 90; y++) { for (let x = 40; x < 48; x++) g[y * W + x] = 255; for (let x = 62; x < 80; x++) g[y * W + x] = 255; }
+  const dr = sitting(55, 50); s.drops.push(dr); s.setInk(g, W, H, W, H, S);
+  run(s, 0.5, 0);
+  check('a drop flung onto other glass lands and stays (smaller, sitting)', s.drops.includes(dr) && !dr.dying && s.inkAt(dr.x, dr.y) > 0.9, JSON.stringify({ x: +dr.x.toFixed(1), y: +dr.y.toFixed(1), dying: dr.dying, r: +dr.r.toFixed(2) }));
+}
+// ---- water that is already there: a running drop follows it, and runs faster on it ----
+{
+  const dryRun = (wetX) => {
+    const t = make(23); const d2 = { x: 50, y: 25, r: S * 0.12, vy: 3, run: true, y0: 25, hang: 0, wait: 0, dying: false, fall: 0, age: 1, trail: [] }; t.drops.push(d2);
+    if (wetX != null) for (let y = 0; y < H; y++) for (let k = -1; k <= 1; k++) t.wet[y * W + wetX + k] = 1;      // a wet track beside it (the ink grid is 100 x 100 here)
+    for (let i = 0; i < 20; i++) { t.step(0.05, 0); t.wet[0] = t.wet[0]; if (d2.hang || d2.dying) break; }
+    return d2;
+  };
+  const noWet = dryRun(null), right = dryRun(56), left = dryRun(44);
+  check('with no water about a running drop runs straight (x unchanged)', Math.abs(noWet.x - 50) < 1e-9);
+  check('a drop drifts towards a wet track on its right', right.x > 50.3, `x ${right.x.toFixed(2)}`);
+  check('... and towards one on its left', left.x < 49.7, `x ${left.x.toFixed(2)}`);
+  const onWet = dryRun(50);                                                                          // a wet track right in its way
+  check('on wet glass a drop runs faster than on dry glass', onWet.y > noWet.y + 1, `${noWet.y.toFixed(1)} vs ${onWet.y.toFixed(1)}`);
+  const w = make(24); w.drops.push({ x: 50, y: 30, r: S * 0.14, vy: 4, run: true, y0: 30, hang: 0, wait: 0, dying: false, fall: 0, age: 1, trail: [] });
+  for (let i = 0; i < 10; i++) w.step(0.05, 0);
+  const wetSum = w.wet.reduce((a, b) => a + b, 0);
+  check('a running drop leaves water on the glass, which dries in a few seconds', wetSum > 0.5 && (() => { for (let i = 0; i < 100; i++) w.step(0.1, 0); return w.wet.reduce((a, b) => a + b, 0) < wetSum * 0.2; })(), `wet ${wetSum.toFixed(2)}`);
+}
+// ---- small beads left behind by a running drop ----
+{
+  let beads = 0;
+  for (let seed = 30; seed < 36; seed++) {
+    const t = make(seed); t.drops.push({ x: 50, y: 20, r: S * 0.15, vy: 4, run: true, y0: 20, hang: 0, wait: 0, dying: false, fall: 0, age: 1, trail: [] });
+    for (let i = 0; i < 40; i++) { t.step(0.05, 0); if (t.drops.length > 1 && t.drops.some((d) => !d.run && !d.dying && d.r < S * 0.05 && d.y < t.drops[0].y)) { beads++; break; } }
+  }
+  check('a running drop leaves small beads behind it (most runs show some)', beads >= 3, `${beads} of 6 runs`);
+}
+// ---- momentum when drops merge ----
+{
+  s = make(40); s.drops.push({ ...sitting(50, 40, 6) }, { x: 52, y: 41, r: 2, vy: 10, run: true, y0: 41, hang: 0, wait: 0, dying: false, fall: 0, age: 1, trail: [] });
+  s.step(0.001, 0);
+  const m = s.drops[0];
+  check('a fast little drop joining a big still one speeds it only a little (momentum is kept)', s.drops.length === 1 && m.vy > 0 && m.vy < 6, `vy ${m.vy.toFixed(2)}`);
+}
+// ---- the governor's limit ----
+{
+  const t = new DropSim(41); t.setInk(new Uint8Array(400 * 400).fill(255), 400, 400, 400, 400, 40); t.maxDrops = 20; run(t, 20, 1);
+  check('the number of drops respects the governor\'s limit (maxDrops)', t.drops.length <= 20, String(t.drops.length));
+}
 done();

@@ -127,12 +127,19 @@ export class SkyEngine {
     return P.locs[name];
   }
   _use(P) { this._ready(P); this.gl.useProgram(P.prog); this._cur = P; }
-  _1f(n, v) { this.gl.uniform1f(this._u(this._cur, n), v); }
-  _1i(n, v) { this.gl.uniform1i(this._u(this._cur, n), v); }
-  _2f(n, a, b) { this.gl.uniform2f(this._u(this._cur, n), a, b); }
-  _3f(n, v) { this.gl.uniform3f(this._u(this._cur, n), v[0], v[1], v[2]); }
-  _4f(n, a, b, c, d) { this.gl.uniform4f(this._u(this._cur, n), a, b, c, d); }
-  _m3(n, m) { this.gl.uniformMatrix3fv(this._u(this._cur, n), false, m); }
+  // Uniform setters. A program keeps its uniforms between draws, so a value that has not changed is not sent again: most of the hundreds of values set for a
+  // frame are the same as the last frame's, and on a slow machine each call across to the driver costs. (`vals` holds what each program was last given.)
+  _same(n, a) {
+    const P = this._cur, c = P.vals || (P.vals = {}), o = c[n];
+    if (o !== undefined) { let eq = o.length === a.length; for (let i = 0; eq && i < a.length; i++) if (o[i] !== a[i]) eq = false; if (eq) return true; }
+    c[n] = a; return false;
+  }
+  _1f(n, v) { if (!this._same(n, [v])) this.gl.uniform1f(this._u(this._cur, n), v); }
+  _1i(n, v) { if (!this._same(n, [v])) this.gl.uniform1i(this._u(this._cur, n), v); }
+  _2f(n, a, b) { if (!this._same(n, [a, b])) this.gl.uniform2f(this._u(this._cur, n), a, b); }
+  _3f(n, v) { if (!this._same(n, [v[0], v[1], v[2]])) this.gl.uniform3f(this._u(this._cur, n), v[0], v[1], v[2]); }
+  _4f(n, a, b, c, d) { if (!this._same(n, [a, b, c, d])) this.gl.uniform4f(this._u(this._cur, n), a, b, c, d); }
+  _m3(n, m) { if (!this._same(n, Array.from(m))) this.gl.uniformMatrix3fv(this._u(this._cur, n), false, m); }
 
   _target(w, h, internal, format, type, filter = this.gl.LINEAR, wrap = this.gl.CLAMP_TO_EDGE) {
     const gl = this.gl;
