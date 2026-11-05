@@ -28,8 +28,6 @@ export const NOISE_ATLAS = (() => {
 /** Range of the packed skyline heights (radians). */
 export const SKYLINE_PACK = { off: 1.5, range: 4.0 };
 
-const levelChain = NOISE_ATLAS.levels.slice(1).map(({ k, s, y }) => `  r = k > ${k - 0.5} ? vec2(${s}.0, ${y}.0) : r;`).join('\n');
-
 /** GLSL: the helpers. Included by every shader that needs one (after the float precision line). */
 export const PORTABLE = `
 const float HDR_LO = -30.0, HDR_HI = 6.0;
@@ -60,15 +58,23 @@ vec3 hdrDecode(vec4 t) {
   float p = P / 1023.0, q = Q / 1023.0;
   return s * vec3(p, max(1.0 - p - q, 0.0), q);
 }
+vec3 hdrRaw(vec4 t) {                                                    // the three numbers inside a packed texel: log brightness (12 bits), the two colour ratios (10 bits each)
+  vec4 b = floor(t * 255.0 + 0.5);
+  float Bh = floor(b.z / 16.0), Gh = floor(b.y / 4.0);
+  return vec3(b.w * 16.0 + Bh, (b.z - Bh * 16.0) * 64.0 + Gh, (b.y - Gh * 4.0) * 256.0 + b.x);
+}
+// The four neighbouring texels are blended as those numbers (brightness in the log, a geometric blend) and unpacked once: a quarter of the arithmetic of unpacking each.
 vec3 hdrTex(sampler2D s, vec2 uv, vec2 px) {
   vec2 p = uv * px - 0.5;
   vec2 i = floor(p), f = p - i;
   vec2 lo = clamp(i, vec2(0.0), px - 1.0), hi = clamp(i + 1.0, vec2(0.0), px - 1.0);
-  vec3 a = hdrDecode(texture(s, (lo + 0.5) / px));
-  vec3 b = hdrDecode(texture(s, (vec2(hi.x, lo.y) + 0.5) / px));
-  vec3 c = hdrDecode(texture(s, (vec2(lo.x, hi.y) + 0.5) / px));
-  vec3 d = hdrDecode(texture(s, (hi + 0.5) / px));
-  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  vec3 a = hdrRaw(texture(s, (lo + 0.5) / px));
+  vec3 b = hdrRaw(texture(s, (vec2(hi.x, lo.y) + 0.5) / px));
+  vec3 c = hdrRaw(texture(s, (vec2(lo.x, hi.y) + 0.5) / px));
+  vec3 d = hdrRaw(texture(s, (hi + 0.5) / px));
+  vec3 m = mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  float S = exp2(HDR_LO + (HDR_HI - HDR_LO) * m.x / 4095.0), pp = m.y / 1023.0, qq = m.z / 1023.0;
+  return S * vec3(pp, max(1.0 - pp - qq, 0.0), qq);
 }
 // ---- the exposure: one texel, the log adaptation luminance in three bytes ----
 vec4 adaptPack(float a, float target) {
@@ -81,10 +87,9 @@ float adaptLog(sampler2D s) {
   return (b.x * 65536.0 + b.y * 256.0 + b.z) / 16777215.0 * 64.0 - 32.0;
 }
 // ---- the noise: its mip levels in one texture ----
-vec2 noiseLevel(float k) {
-  vec2 r = vec2(${NOISE_SIZE}.0, 0.0);
-${levelChain}
-  return r;
+vec2 noiseLevel(float k) {                                              // size and first row of level k: closed forms, rounded (exp2 on a small GPU is not exact)
+  float e = exp2(-k);
+  return vec2(floor(256.0 * e + 0.5), floor(512.0 * (1.0 - e) + 2.0 * k + 0.5));
 }
 vec4 noiseTap(sampler2D s, vec2 uv, float k) {
   vec2 lv = noiseLevel(k);
@@ -111,9 +116,11 @@ vec3 skylineAt(sampler2D s, float u) {
 }
 // ---- a whole texel by its position (the texture is NEAREST filtered and has no mip levels) ----
 vec4 texel(sampler2D s, vec2 ij, vec2 size) { return texture(s, (floor(ij) + 0.5) / size); }
+vec3 hdrFetch(sampler2D s, vec2 uv) { return hdrDecode(texture(s, uv)); }                    // one packed texel, not blended (the texture is NEAREST filtered)
 vec4 texel0(sampler2D s, vec2 ij, vec2 size, float rho) { return texture(s, (floor(ij) + 0.5) / size); }       // (the texture has no mip levels here, so no level is chosen)
 #else
 vec4 hdrPack(vec3 c) { return vec4(c, 1.0); }
+vec3 hdrFetch(sampler2D s, vec2 uv) { return texture(s, uv).rgb; }
 vec3 hdrTex(sampler2D s, vec2 uv, vec2 px) { return texture(s, uv).rgb; }
 vec4 adaptPack(float a, float target) { return vec4(a, target, 0.0, 1.0); }
 float adaptLog(sampler2D s) { return texelFetch(s, ivec2(0), 0).r; }
@@ -125,35 +132,55 @@ vec4 texel0(sampler2D s, vec2 ij, vec2 size, float rho) { return texelFetch(s, i
 `;
 
 /**
- * GLSL: reading the glass mask at a chosen detail level (maskLod). On ES 3 the mask's own mip chain; on ES 2 level 0 is the mask and levels 1 to 7 are stacked in `uMaskMips`
- * (engine.js `_maskMips`), each with a border of its own edge texels; `uMaskLvK` = width, height, first row of level K.
+ * GLSL: reading a texture at a chosen detail level where the shader cannot (OpenGL ES 2). `name` is 'mask' or 'scene', `base` the level-0 sampler.
+ * On ES 3 the texture's own mip chain: the "level" is just a float. On ES 2 level 0 is `base` and levels 1 to 7 are stacked in one texture, `u<Name>Mips`, each with a border of
+ * its own edge texels (engine.js `_mipAtlas`); `u<Name>LvK` = width, height, first row of level K. A level (two neighbouring ones and a weight) is worked out ONCE for a
+ * given detail (`<name>Lv(lod)`; the details the glass pass uses are the same for every pixel) and then each read (`<name>At(uv, lv)`) is two texture reads and almost no arithmetic.
  */
-export const MASK_LOD = `
-uniform sampler2D uMask;
+export const mipAtlasGlsl = (name, base) => {
+  const N = name[0].toUpperCase() + name.slice(1), A = `u${N}Mips`;
+  return `
+uniform sampler2D ${base};
 #ifdef WOBBLY_ES2
-uniform sampler2D uMaskMips;
-uniform vec2 uMaskAtlasPx;
-uniform vec4 uMaskLv1, uMaskLv2, uMaskLv3, uMaskLv4, uMaskLv5, uMaskLv6, uMaskLv7;
-vec4 maskTap(float k, vec2 uv) {
-  if (k < 0.5) return texture(uMask, uv);
-  vec4 L = uMaskLv1;
-  if (k > 1.5) L = uMaskLv2;
-  if (k > 2.5) L = uMaskLv3;
-  if (k > 3.5) L = uMaskLv4;
-  if (k > 4.5) L = uMaskLv5;
-  if (k > 5.5) L = uMaskLv6;
-  if (k > 6.5) L = uMaskLv7;
-  return texture(uMaskMips, vec2(1.0 + clamp(uv.x, 0.0, 1.0) * L.x, L.z + 1.0 + clamp(uv.y, 0.0, 1.0) * L.y) / uMaskAtlasPx);
+uniform sampler2D ${A};
+uniform vec2 ${A}Px;
+uniform vec4 u${N}Lv1, u${N}Lv2, u${N}Lv3, u${N}Lv4, u${N}Lv5, u${N}Lv6, u${N}Lv7;
+struct ${N}Lv { vec4 a; vec4 b; float w; };
+vec4 ${name}Geom(float k) {
+  vec4 L = vec4(0.0);
+  if (k > 0.5) L = u${N}Lv1;
+  if (k > 1.5) L = u${N}Lv2;
+  if (k > 2.5) L = u${N}Lv3;
+  if (k > 3.5) L = u${N}Lv4;
+  if (k > 4.5) L = u${N}Lv5;
+  if (k > 5.5) L = u${N}Lv6;
+  if (k > 6.5) L = u${N}Lv7;
+  return L;
 }
-vec4 maskLod(vec2 uv, float lod) {
+${N}Lv ${name}Lv(float lod) {
   lod = clamp(lod, 0.0, 7.0);
   float l0 = floor(lod);
-  return mix(maskTap(l0, uv), maskTap(min(l0 + 1.0, 7.0), uv), lod - l0);
+  ${N}Lv r;
+  r.a = ${name}Geom(l0); r.b = ${name}Geom(min(l0 + 1.0, 7.0)); r.w = lod - l0;
+  return r;
 }
+vec4 ${name}Tap(vec4 g, vec2 uv) { return texture(${A}, vec2(1.0 + clamp(uv.x, 0.0, 1.0) * g.x, g.z + 1.0 + clamp(uv.y, 0.0, 1.0) * g.y) / ${A}Px); }
+vec4 ${name}At(vec2 uv, ${N}Lv v) {
+  vec4 a = texture(${base}, uv);
+  if (v.a.x > 0.5) a = ${name}Tap(v.a, uv);
+  return mix(a, ${name}Tap(v.b, uv), v.w);
+}
+vec4 ${name}At0(vec2 uv) { return texture(${base}, uv); }
 #else
-vec4 maskLod(vec2 uv, float lod) { return textureLod(uMask, uv, lod); }
+struct ${N}Lv { float lod; };
+${N}Lv ${name}Lv(float lod) { return ${N}Lv(lod); }
+vec4 ${name}At(vec2 uv, ${N}Lv v) { return textureLod(${base}, uv, v.lod); }
+vec4 ${name}At0(vec2 uv) { return textureLod(${base}, uv, 0.0); }
 #endif
 `;
+};
+export const MASK_LOD = mipAtlasGlsl('mask', 'uMask');
+export const SCENE_LOD = mipAtlasGlsl('scene', 'uTex');
 
 /** The packed skyline texture (2 rows x BINS, RGBA8) from the engine's floats (4 per bin: near, mid, far ridge, unused). */
 export function packSkyline(data, bins = SKYLINE_BINS) {

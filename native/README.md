@@ -65,6 +65,24 @@ drawn as six vertices each instead of instances. The program tries ES 3, then ES
 (llvmpipe, on the CPU; `--software` forces it); `--es2` takes the ES 2 path on any GPU, which is how CI checks that it draws what the ES 3 path draws (mean difference under 1 of 255).
 The quality governor (`../js/sky/governor.js`) lowers the picture's size and detail until frames come at 15 per second or better. **Not verified on a real Pi:** speed, the drivers, the framebuffer, a real panel.
 
+## How the shaders are organised (where to change the sky, the weather, the ground, the glass)
+
+A small GPU has to hold a whole shader at once, and the Pi Zero's cannot hold one with all of the sky, the ground and the weather in it (it runs out of registers and draws
+nothing). So the picture is made by several small programs, each with only what it needs (`../js/sky/glsl-*.js`):
+
+| Program | Draws | Change this to change |
+|---|---|---|
+| `FRAG_SCENE_SKY` | every pixel that is not wholly ground: sky colour, sun, moon, Milky Way, the three cloud layers, fog, the falling rain or snow | `SCENE_SKY` (clouds, sun, moon), `finish()` (rain and snow streaks, tonemap) |
+| `FRAG_SCENE_TERRAIN` | the ground, water and city layers, blended over the sky by how much of each pixel is ground | `SCENE_TERRAIN` (ground, sea, ridges, city lights) |
+| both | what they share: direction, exposure, skyline, light reaching the ground | `SCENE_HEAD`, `SCENE_SETUP` |
+| stars, plants | point sprites and billboards, in their own programs | `glsl-scene.js` (stars), `glsl-plants.js` |
+| `fragBlit('off' / 'ink' / 'glass')` | the final pass: a plain copy, the LED panel's flat ink, or the Liquid Glass digits (with snow, rain drops and the readability outline) | `bodyGlass()`, `bodyInk()` |
+| `glsl-mask.js` | the digits' strokes, lights and raindrops, into the glass mask | |
+
+Anything that a program needs that an OpenGL ES 2 GPU does not have goes through a helper in `../js/sky/portable.js` (packed tables, mip levels, ridge heights); the
+shaders are written once, in GLSL ES 3, and translated to GLSL ES 1.00 when they are loaded. If a Pi Zero's driver ever again prints that it could not fit a shader into
+its registers, the shader that was drawn when it happened is too big: split it the same way, or move work that is the same for every pixel out of it.
+
 ## Builds, releases and CI
 
 * `cargo test` in `native/` runs the settings, panel-mapping and gamma tests. The program builds for the Pi Zero/1 (ARMv6, `arm-unknown-linux-gnueabihf`,

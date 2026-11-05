@@ -132,8 +132,8 @@ out('--- the engine\'s real shaders: the OpenGL ES 2 form (GLSL ES 1.00), compil
   const { toES1 } = await import('js/sky/portable.js');
   const pairs = [
     ['transmittance', A.VERT_FULLSCREEN, A.FRAG_TRANSMITTANCE], ['multiscatter', A.VERT_FULLSCREEN, A.FRAG_MULTISCATTER], ['skyview', A.VERT_FULLSCREEN, A.FRAG_SKYVIEW],
-    ['noise (mips)', S.VERT_FULLSCREEN, S.FRAG_NOISE_DOWN], ['mip atlas', S.VERT_FULLSCREEN, S.FRAG_ATLAS_PLACE], ['exposure', S.VERT_FULLSCREEN, S.FRAG_ADAPT],
-    ['scene (sky, ground, clouds)', S.VERT_FULLSCREEN, S.FRAG_SCENE], ['glass and final picture', S.VERT_FULLSCREEN, S.FRAG_BLIT],
+    ['noise (mips)', S.VERT_FULLSCREEN, S.FRAG_NOISE_DOWN], ['mip atlas', S.VERT_FULLSCREEN, S.FRAG_ATLAS_PLACE], ['exposure', S.VERT_FULLSCREEN, S.FRAG_ADAPT], ['per-frame light', S.VERT_FULLSCREEN, S.FRAG_CONSTS],
+    ['scene: sky, sun and moon', S.VERT_FULLSCREEN, S.FRAG_SCENE_SKY], ['scene: a cloud layer', S.VERT_FULLSCREEN, S.FRAG_SCENE_CLOUD], ['scene: fog', S.VERT_FULLSCREEN, S.FRAG_SCENE_FOG], ['scene: ground and water', S.VERT_FULLSCREEN, S.FRAG_SCENE_TERRAIN], ['final picture: plain', S.VERT_FULLSCREEN, S.fragBlit('off')], ['final picture: LED ink', S.VERT_FULLSCREEN, S.fragBlit('ink')], ['final picture: glass', S.VERT_FULLSCREEN, S.fragBlit('glass')], ['glass body', S.VERT_FULLSCREEN, S.fragBlit('gbody')], ['glass weather', S.VERT_FULLSCREEN, S.fragBlit('gwx')], ['glass outline', S.VERT_FULLSCREEN, S.fragBlit('gout')],
     ['stars', S.VERT_STARS, S.FRAG_STARS], ['plants', P.VERT_PLANTS, P.FRAG_PLANTS],
     ['LED panel', S.VERT_FULLSCREEN, S.FRAG_LED], ['LED stars', S.VERT_FULLSCREEN, S.FRAG_LED_PEAK], ['LED averages', S.VERT_FULLSCREEN, S.FRAG_LED_AVG],
     ['glass strokes', M.VERT_STROKE, M.FRAG_STROKE], ['glass lights', M.VERT_LIGHT, M.FRAG_LIGHT], ['raindrops', M.VERT_DROP, M.FRAG_DROP], ['rain trails', M.VERT_TRAIL, M.FRAG_TRAIL],
@@ -214,7 +214,9 @@ void main() {
   let worst = 0;
   for (let i = 0; i < 8; i++) {                                                // pixel i reads at u = (i + 0.5) / 8
     const x = (i + 0.5) / 8 * 4 - 0.5, fl = Math.floor(x), i0 = Math.min(3, Math.max(0, fl)), i1 = Math.min(3, Math.max(0, fl + 1)), f = x - fl;
-    const want = vals[i0].map((v, k) => v + (vals[i1][k] - v) * f), dec = unpack(Array.from(got.slice(i * 4, i * 4 + 4)));
+    const raw = (c) => { const b = pack(c), Bh = Math.floor(b[2] / 16), Gh = Math.floor(b[1] / 4); return [b[3] * 16 + Bh, (b[2] - Bh * 16) * 64 + Gh, (b[1] - Gh * 4) * 256 + b[0]]; };     // log brightness and the two colour ratios, blended as such (portable.js hdrTex)
+    const r0 = raw(vals[i0]), r1 = raw(vals[i1]), rm = r0.map((v, k) => v + (r1[k] - v) * f), Sm = 2 ** (LO + (HI - LO) * rm[0] / 4095), pm = rm[1] / 1023, qm = rm[2] / 1023;
+    const want = [Sm * pm, Sm * Math.max(1 - pm - qm, 0), Sm * qm], dec = unpack(Array.from(got.slice(i * 4, i * 4 + 4)));
     worst = Math.max(worst, ...dec.map((v, k) => Math.abs(v - want[k]) / want[k]));
     if (i < 3) out('  hdrTex at u=' + ((i + 0.5) / 8).toFixed(4) + ' = ' + dec.map((v) => v.toPrecision(3)).join(' ') + ' (here: ' + want.map((v) => v.toPrecision(3)).join(' ') + ')');
   }

@@ -9,12 +9,13 @@
 //        10 Christmas tree (lit, may float on the sea), 11 its reflection in the water
 
 import { ATMOS_COMMON } from './glsl-atmosphere.js';
-import { SKY_LOOKUP, DISPLAY_FNS } from './glsl-scene.js';
+import { SKY_LOOKUP, DISPLAY_FNS, CONSTS_LOOKUP } from './glsl-scene.js';
 
 export const VERT_PLANTS = `#version 300 es
 ${ATMOS_COMMON}
 ${SKY_LOOKUP}
 ${DISPLAY_FNS}
+${CONSTS_LOOKUP}
 in vec4 aInst;        // x east (m), z north (m), height (m), type
 in vec2 aSeed;        // random 0..1, variant 0..1
 uniform sampler2D uAdapt;
@@ -102,14 +103,9 @@ void main() {
   vSeed = aSeed;
 
   // light arriving at the plant, in cd/m^2-per-steradian-ish units like the terrain uses
-  vec3 sunUpDir = normalize(vec3(uSunA.x * 0.866, 0.5, uSunA.y * 0.866));
-  vec3 zen = skyLum(vec3(0.0, 1.0, 0.0));
-  vAmbL = PI * (0.7 * zen + 0.3 * skyLum(sunUpDir));
-  float rs = BOT + uCamH, mus = sin(uSunA.z), rm = BOT + uCamH, mum = sin(uMoonA.z);
-  vec3 moonI = transmittance(rm, mum) * earthShadow(rm, mum) * uMoonA.w;
-  vSunL = transmittance(rs, mus) * earthShadow(rs, mus) * uSunA.w + moonI * 0.0;
-  vSunL += moonI;                                       // moonlight picks out plants at night
-  vHaze = skyLum(normalize(vec3(dh.x, 0.012, dh.z)));
+  vAmbL = constAt(1.0);                                 // (worked out once a frame, not at every vertex: FRAG_CONSTS)
+  vSunL = constAt(2.0) + constAt(3.0);                  // moonlight picks out plants at night
+  vHaze = hazeAt(atan(dh.x, dh.z));
   vec3 sc = transpose(uCam) * uSunDir;                  // sun in camera space: x across the screen, z in front
   vSunSide = sc.xz;
   vFog = 1.0 - exp(-dist * uFogDens);

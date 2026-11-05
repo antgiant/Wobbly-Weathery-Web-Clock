@@ -7,7 +7,7 @@
 // physically (limiting magnitude, scotopic shift, moonlight ...).
 
 import { ATMOS_COMMON, VERT_FULLSCREEN } from './glsl-atmosphere.js';
-import { PORTABLE, MASK_LOD } from './portable.js';
+import { PORTABLE, MASK_LOD, SCENE_LOD } from './portable.js';
 
 // ---------------------------------------------------------------- shared ---
 // Sky radiance lookup used by the composite, the star vertex shader and the
@@ -47,6 +47,11 @@ vec3 skyLum(vec3 d) {
   return L;
 }
 float lumaOf(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+vec3 sunTransAt(float h, float elev) {            // sunlight reaching height h above the camera
+  float r = BOT + uCamH + h;
+  float mu = sin(elev);
+  return transmittance(r, mu) * earthShadow(r, mu);
+}
 `;
 
 
@@ -80,6 +85,43 @@ vec3 toDisplay(vec3 L, float expo, vec3 addRel) {
   return srgb(mix(toe, tm, smoothstep(0.02, 0.25, x)));
 }
 `;
+
+// ------------------------------------------------- per-frame constants ---
+// Values that are the same for every pixel (or depend only on the compass direction) are worked out once a frame in a tiny pass, FRAG_CONSTS, instead of at every pixel:
+// texel 0 the zenith light, 1 the ambient light on the ground, 2 the sunlight reaching it, 3 the moonlight; then HAZE_N texels, one per compass direction, of the sky's colour
+// just above the horizon (the haze that distant things fade into). Read by the scene programs and the plants.
+export const CONSTS_N = 4, HAZE_N = 512;
+export const CONSTS_LOOKUP = `
+uniform sampler2D uConsts;
+const float CONSTS_W = ${CONSTS_N + HAZE_N}.0;
+const float CONSTS_SCALE = 16384.0;                // (these are absolute luminances, up to tens of thousands of cd/m^2: packed as value / CONSTS_SCALE, which is what the 8-bit packing's range holds)
+vec3 constAt(float i) { return hdrFetch(uConsts, vec2((i + 0.5) / CONSTS_W, 0.5)) * CONSTS_SCALE; }
+vec3 hazeAt(float az) {                            // az: compass direction as atan(x, z), -PI..PI
+  float x = (az + PI) / (2.0 * PI) * ${HAZE_N}.0 - 0.5;
+  float i = floor(x), f = x - i;
+  return mix(constAt(${CONSTS_N}.0 + mod(i + ${HAZE_N}.0, ${HAZE_N}.0)), constAt(${CONSTS_N}.0 + mod(i + 1.0 + ${HAZE_N}.0, ${HAZE_N}.0)), f);
+}
+`;
+export const FRAG_CONSTS = `#version 300 es
+${ATMOS_COMMON}
+${SKY_LOOKUP}
+const float CONSTS_SCALE = 16384.0;                // (see constAt)
+out vec4 oColor;
+void main() {
+  float i = floor(gl_FragCoord.x);
+  vec3 v;
+  if (i >= ${CONSTS_N}.0) {
+    float a = ((i - ${CONSTS_N}.0 + 0.5) / ${HAZE_N}.0) * 2.0 * PI - PI;
+    v = skyLum(normalize(vec3(sin(a), 0.012, cos(a))));
+  } else {
+    vec3 zen = skyLum(vec3(0.0, 1.0, 0.0));
+    if (i < 0.5) v = zen;
+    else if (i < 1.5) v = PI * (0.7 * zen + 0.3 * skyLum(normalize(vec3(uSunA.x * 0.866, 0.5, uSunA.y * 0.866))));
+    else if (i < 2.5) v = sunTransAt(0.0, uSunA.z) * uSunA.w;
+    else v = sunTransAt(0.0, uMoonA.z) * uMoonA.w;
+  }
+  oColor = hdrPack(v / CONSTS_SCALE);
+}`;
 
 // ----------------------------------------------------------------- noise ---
 // (The noise is made here with integer arithmetic, which an OpenGL ES 2 GPU lacks: it loads the same picture from data/noise.bin, made by tools/make-noise.mjs.)
@@ -267,11 +309,11 @@ void main() {
 //                   varying colours (placed by glass.js) glow through the glass, no lines on it
 //   LED panel     - the whole picture sampled onto a 64x32 (or 32x64) grid of square
 //                   pixels with black lines between them
-export const FRAG_BLIT = `#version 300 es
+const BLIT_SOURCE = `
 precision highp float;
 ${PORTABLE}
 ${MASK_LOD}
-uniform sampler2D uTex;
+${SCENE_LOD}
 uniform float uTexW;       // width of uTex in texels
 uniform vec4 uGlass;       // x frost 0..1, y mode (0 off, 1 liquid, 2 stained, 3 LED), z stroke width (canvas px), w time
 uniform vec4 uMaskRect;    // clock bounding box in canvas uv, y down: x, y, w, h
@@ -288,6 +330,7 @@ uniform float uContrast;   // strength of the readability outline and tone, 0 of
 uniform vec4 uWx;          // weather on the digits: x snow settled on them 0..1, y rain on the glass 0..1, w time in seconds
 uniform sampler2D uDrops;  // raindrops from drops.js, in the mask's place: r dark rim, g glint, b water
 uniform float uDropsOn;
+uniform sampler2D uPrev;   // the previous of the glass's passes (ES 2 runs the glass as body, weather and outline)
 in vec2 vUv;
 out vec4 oColor;
 
@@ -298,33 +341,11 @@ float hash21(vec2 p) {
 }
 vec2 hash22(vec2 p) { return vec2(hash21(p), hash21(p + 17.31)); }
 
-float maskAt(vec2 uv, float lod) {
-  vec2 m = (vec2(uv.x, 1.0 - uv.y) - uMaskRect.xy) / uMaskRect.zw;
-  return maskLod(m, lod).a;
-}
+vec2 maskUv(vec2 uv) { return (vec2(uv.x, 1.0 - uv.y) - uMaskRect.xy) / uMaskRect.zw; }
+float maskA(vec2 uv, MaskLv v) { return maskAt(maskUv(uv), v).a; }       // the mask's coverage at a detail level (worked out once: maskLv)
+float maskA0(vec2 uv) { return maskAt0(maskUv(uv)).a; }
 float lumaOf(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
-#ifdef WOBBLY_ES2
-// An ES 2 GPU cannot pick a detail level in a shader, and a bias on its own choice goes wrong where the position moves unevenly from pixel to pixel (the glass bends it).
-// So the scene's mip levels are separate textures (engine.js makes them) and two of them are blended here.
-uniform sampler2D uMip1, uMip2, uMip3, uMip4, uMip5, uMip6, uMip7;
-vec3 sceneLvl(float k, vec2 uv) {
-  if (k < 0.5) return texture(uTex, uv).rgb;
-  if (k < 1.5) return texture(uMip1, uv).rgb;
-  if (k < 2.5) return texture(uMip2, uv).rgb;
-  if (k < 3.5) return texture(uMip3, uv).rgb;
-  if (k < 4.5) return texture(uMip4, uv).rgb;
-  if (k < 5.5) return texture(uMip5, uv).rgb;
-  if (k < 6.5) return texture(uMip6, uv).rgb;
-  return texture(uMip7, uv).rgb;
-}
-vec3 sceneAt(vec2 uv, float lod) {
-  lod = clamp(lod, 0.0, 7.0);
-  float l0 = floor(lod);
-  return mix(sceneLvl(l0, uv), sceneLvl(min(l0 + 1.0, 7.0), uv), lod - l0);
-}
-#else
-vec3 sceneAt(vec2 uv, float lod) { return textureLod(uTex, uv, lod).rgb; }
-#endif
+vec3 sceneAtL(vec2 uv, SceneLv v) { return sceneAt(uv, v).rgb; }
 
 float linLum(vec3 c) { return dot(pow(max(c, 0.0), vec3(2.2)), vec3(0.2126, 0.7152, 0.0722)); }
 
@@ -344,12 +365,12 @@ vec3 withOutline(vec3 outside, vec3 inside, float cover) {
   float t = max(uGlass.z * 0.085, 1.6);                    // outline width in canvas px: about 8% of the stroke
   if (cell > 0.0) t = max(t, cell);                        // on the LED panel never thinner than one LED
   float maskScale = uMaskPx.x / (uMaskRect.z * uRes.x);
-  float m0 = maskAt(vUv, 0.0);
-  float mw = maskAt(vUv, max(log2(t * maskScale), 0.0));
+  float m0 = maskA0(vUv);
+  float mw = maskA(vUv, maskLv(max(log2(t * maskScale), 0.0)));
   float inner = m0 * (1.0 - smoothstep(0.55, 0.92, mw));   // inside the glyph, near its edge
   float outer = (1.0 - m0) * smoothstep(0.06, 0.5, mw);    // outside it, near its edge
   float texScale = uTexW / uRes.x;
-  float Lb = linLum(sceneAt(vUv, max(log2(max(uGlass.z * 0.15, t) * texScale), 0.0)));
+  float Lb = linLum(sceneAtL(vUv, sceneLv(max(log2(max(uGlass.z * 0.15, t) * texScale), 0.0))));
   float pol = smoothstep(0.10, 0.26, Lb);                  // 1: bright sky behind, dark outline
   vec3 oc = mix(vec3(0.98, 0.98, 1.0), vec3(0.012), pol);
   vec3 o = mix(outside, oc, outer * k * 0.85);
@@ -359,7 +380,7 @@ vec3 withOutline(vec3 outside, vec3 inside, float cover) {
 
 // gentle, spatially smooth tone for the body of the glass
 vec3 bodyTone(vec3 c, float stroke) {
-  float Lbig = linLum(sceneAt(vUv, max(log2(stroke * 2.5 * uTexW / uRes.x), 0.0)));
+  float Lbig = linLum(sceneAtL(vUv, sceneLv(max(log2(stroke * 2.5 * uTexW / uRes.x), 0.0))));
   float dark = smoothstep(0.22, 0.6, Lbig), light = 1.0 - smoothstep(0.03, 0.14, Lbig);
   c *= 1.0 - 0.38 * dark * uContrast;
   return mix(c, vec3(1.0), 0.22 * light * uContrast);
@@ -380,7 +401,7 @@ float snowCap(float stroke, float amount) {
   float cap = 0.0;
   for (int k = 1; k <= 6; k++) {
     float f = float(k) / 6.0;
-    float m = maskAt(vUv + vec2(0.0, depth * f / uRes.y), 0.0);
+    float m = maskA0(vUv + vec2(0.0, depth * f / uRes.y));
     cap = max(cap, (1.0 - smoothstep(0.2, 0.8, m)) * (1.0 - 0.5 * f));
   }
   return cap;
@@ -437,8 +458,8 @@ vec3 rainOn(vec3 col, vec4 b, vec3 lightCol, vec3 skyHere) {
 float splash(float stroke, float rate) {
   if (rate < 0.02) return 0.0;
   float r = stroke * 0.12;
-  float above = 1.0 - smoothstep(0.1, 0.4, maskAt(vUv, 0.0));
-  float below = maskAt(vUv - vec2(0.0, r * 0.7 / uRes.y), 0.0);
+  float above = 1.0 - smoothstep(0.1, 0.4, maskA0(vUv));
+  float below = maskA0(vUv - vec2(0.0, r * 0.7 / uRes.y));
   float edge = above * smoothstep(0.5, 0.95, below);
   if (edge < 0.01) return 0.0;
   float cx = floor(gl_FragCoord.x / (stroke * 0.18));
@@ -447,50 +468,56 @@ float splash(float stroke, float rate) {
   return edge * on * (0.6 + 0.4 * hash21(vec2(cx, tt + 9.0)));
 }
 
-void body() {
+// The final pass is built in three forms, so that a GPU only has to hold the one in use: no clock glass (a plain copy), the flat ink of the LED panel's solid style,
+// and glass (liquid or stained).
+void bodyOff() { oColor = vec4(texture(uTex, vUv).rgb, 1.0); }
+
+void bodyInk() {                                             // flat ink: the LED panel has no glass here, but the digits still need drawing
   vec3 base = texture(uTex, vUv).rgb;
-  float mode = uGlass.y;
-  if (mode < 0.5) { oColor = vec4(base, 1.0); return; }
-  if (mode > 2.5) {                                          // flat ink: the LED panel has no glass here, but the digits still need drawing
-    float cv = smoothstep(0.1, 0.9, maskAt(vUv, 0.0));
+  {
+    float cv = smoothstep(0.1, 0.9, maskA0(vUv));
     vec3 ink = uInk, bs = base;
     float stk = uGlass.z;
     if (cv > 0.02 && uWx.x > 0.01) ink = snowOn(ink, snowCap(stk, uWx.x), base);
     if (uWx.y > 0.01 && stk > 0.0) {
       if (cv > 0.02) {
         if (uDropsOn > 0.5) { vec4 dr = texture(uDrops, (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw); ink = rainOn(ink, vec4(dr.r * 0.7, dr.g * 0.8, dr.b, 0.0), uLightCol, base); }
+#ifndef WOBBLY_ES2
         else ink = rainOn(ink, rainBeads(stk, uWx.y) * vec4(0.7, 0.8, 0.0, 0.8), uLightCol, base);
+#endif
       }
       bs += splash(stk, uWx.y) * vec3(0.8, 0.9, 1.0) * 0.55;
     }
     oColor = vec4(withOutline(bs, mix(bs, ink, cv), cv), 1.0);
-    return;
   }
+}
 
+void bodyGlass() {
+  vec3 base = texture(uTex, vUv).rgb;
+  float mode = uGlass.y;
   vec2 px = 1.0 / uRes;
   float stroke = uGlass.z;                                  // canvas px
   float maskScale = uMaskPx.x / (uMaskRect.z * uRes.x);     // mask texels per canvas px
   float lodH = max(log2(stroke * 0.30 * maskScale), 0.0);
-  float lodS = max(log2(stroke * 0.9 * maskScale), 0.0);
-  float lodG = max(log2(stroke * 1.5 * maskScale), 0.0);
+  MaskLv lvH = maskLv(lodH), lvS = maskLv(max(log2(stroke * 0.9 * maskScale), 0.0)), lvG = maskLv(max(log2(stroke * 1.5 * maskScale), 0.0));
   float glow = uGlow.x;
   bool stained = mode > 1.5;
 
   // soft shadow of the glass cast on the sky, away from the light
   vec2 sh = vUv - uLight.xy * stroke * 0.22 * px;
-  float shadow = maskAt(sh, lodS) * (0.10 + 0.20 * uLight.z) * (1.0 - 0.7 * glow);
+  float shadow = maskA(sh, lvS) * (0.10 + 0.20 * uLight.z) * (1.0 - 0.7 * glow);
 
-  float cover = maskAt(vUv, 0.0);
-  float wide = maskAt(vUv, lodS);
-  float halo = glow > 0.002 ? maskAt(vUv, lodG) : 0.0;     // light spilling out of the glass onto the sky
+  float cover = maskA0(vUv);
+  float wide = maskA(vUv, lvS);
+  float halo = glow > 0.002 ? maskA(vUv, lvG) : 0.0;     // light spilling out of the glass onto the sky
   if (cover < 0.004 && wide < 0.004 && shadow < 0.004 && halo * glow < 0.004) { oColor = vec4(base, 1.0); return; }
 
   // height field = blurred coverage; gradient = bevel
   float d = stroke * 0.22;
   vec2 dx = vec2(d * px.x, 0.0), dy = vec2(0.0, d * px.y);
-  float h  = maskAt(vUv, lodH);
-  float gx = maskAt(vUv + dx, lodH) - maskAt(vUv - dx, lodH);
-  float gy = maskAt(vUv + dy, lodH) - maskAt(vUv - dy, lodH);
+  float h  = maskA(vUv, lvH);
+  float gx = maskA(vUv + dx, lvH) - maskA(vUv - dx, lvH);
+  float gy = maskA(vUv + dy, lvH) - maskA(vUv - dy, lvH);
   vec2 g = vec2(gx, gy);
   vec3 n = normalize(vec3(-g * 2.4, 1.0));
   float slope = length(g);
@@ -509,20 +536,20 @@ void body() {
   vec3 emit = uGlowCol;
   if (stained) {
     vec2 mUv = (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw;
-    vec4 mk = maskLod(mUv, lodH * 0.5);                      // a little blur: glass spreads the light
+    vec4 mk = maskAt(mUv, maskLv(lodH * 0.5));                      // a little blur: glass spreads the light
     emit = min(mk.rgb / max(mk.a, 0.05), vec3(1.3));
   }
 
   // ---- liquid glass (stained glass is the same glass with a colour in it) ----
   vec2 off = n.xy * stroke * (0.9 + 0.8 * h) * px;                    // lens-like displacement
-  float lodF = frost * 6.0;
+  SceneLv lvF = sceneLv(frost * 6.0);
   vec3 c;
   float disp = (1.0 - frost) * 0.10 + 0.015;
-  c.r = sceneAt(vUv + off * (1.0 + disp), lodF).r;
-  c.g = sceneAt(vUv + off, lodF).g;
-  c.b = sceneAt(vUv + off * (1.0 - disp), lodF).b;
+  c.r = sceneAtL(vUv + off * (1.0 + disp), lvF).r;
+  c.g = sceneAtL(vUv + off, lvF).g;
+  c.b = sceneAtL(vUv + off * (1.0 - disp), lvF).b;
   // frost: diffuse towards the local average sky colour and go milky; clear glass stays clear
-  vec3 avg = sceneAt(vUv, 6.5);
+  vec3 avg = sceneAtL(vUv, sceneLv(6.5));
   c = mix(c, mix(avg, c, 0.5), frost * 0.6);
   float lum = lumaOf(c);
   c = mix(c, vec3(lum), 0.12 * frost);
@@ -546,37 +573,82 @@ void body() {
   c += uLightCol * rim * 0.05;
   c += uLightCol * exp(-pow((h - 0.62) * 5.0, 2.0)) * spec * 0.35 * (1.0 - frost);
   vec3 glass = min(c, vec3(1.6));
+#ifndef BLIT_GBODY
   if (cover > 0.02) {                                                  // snow and rain on the digits
     if (uWx.x > 0.01) glass = snowOn(glass, snowCap(stroke, uWx.x), base);
     if (uWx.y > 0.01) {
       if (uDropsOn > 0.5) {                                              // drops that run, merge and are shed with the digit (drops.js)
         vec4 dr = texture(uDrops, (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw);
-        glass = rainOn(glass, vec4(dr.r, dr.g, dr.b, 0.0), uLightCol, sceneAt(vUv + vec2(0.0, stroke * 0.3) * px, 1.0));       // (a drop shows the sky upside down and shifted)
-      } else glass = rainOn(glass, rainBeads(stroke, uWx.y), uLightCol, sceneAt(vUv - (gl_FragCoord.xy / (stroke * 0.42) - floor(gl_FragCoord.xy / (stroke * 0.42)) - 0.5) * (stroke * 0.42) * px * 1.4, 1.0));
+        glass = rainOn(glass, vec4(dr.r, dr.g, dr.b, 0.0), uLightCol, sceneAtL(vUv + vec2(0.0, stroke * 0.3) * px, sceneLv(1.0)));       // (a drop shows the sky upside down and shifted)
+      }
+#ifndef WOBBLY_ES2
+      else glass = rainOn(glass, rainBeads(stroke, uWx.y), uLightCol, sceneAtL(vUv - (gl_FragCoord.xy / (stroke * 0.42) - floor(gl_FragCoord.xy / (stroke * 0.42)) - 0.5) * (stroke * 0.42) * px * 1.4, sceneLv(1.0)));
+#endif
     }
   }
+#endif
 
   // halo on the sky around lit glass
   vec3 shaded = base * (1.0 - shadow * (1.0 - cover));
   vec3 haloCol = uGlowCol;
   float haloK = 0.30;
   if (stained) {                                                      // the tube's lights colour the air around it
-    vec4 hm = maskLod((vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw, lodG);
+    vec4 hm = maskAt(maskUv(vUv), lvG);
     haloCol = hm.rgb / max(hm.a, 0.04); haloK = 0.85;
   }
   shaded += haloCol * halo * glow * (1.0 - cover) * haloK;
+#ifdef BLIT_GBODY
+  oColor = vec4(mix(shaded, glass, cover), 1.0);                       // (snow, rain and the outline are the next passes)
+#else
   if (uWx.y > 0.01) shaded += splash(stroke, uWx.y) * vec3(0.8, 0.9, 1.0) * 0.55;
-
   oColor = vec4(withOutline(shaded, glass, cover), 1.0);
+#endif
+}
+
+// The ES 2 glass in three passes (each small enough for a Pi Zero's GPU): the body above (BLIT_GBODY), then snow and rain on the digits, then the readability outline.
+void bodyWx() {
+  vec3 comp = texture(uPrev, vUv).rgb;
+  float stroke = uGlass.z;
+  float cover = maskA0(vUv);
+  vec3 col = comp;
+  if (cover > 0.02) {
+    vec3 glass = comp;
+    if (uWx.x > 0.01) glass = snowOn(glass, snowCap(stroke, uWx.x), texture(uTex, vUv).rgb);
+    if (uWx.y > 0.01 && uDropsOn > 0.5) {
+      vec4 dr = texture(uDrops, (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw);
+      glass = rainOn(glass, vec4(dr.r, dr.g, dr.b, 0.0), uLightCol, sceneAtL(vUv + vec2(0.0, stroke * 0.3) / uRes, sceneLv(1.0)));
+    }
+    col = mix(comp, glass, cover);
+  }
+  if (uWx.y > 0.01) col += splash(stroke, uWx.y) * vec3(0.8, 0.9, 1.0) * 0.55 * (1.0 - cover);
+  oColor = vec4(col, 1.0);
+}
+
+void bodyOut() {
+  vec3 comp = texture(uPrev, vUv).rgb;
+  oColor = vec4(withOutline(comp, comp, maskA0(vUv)), 1.0);
 }
 
 void main() {
-  body();
+#if defined(BLIT_GLASS) || defined(BLIT_GBODY)
+  bodyGlass();
+#elif defined(BLIT_GWX)
+  bodyWx();
+#elif defined(BLIT_GOUT)
+  bodyOut();
+#elif defined(BLIT_INK)
+  bodyInk();
+#else
+  bodyOff();
+#endif
   if (uFullOn > 0.5) {
     vec4 o = texture(uFull, vec2(vUv.x, 1.0 - vUv.y));
     oColor.rgb = mix(oColor.rgb, o.rgb, o.a);
   }
 }`;
+/** The final pass: kind 'off' (no clock glass), 'ink' (flat ink on the LED panel's solid style) or 'glass'. */
+export const fragBlit = (kind) => `#version 300 es\n#define BLIT_${kind.toUpperCase()} 1${BLIT_SOURCE}`;
+
 
 
 // ---- LED panel: stars. A star is far smaller than an LED, so averaging a block of pixels loses it. This pass finds, for every LED,
@@ -604,7 +676,7 @@ void main() {
   if (uMaskOn > 0.5) {                                                      // the clock wins: no star on a digit
     vec2 m = (vec2(cuv.x, 1.0 - cuv.y) - uMaskRect.xy) / uMaskRect.zw;
     float lod = max(log2(cell * uMaskPx.x / (uMaskRect.z * uRes.x)), 0.0);
-    if (maskLod(m, lod).a > 0.004) { oColor = vec4(0.0); return; }
+    if (maskAt(m, maskLv(lod)).a > 0.004) { oColor = vec4(0.0); return; }
   }
 #ifdef WOBBLY_ES2
   vec3 sum = vec3(0.0);                                                     // no mip levels to average with: the block is summed below
@@ -713,10 +785,14 @@ void main() {
 }`;
 
 // ------------------------------------------------------------- composite ---
-export const FRAG_SCENE = `#version 300 es
-${ATMOS_COMMON}
+// The sky, the ground and the weather are drawn by two programs into the same picture, because one program with all of it is too big for a small GPU (the Pi Zero's
+// cannot fit it in its registers, and draws nothing). Each has the whole of what it needs and nothing else; they share the pieces below. The sky program draws every pixel
+// that is not wholly terrain; the terrain program draws every pixel that is not wholly sky and blends over it by how much of the pixel is terrain (only the one-pixel
+// edge of the skyline is both). To change the sky or the weather, change SCENE_SKY; the ground, SCENE_TERRAIN; what both need, SCENE_HEAD and SCENE_SETUP.
+const SCENE_HEAD = `${ATMOS_COMMON}
 ${SKY_LOOKUP}
 ${DISPLAY_FNS}
+${CONSTS_LOOKUP}
 uniform sampler2D uMilky;
 uniform sampler2D uMoonTex;
 uniform sampler2D uNoise;
@@ -777,14 +853,18 @@ float lodFor(float footprintM, float tileM) {
   return clamp(log2(max(footprintM / tileM * 256.0, 1.0)), 0.0, 8.0);
 }
 
-// ---- atmosphere helpers ----
-vec3 sunTransAt(float h, float elev) {            // sunlight reaching height h above the camera
-  float r = BOT + uCamH + h;
-  float mu = sin(elev);
-  return transmittance(r, mu) * earthShadow(r, mu);
-}
 
-// ---- clouds ----
+// per-pixel values shared by the terrain and sky shaders (assigned in setup)
+float swellUp;
+float La, expo, pixM, az, u;
+vec3 sk, hdir, hazeL, zenL, ambLux, sunIg, moonIg;
+
+vec3 gD;                 // this pixel's direction, how much of it is terrain (0 sky .. 1), and which terrain layer (setup())
+float gCov;
+int gLayer;
+`;
+
+const SCENE_CLOUDS = `// ---- clouds ----
 float cloudShape(vec2 uv, float cover, float lod, float sharp) {
   vec4 n = noiseLod(uNoise, uv, lod);
   float base = n.r * 0.62 + n.g * 0.28 + n.b * 0.10;
@@ -838,7 +918,9 @@ vec4 cloudLayer(vec3 d, float cover, float H, float tile, vec2 stretch, float ta
   return vec4(rad, a);
 }
 
-// ---- moon ----
+`;
+
+const SCENE_SKY = `// ---- moon ----
 vec4 moonDisc(vec3 d, float expo) {
   float cm = dot(d, uMoonDir);
   float sr = sin(uMoonAngR);
@@ -881,7 +963,44 @@ vec4 moonDisc(vec3 d, float expo) {
   return vec4(min(phys, cap + vec3(uEarthshine) * alb / PI), cov);
 }
 
-// ---- terrain ----
+// Everything above the skyline. skyMask = how much of the sky is still open to stars.
+vec3 shadeSky(vec3 d, out float skyMask) {
+  vec3 L;
+  skyMask = 1.0;
+  L = skyLum(d);
+
+  // Milky Way (equatorial map) behind everything, extinguished near the horizon
+  vec3 eq = transpose(uEqj) * d;
+  float ra = atan(eq.y, eq.x);
+  float dec = asin(clamp(eq.z, -1.0, 1.0));
+  vec2 muv = vec2(ra / (2.0 * PI), 0.5 - dec / PI);
+  float mw = texture(uMilky, muv).r;
+  float mott = noiseLod(uNoise, muv * vec2(10.0, 5.0), 1.5).g;
+  mw = clamp(mw * (0.45 + 1.1 * mott), 0.0, 1.4);
+  float sE = max(d.y, 0.0);
+  float am = 1.0 / (sE + 0.025 * exp(-11.0 * sE));
+  L += vec3(0.85, 0.92, 1.1) * mw * uMWLum * exp(-0.22 * am) * step(-0.01, d.y);
+
+  // sun: disc + soft glare, tinted by the atmosphere's own transmittance
+  float cs = dot(d, uSunDir);
+  float angS = acos(clamp(cs, -1.0, 1.0));
+  vec3 Ts = transmittance(BOT + uCamH, clamp(sin(uSunA.z), -0.2, 1.0));
+  float limb = sqrt(max(0.0, 1.0 - pow(angS / uSunAngR, 2.0)));
+  float disc = 1.0 - smoothstep(uSunAngR * 0.96, uSunAngR * 1.04, angS);
+  float glare = 0.05 / (1.0 + pow(angS / (uSunAngR * 4.0), 2.0));
+  float sunUp = smoothstep(-0.02, 0.01, uSunA.z);
+  L += Ts * (uSunDisc / expo) * (disc * mix(0.62, 1.0, limb) + glare) * sunUp;
+
+  // moon
+  vec4 mo = moonDisc(d, expo);
+  L += mo.rgb * mo.a;               // added on top: the air in front of the moon still glows
+  skyMask *= 1.0 - mo.a;
+  return L;
+}
+
+`;
+
+const SCENE_TERRAIN = `// ---- terrain ----
 vec3 terrainLit(vec3 albedo, vec3 n, vec3 sunI, vec3 moonI, vec3 ambLux) {
   float ns = max(dot(n, uSunDir), 0.0);
   float nm = max(dot(n, uMoonDir), 0.0);
@@ -914,11 +1033,6 @@ void waveTrain(vec4 W, vec2 p, float fp, out vec2 slope, out float hgt) {
     slope += dv * (a * k * cos(ph) * 2.4);
   }
 }
-
-// per-pixel values shared by the terrain and sky shaders (assigned in main)
-float swellUp;
-float La, expo, pixM, az, u;
-vec3 sk, hdir, hazeL, zenL, ambLux, sunIg, moonIg;
 
 // Terrain, water and city layers; layer 0 is the nearest.
 vec3 shadeTerrain(int layer, vec3 d) {
@@ -1038,58 +1152,10 @@ vec3 shadeTerrain(int layer, vec3 d) {
   return L;
 }
 
-// Everything above the skyline. skyMask = how much of the sky is still open to stars.
-vec3 shadeSky(vec3 d, out float skyMask) {
-  vec3 L;
-  skyMask = 1.0;
-  L = skyLum(d);
+`;
 
-  // Milky Way (equatorial map) behind everything, extinguished near the horizon
-  vec3 eq = transpose(uEqj) * d;
-  float ra = atan(eq.y, eq.x);
-  float dec = asin(clamp(eq.z, -1.0, 1.0));
-  vec2 muv = vec2(ra / (2.0 * PI), 0.5 - dec / PI);
-  float mw = texture(uMilky, muv).r;
-  float mott = noiseLod(uNoise, muv * vec2(10.0, 5.0), 1.5).g;
-  mw = clamp(mw * (0.45 + 1.1 * mott), 0.0, 1.4);
-  float sE = max(d.y, 0.0);
-  float am = 1.0 / (sE + 0.025 * exp(-11.0 * sE));
-  L += vec3(0.85, 0.92, 1.1) * mw * uMWLum * exp(-0.22 * am) * step(-0.01, d.y);
-
-  // sun: disc + soft glare, tinted by the atmosphere's own transmittance
-  float cs = dot(d, uSunDir);
-  float angS = acos(clamp(cs, -1.0, 1.0));
-  vec3 Ts = transmittance(BOT + uCamH, clamp(sin(uSunA.z), -0.2, 1.0));
-  float limb = sqrt(max(0.0, 1.0 - pow(angS / uSunAngR, 2.0)));
-  float disc = 1.0 - smoothstep(uSunAngR * 0.96, uSunAngR * 1.04, angS);
-  float glare = 0.05 / (1.0 + pow(angS / (uSunAngR * 4.0), 2.0));
-  float sunUp = smoothstep(-0.02, 0.01, uSunA.z);
-  L += Ts * (uSunDisc / expo) * (disc * mix(0.62, 1.0, limb) + glare) * sunUp;
-
-  // moon
-  vec4 mo = moonDisc(d, expo);
-  L += mo.rgb * mo.a;               // added on top: the air in front of the moon still glows
-  skyMask *= 1.0 - mo.a;
-
-  // clouds, high to low
-  vec3 wd = vec3(uWind.x, 0.0, uWind.y);
-  float cc = 0.0;
-  vec4 cH = cloudLayer(d, uCover.z, 9.5, 120.0, vec2(1.0, 0.32), 1.1, uCover.x, ambLux, hazeL, 1.6);
-  L = mix(L, cH.rgb, cH.a);
-  vec4 cM = cloudLayer(d, uCover.y, 5.0, 70.0, vec2(1.0, 0.8), 2.4, uCover.x, ambLux, hazeL, 1.2);
-  L = mix(L, cM.rgb, cM.a);
-  vec4 cL = cloudLayer(d, uCover.x, 1.8, 40.0, vec2(1.0, 1.0), 5.0, uCover.x, ambLux, hazeL, 1.0);
-  L = mix(L, cL.rgb, cL.a);
-  skyMask *= (1.0 - cH.a * 0.9) * (1.0 - cM.a) * (1.0 - cL.a);
-
-  // fog
-  float fogMix = max(0.75 * uFog * uFog, uFog * 0.92 * (1.0 - smoothstep(0.0, 0.25, d.y)));
-  L = mix(L, hazeL, fogMix);
-  skyMask *= 1.0 - fogMix;
-  return L;
-}
-
-void main() {
+// The values both programs start from: the direction, exposure, the skyline, which side of it the pixel is on, and the light that reaches the ground.
+const SCENE_SETUP = `void setup() {
   vec2 ndc = (gl_FragCoord.xy / uRes) * 2.0 - 1.0;
   vec3 d = normalize(uCam * normalize(vec3(ndc.x * uTan.x, ndc.y * uTan.y, 1.0)));
 
@@ -1116,33 +1182,24 @@ void main() {
   else if (d.y < sk.b) layer = 2;
 
   hdir = normalize(vec3(d.x, 0.0, d.z) + vec3(1e-6, 0.0, 0.0));
-  hazeL = skyLum(normalize(vec3(hdir.x, 0.012, hdir.z)));
-  zenL = skyLum(vec3(0.0, 1.0, 0.0));
-  vec3 sunUpDir = normalize(vec3(uSunA.x * 0.866, 0.5, uSunA.y * 0.866));
-  ambLux = PI * (0.7 * zenL + 0.3 * skyLum(sunUpDir));
-  sunIg  = sunTransAt(0.0, uSunA.z) * uSunA.w;
-  moonIg = sunTransAt(0.0, uMoonA.z) * uMoonA.w;
+  hazeL = hazeAt(az);                                   // these five are the same every frame for all pixels, or for all pixels in one direction: FRAG_CONSTS worked them out
+  zenL = constAt(0.0);
+  ambLux = constAt(1.0);
+  sunIg  = constAt(2.0);
+  moonIg = constAt(3.0);
 
   // Analytic antialiasing of the outermost silhouette (there is no MSAA here): within a
   // pixel of the skyline, shade both sides and blend by coverage.
   int topLayer = sk.b > sk.g ? 2 : (sk.g > sk.r ? 1 : 0);
   float edge = (sk.b - d.y) / pixM;                      // pixels below the silhouette
-  vec3 L;
-  float skyMask;
-  if (layer >= 0 && edge > 1.0) {
-    L = shadeTerrain(layer, d);
-    skyMask = 0.0;
-  } else if (layer < 0 && edge < -1.0) {
-    L = shadeSky(d, skyMask);
-  } else {
-    float cov = clamp(edge + 0.5, 0.0, 1.0);
-    float m;
-    vec3 Ls = shadeSky(d, m);
-    vec3 Lt = shadeTerrain(layer >= 0 ? layer : topLayer, d);
-    L = mix(Ls, Lt, cov);
-    skyMask = m * (1.0 - cov);
-  }
+  // How much of the pixel is terrain: all of it below the silhouette, none above, a blend within a pixel of it. Sky and terrain are each shaded at most once (a GPU that
+  // cannot skip work shades both only on that one-pixel edge; and each is in the program once, which matters on a small GPU: it has to fit it).
+  float cov = (layer >= 0 && edge > 1.0) ? 1.0 : ((layer < 0 && edge < -1.0) ? 0.0 : clamp(edge + 0.5, 0.0, 1.0));
+  gD = d; gCov = cov; gLayer = layer >= 0 ? layer : topLayer;
+}
 
+// Exposure, tonemap, the falling rain or snow, a little dither: the picture's colour for a luminance (cd/m^2), with alpha as its fourth channel.
+vec4 finish(vec3 L, float alpha) {
   // ---------- precipitation overlay (screen space, display-referred) ----------
   vec3 rainRel = vec3(0.0);
   if (uPrecip > 0.01) {
@@ -1173,7 +1230,61 @@ void main() {
   float n2 = hash12(gl_FragCoord.yx + uFrame * 2.17 + 11.0);
   c += (n1 + n2 - 1.0) / 255.0;
 
-  oColor = vec4(clamp(c, 0.0, 1.0), skyMask);
+  return vec4(clamp(c, 0.0, 1.0), alpha);
+}`;
+
+/** The sky: everything above the skyline (and the sun, moon, stars' mask, clouds, fog). */
+export const FRAG_SCENE_SKY = `#version 300 es
+${SCENE_HEAD}
+${SCENE_SKY}
+${SCENE_SETUP}
+void main() {
+  setup();
+  if (gCov >= 1.0) discard;                      // wholly terrain: the terrain program has it
+  float m;
+  vec3 L = shadeSky(gD, m);
+  oColor = finish(L, m);                         // alpha: how much of the sky is open to stars
+}`;
+
+/**
+ * One cloud layer (the three are the same program drawn three times with different numbers, high to low), blended over the sky by the layer's own coverage. Blending
+ * happens on the finished picture rather than in brightness (a cloud's edge is a little darker than if the two were mixed before the tonemap), because a program with the
+ * sky and three clouds in it is too big for a small GPU. The fourth channel, the stars' sky-visibility, shrinks by the cloud's coverage.
+ */
+export const FRAG_SCENE_CLOUD = `#version 300 es
+${SCENE_HEAD}
+${SCENE_CLOUDS}
+${SCENE_SETUP}
+uniform vec4 uCloudP;      // this layer: cover, height (km), tile (km), optical depth
+uniform vec4 uCloudQ;      // stretch x, stretch y, how fast the wind moves it
+void main() {
+  setup();
+  if (gCov >= 1.0) discard;
+  vec4 c = cloudLayer(gD, uCloudP.x, uCloudP.y, uCloudP.z, uCloudQ.xy, uCloudP.w, uCover.x, ambLux, hazeL, uCloudQ.z);
+  if (c.a < 0.003) discard;
+  oColor = finish(c.rgb, c.a);
+}`;
+
+/** Fog: the haze colour over the sky by the fog's share (thick near the horizon). Drawn only when there is fog. */
+export const FRAG_SCENE_FOG = `#version 300 es
+${SCENE_HEAD}
+${SCENE_SETUP}
+void main() {
+  setup();
+  if (gCov >= 1.0) discard;
+  float fogMix = max(0.75 * uFog * uFog, uFog * 0.92 * (1.0 - smoothstep(0.0, 0.25, gD.y)));
+  oColor = finish(hazeL, fogMix);
+}`;
+
+/** The ground, water and city layers, blended over the sky by coverage (alpha: the share of the pixel that is terrain). */
+export const FRAG_SCENE_TERRAIN = `#version 300 es
+${SCENE_HEAD}
+${SCENE_TERRAIN}
+${SCENE_SETUP}
+void main() {
+  setup();
+  if (gCov <= 0.0) discard;                      // wholly sky
+  oColor = finish(shadeTerrain(gLayer, gD), gCov);
 }`;
 
 export { VERT_FULLSCREEN };

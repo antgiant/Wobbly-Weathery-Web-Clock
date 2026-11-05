@@ -17,7 +17,7 @@ import {
   VERT_FULLSCREEN, FRAG_TRANSMITTANCE, FRAG_MULTISCATTER, FRAG_SKYVIEW,
 } from './glsl-atmosphere.js';
 import {
-  FRAG_NOISE, FRAG_NOISE_DOWN, FRAG_ATLAS_PLACE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, FRAG_BLIT, FRAG_LED, FRAG_LED_PEAK, FRAG_LED_AVG, FRAG_SCENE,
+  FRAG_NOISE, FRAG_NOISE_DOWN, FRAG_ATLAS_PLACE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, fragBlit, FRAG_LED, FRAG_LED_PEAK, FRAG_LED_AVG, FRAG_SCENE_SKY, FRAG_SCENE_CLOUD, FRAG_SCENE_FOG, FRAG_SCENE_TERRAIN, FRAG_CONSTS, CONSTS_N, HAZE_N,
 } from './glsl-scene.js';
 import { toES1, packSkyline, NOISE_ATLAS } from './portable.js';
 import { VERT_PLANTS, FRAG_PLANTS } from './glsl-plants.js';
@@ -134,6 +134,8 @@ export class SkyEngine {
     if (!(name in P.locs)) P.locs[name] = this.gl.getUniformLocation(P.prog, name);
     return P.locs[name];
   }
+  /** The final pass in its form for what is on the screen: 'off' (no clock glass), 'ink' (the LED panel's flat ink) or 'glass'; each made the first time it is needed. */
+  _blitProgram(kind) { return this.pBlits[kind] || (this.pBlits[kind] = this._program(VERT_FULLSCREEN, fragBlit(kind))); }
   _use(P) { this._ready(P); this.gl.useProgram(P.prog); this._cur = P; }
   // Uniform setters. A program keeps its uniforms between draws, so a value that has not changed is not sent again: most of the hundreds of values set for a
   // frame are the same as the last frame's, and on a slow machine each call across to the driver costs. (`vals` holds what each program was last given.)
@@ -219,8 +221,12 @@ export class SkyEngine {
     this.pSkyView = this._program(VERT_FULLSCREEN, FRAG_SKYVIEW);
     this.pNoise = this.es2 ? null : this._program(VERT_FULLSCREEN, FRAG_NOISE);          // (an ES 2 GPU has no integer arithmetic: data/noise.bin has the same picture)
     this.pAdapt = this._program(VERT_FULLSCREEN, FRAG_ADAPT);
-    this.pScene = this._program(VERT_FULLSCREEN, FRAG_SCENE);
-    this.pBlit = this._program(VERT_FULLSCREEN, FRAG_BLIT);
+    this.pConsts = this._program(VERT_FULLSCREEN, FRAG_CONSTS);
+    this.pSceneSky = this._program(VERT_FULLSCREEN, FRAG_SCENE_SKY);          // the sky and the ground are two programs into one picture (glsl-scene.js: one is too big for a small GPU)
+    this.pSceneCloud = this._program(VERT_FULLSCREEN, FRAG_SCENE_CLOUD);        // one cloud layer, drawn up to three times
+    this.pSceneFog = this._program(VERT_FULLSCREEN, FRAG_SCENE_FOG);
+    this.pSceneTerrain = this._program(VERT_FULLSCREEN, FRAG_SCENE_TERRAIN);
+    this.pBlits = {};                                            // the final pass in the form that is needed (_blitProgram)
     performance.mark('sky:programs-compiled');
     this.pLed = this._program(VERT_FULLSCREEN, FRAG_LED);
     this.pLedPeak = this._program(VERT_FULLSCREEN, FRAG_LED_PEAK);
@@ -235,6 +241,7 @@ export class SkyEngine {
     this.tMS = this._target(sc(MS_SIZE, 8), sc(MS_SIZE, 8), F, RGBA, HF, LF);
     this.tSkySun = this._target(sc(SKY_W, 64), sc(SKY_H, 48), F, RGBA, HF, LF);
     this.tSkyMoon = this._target(sc(SKY_W, 64), sc(SKY_H, 48), F, RGBA, HF, LF);
+    this.tConsts = this._target(CONSTS_N + HAZE_N, 1, F, RGBA, HF, gl.NEAREST);         // the values that are the same for every pixel (glsl-scene.js: FRAG_CONSTS)
     this.tAdapt = [this._target(1, 1, F, RGBA, HF, gl.NEAREST), this._target(1, 1, F, RGBA, HF, gl.NEAREST)];
     this.adaptIdx = 0;
 
@@ -703,11 +710,20 @@ export class SkyEngine {
       this.exposure.adaptSnap = false;
     }
 
+    // ---- the light that is the same for every pixel, once instead of at every one ----
+    {
+      this._use(this.pConsts);
+      this._1f('uMie', s.mie);
+      this._bindSkyUniforms(sky, sunAz, sunAlt, sunLux, moonAz, moonAlt, moonLux, natural, lp, camH);
+      this._runPass(this.tConsts, this.pConsts);
+    }
+
     // ---- scene ----
     const T = this.sceneTarget;
     gl.bindFramebuffer(gl.FRAMEBUFFER, T.fbo);
     gl.viewport(0, 0, T.w, T.h);
-    this._use(this.pScene);
+    const frameNo = this.frameNo++ % 1024;
+    const setScene = () => {                                  // the same uniforms for both programs
     this._1f('uMie', s.mie);
     this._bindSkyUniforms(sky, sunAz, sunAlt, sunLux, moonAz, moonAlt, moonLux, natural, lp, camH);
     this._1i('uMilky', 4); this._bind(4, this.texMilky);
@@ -715,6 +731,7 @@ export class SkyEngine {
     this._1i('uNoise', 6); this._bind(6, this.tNoise.tex);
     this._1i('uSkyline', 7); this._bind(7, this.texSkyline);
     this._1i('uAdapt', 8); this._bind(8, this.tAdapt[this.adaptIdx].tex);
+    this._1i('uConsts', 10); this._bind(10, this.tConsts.tex);
     this._2f('uRes', T.w, T.h);
     this._m3('uCam', cam.mat); this._2f('uTan', cam.tan[0], cam.tan[1]);
     this._m3('uEqj', sky.eqj);
@@ -763,8 +780,23 @@ export class SkyEngine {
     this._1f('uEyeH', eyeKm);
     this._1f('uDip', dip);
     this._1f('uAdaptScale', adaptScale);
-    this._1f('uFrame', this.frameNo++ % 1024);
+    this._1f('uFrame', frameNo);
+    };
+    gl.disable(gl.BLEND);
+    this._use(this.pSceneSky); setScene();                    // every pixel that is not wholly terrain
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.enable(gl.BLEND);                                      // everything after the sky goes over it by its own coverage; the fourth channel (the stars' sky-visibility) shrinks by the same share
+    gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE_MINUS_SRC_ALPHA);
+    for (const [cov, height, tile, sx, sy, tau, wind] of [[w.cover[2], 9.5, 120, 1, 0.32, 1.1, 1.6], [w.cover[1], 5.0, 70, 1, 0.8, 2.4, 1.2], [w.cover[0], 1.8, 40, 1, 1, 5.0, 1.0]]) {      // clouds, high to low
+      if (!(cov >= 0.01)) continue;
+      this._use(this.pSceneCloud); setScene();
+      this._4f('uCloudP', cov, height, tile, tau); this._4f('uCloudQ', sx, sy, wind, 0);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+    if (w.fog > 0.005) { this._use(this.pSceneFog); setScene(); gl.drawArrays(gl.TRIANGLES, 0, 3); }
+    this._use(this.pSceneTerrain); setScene();
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.disable(gl.BLEND);
 
     // ---- plants: alpha-blended sprites that also knock the stars' visibility mask down ----
     this._drawPlants(sky, sunAz, sunAlt, sunLux, moonAz, moonAlt, moonLux, natural, lp, camH, cam, perfNow, w, eyeKm);
@@ -799,78 +831,69 @@ export class SkyEngine {
       if (scene) gl.generateMipmap(gl.TEXTURE_2D);          // frosting blurs through the mip chain
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
     } else gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    if (glassOn && this.es2 && (scene || !this.sceneMips)) this._sceneMips();
+    if (glassOn && this.es2 && (scene || !(this.mipState && this.mipState.scene) || this.mipState.scene.src !== T)) { this._mipAtlas('scene', T.tex, T.w, T.h); this.mipState.scene.src = T; }
     const led = g.led.on;
     if (led) this._ensureComp(cw, ch);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, led ? this.compTarget.fbo : null);
-    gl.viewport(0, 0, cw, ch);
-    this._use(this.pBlit);
-    this._1i('uTex', 0); this._bind(0, T.tex);
-    this._1f('uTexW', T.w);
-    if (glassOn && this.es2) for (let k = 1; k <= 7; k++) { this._1i('uMip' + k, 4 + k); this._bind(4 + k, this.sceneMips[k - 1].tex); }
-    this._1i('uMask', 1); this._bind(1, this.maskTex);
-    if (glassOn && this.es2) this._bindMaskMips(12);
-    const dpr = cw / Math.max(1, this.canvas.clientWidth);
-    this._4f('uGlass', g.frost, glassOn ? g.mode : 0, g.stroke * dpr, 0);
-    this._4f('uMaskRect', g.rect[0], g.rect[1], g.rect[2], g.rect[3]);
-    this._2f('uMaskPx', g.maskW, g.maskH);
-    this._2f('uRes', cw, ch);
-    this._3f('uLight', g.light);
-    this._3f('uLightCol', g.lightCol);
-    this._4f('uGlow', g.glow, led ? Math.max(2, Math.floor(Math.min(cw / g.led.cols, ch / g.led.rows))) : 0, 0, 0);
-    this._3f('uGlowCol', g.glowCol);
-    this._3f('uInk', g.ink);
-    this._1f('uContrast', g.contrast);
     {                                                                  // snow and rain on the digits: from the weather being drawn
       const w = this.s.weather, on = this.s.digitWeather !== false && !this.s.reducedMotion;
       const snowRate = (w.precip || 0) * (w.snowfall || 0), rainRate = (w.precip || 0) * (1 - (w.snowfall || 0));
       this.wx = { snow: on ? Math.min(1, snowRate * 1.4) : 0, rain: on ? Math.min(1, rainRate * 1.3) : 0 };       // (read by the tests)
-      this._4f('uWx', this.wx.snow, this.wx.rain, 0, (performance.now() / 1000) % 3600);
     }
-    this._1i('uDrops', 4); this._bind(4, this.dropsTex);
-    this._1f('uDropsOn', g.dropsOn ? 1 : 0);
-    this._1i('uFull', 3); this._bind(3, this.overlayFullTex);
-    this._1f('uFullOn', led && g.overlayFull ? 1 : 0);
-    gl.bindVertexArray(this.vaoEmpty);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    // An ES 2 GPU gets the glass as up to three small programs (body, weather, outline), each reading the one before; the rest is one program.
+    const kind = !glassOn ? 'off' : g.mode > 2.5 ? 'ink' : 'glass';
+    const passes = this.es2 && kind === 'glass' ? ['gbody', ...(this.wx.snow > 0.01 || this.wx.rain > 0.01 ? ['gwx'] : []), 'gout'] : [kind];
+    if (passes.length > 1) this._ensurePing(cw, ch);
+    const dpr = cw / Math.max(1, this.canvas.clientWidth);
+    let prev = null;
+    passes.forEach((pass, i) => {
+      const last = i === passes.length - 1;
+      const out = last ? (led ? this.compTarget : null) : this.pingT[i % 2];
+      gl.bindFramebuffer(gl.FRAMEBUFFER, out ? out.fbo : null);
+      gl.viewport(0, 0, cw, ch);
+      this._use(this._blitProgram(pass));
+      this._1i('uTex', 0); this._bind(0, T.tex);
+      this._1f('uTexW', T.w);
+      if (glassOn && this.es2) this._bindMipAtlas('scene', 5);
+      this._1i('uMask', 1); this._bind(1, this.maskTex);
+      if (glassOn && this.es2) this._bindMipAtlas('mask', 6);
+      this._4f('uGlass', g.frost, glassOn ? g.mode : 0, g.stroke * dpr, 0);
+      this._4f('uMaskRect', g.rect[0], g.rect[1], g.rect[2], g.rect[3]);
+      this._2f('uMaskPx', g.maskW, g.maskH);
+      this._2f('uRes', cw, ch);
+      this._3f('uLight', g.light);
+      this._3f('uLightCol', g.lightCol);
+      this._4f('uGlow', g.glow, led ? Math.max(2, Math.floor(Math.min(cw / g.led.cols, ch / g.led.rows))) : 0, 0, 0);
+      this._3f('uGlowCol', g.glowCol);
+      this._3f('uInk', g.ink);
+      this._1f('uContrast', g.contrast);
+      this._4f('uWx', this.wx.snow, this.wx.rain, 0, (performance.now() / 1000) % 3600);
+      this._1i('uDrops', 4); this._bind(4, this.dropsTex);
+      this._1f('uDropsOn', g.dropsOn ? 1 : 0);
+      this._1i('uFull', 3); this._bind(3, this.overlayFullTex);
+      this._1f('uFullOn', last && led && g.overlayFull ? 1 : 0);
+      this._1i('uPrev', 7); if (prev) this._bind(7, prev.tex);
+      gl.bindVertexArray(this.vaoEmpty);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      prev = out;
+    });
     if (led) this._ledPass(cw, ch);
   }
 
-  /** ES 2: the scene's mip levels 1..7 as separate textures (each a bilinear read of the one above: the average of 2x2 texels), for the glass's frosting. */
-  _sceneMips() {
-    const gl = this.gl, T = this.sceneTarget;
-    if (!this.sceneMips || this.sceneMips.src !== T) {
-      if (this.sceneMips) for (const m of this.sceneMips) { gl.deleteTexture(m.tex); gl.deleteFramebuffer(m.fbo); }
-      this.sceneMips = []; this.sceneMips.src = T;
-      let w = T.w, h = T.h;
-      for (let k = 1; k <= 7; k++) { w = Math.max(1, w >> 1); h = Math.max(1, h >> 1); this.sceneMips.push(this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE)); }
-    }
-    if (!this.pNoiseDown) this.pNoiseDown = this._program(VERT_FULLSCREEN, FRAG_NOISE_DOWN);
-    gl.disable(gl.BLEND);
-    gl.bindVertexArray(this.vaoEmpty);
-    this._use(this.pNoiseDown);
-    let src = T.tex;
-    for (const m of this.sceneMips) {
-      gl.bindFramebuffer(gl.FRAMEBUFFER, m.fbo); gl.viewport(0, 0, m.w, m.h);
-      this._1i('uSrc', 0); this._bind(0, src); this._2f('uSize', m.w, m.h);
-      gl.drawArrays(gl.TRIANGLES, 0, 3);
-      src = m.tex;
-    }
-  }
-
   /**
-   * ES 2: the mask's mip levels 1..7 stacked in one texture (each with a border of its own edge texels), the way FRAG_BLIT's maskLod reads them. Each level is a
-   * bilinear read of the one above (the average of 2x2 texels), made in textures of their own and then copied into the stack. `src` is the mask's texture.
+   * ES 2: the mip levels 1..7 of a texture stacked in one texture (each with a border of its own edge texels), the way portable.js's mipAtlasGlsl reads them.
+   * Each level is a bilinear read of the one above (the average of 2x2 texels), made in textures of their own and then copied into the stack. `kind` is 'mask' or
+   * 'scene'; `src` is the texture's WebGL object, w x h its size.
    */
-  _maskMips(src, w, h) {
+  _mipAtlas(kind, src, w, h) {
     const gl = this.gl;
-    let st = this.maskMipState;
+    const all = this.mipState || (this.mipState = {});
+    let st = all[kind];
     if (!st || st.w !== w || st.h !== h) {
       if (st) { for (const l of st.levels) { gl.deleteTexture(l.tex); gl.deleteFramebuffer(l.fbo); } gl.deleteTexture(st.atlas.tex); gl.deleteFramebuffer(st.atlas.fbo); }
       const levels = []; let lw = w, lh = h, y = 0;
       for (let k = 1; k <= 7; k++) { lw = Math.max(1, lw >> 1); lh = Math.max(1, lh >> 1); const t = this._target(lw, lh, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE); t.y = y; levels.push(t); y += lh + 2; }
       const atlas = this._target(levels[0].w + 2, y, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);
-      st = this.maskMipState = { w, h, levels, atlas };
+      st = all[kind] = { w, h, levels, atlas };
     }
     if (!this.pNoiseDown) this.pNoiseDown = this._program(VERT_FULLSCREEN, FRAG_NOISE_DOWN);
     if (!this.pAtlasPlace) this.pAtlasPlace = this._program(VERT_FULLSCREEN, FRAG_ATLAS_PLACE);
@@ -893,12 +916,14 @@ export class SkyEngine {
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
   }
-  _bindMaskMips(unit) {
-    const st = this.maskMipState;
+  /** Sets the current program's uniforms for a texture's mip atlas, and binds the atlas at `unit`. */
+  _bindMipAtlas(kind, unit) {
+    const st = this.mipState && this.mipState[kind];
     if (!st) return;
-    this._1i('uMaskMips', unit); this._bind(unit, st.atlas.tex);
-    this._2f('uMaskAtlasPx', st.atlas.w, st.atlas.h);
-    st.levels.forEach((m, i) => this._4f('uMaskLv' + (i + 1), m.w, m.h, m.y, 0));
+    const N = kind[0].toUpperCase() + kind.slice(1);
+    this._1i('u' + N + 'Mips', unit); this._bind(unit, st.atlas.tex);
+    this._2f('u' + N + 'MipsPx', st.atlas.w, st.atlas.h);
+    st.levels.forEach((m, i) => this._4f('u' + N + 'Lv' + (i + 1), m.w, m.h, m.y, 0));
   }
 
   _ensureComp(w, h) {
@@ -906,6 +931,13 @@ export class SkyEngine {
     if (this.compTarget && this.compTarget.w === w && this.compTarget.h === h) return;
     if (this.compTarget) { gl.deleteTexture(this.compTarget.tex); gl.deleteFramebuffer(this.compTarget.fbo); }
     this.compTarget = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);
+  }
+
+  _ensurePing(w, h) {
+    const gl = this.gl;
+    if (this.pingT && this.pingT[0].w === w && this.pingT[0].h === h) return;
+    if (this.pingT) for (const t of this.pingT) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fbo); }
+    this.pingT = [0, 1].map(() => this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE));
   }
 
   _ensurePeak(w, h) {
@@ -950,7 +982,7 @@ export class SkyEngine {
       this._use(this.pLedPeak);
       this._1i('uComp', 0); this._bind(0, C.tex);
       this._1i('uMask', 2); this._bind(2, this.maskTex);
-      if (g.hasMask && g.mode > 0 && this.es2) this._bindMaskMips(3);
+      if (g.hasMask && g.mode > 0 && this.es2) this._bindMipAtlas('mask', 3);
       this._2f('uRes', cw, ch);
       this._4f('uLed', L.cols, L.rows, 0, 0);
       this._4f('uMaskRect', g.rect[0], g.rect[1], g.rect[2], g.rect[3]);
@@ -1011,7 +1043,7 @@ export class SkyEngine {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    if (this.es2) this._maskMips(this.maskTex, canvas.width, canvas.height);
+    if (this.es2) this._mipAtlas('mask', this.maskTex, canvas.width, canvas.height);
     else gl.generateMipmap(gl.TEXTURE_2D);
     g.rect = rect; g.maskW = canvas.width; g.maskH = canvas.height; g.stroke = strokeCssPx; g.hasMask = true;
     this.redrawGlass();
@@ -1063,7 +1095,7 @@ export class SkyEngine {
     }
     gl.bindVertexArray(null);
     gl.blendEquation(gl.FUNC_ADD); gl.disable(gl.BLEND);
-    if (this.es2) this._maskMips(T.tex, w, h);
+    if (this.es2) this._mipAtlas('mask', T.tex, w, h);
     else { gl.bindTexture(gl.TEXTURE_2D, T.tex); gl.generateMipmap(gl.TEXTURE_2D); }
     g.rect = rect; g.maskW = w; g.maskH = h; g.stroke = strokeCssPx; g.hasMask = true;
     this.redrawGlass();
@@ -1162,6 +1194,19 @@ export class SkyEngine {
     return c;
   }
 
+  /** Where the scene and the finished picture are dark (for the Pi's timing log): two small maps (. dark, + middling, # bright) and what the final pass is doing. */
+  maps() {
+    const gl = this.gl, T = this.sceneTarget, g = this.glass;
+    if (!T) return 'no scene yet';
+    const grid = (px, w, h) => { const out = []; for (let r = 0; r < 12; r++) { let line = ''; for (let c = 0; c < 32; c++) { const x = Math.min(w - 1, Math.floor((c + 0.5) * w / 32)), y = Math.min(h - 1, Math.floor((11.5 - r) * h / 12)), i = (y * w + x) * 4, v = px[i] + px[i + 1] + px[i + 2]; line += v < 12 ? '.' : v < 200 ? '+' : '#'; } out.push(line); } return out.join('\n'); };
+    gl.bindFramebuffer(gl.FRAMEBUFFER, T.fbo); const a = new Uint8Array(T.w * T.h * 4); gl.readPixels(0, 0, T.w, T.h, gl.RGBA, gl.UNSIGNED_BYTE, a);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null); const cw = this.canvas.width, ch = this.canvas.height, b = new Uint8Array(cw * ch * 4); gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, b);
+    let mk = 'no mask texture';
+    const M = this.maskTarget;
+    if (M) { gl.bindFramebuffer(gl.FRAMEBUFFER, M.fbo); const m = new Uint8Array(M.w * M.h * 4); gl.readPixels(0, 0, M.w, M.h, gl.RGBA, gl.UNSIGNED_BYTE, m); gl.bindFramebuffer(gl.FRAMEBUFFER, null); let lit = 0; for (let i = 3; i < m.length; i += 4) if (m[i] > 40) lit++; mk = 'mask ' + M.w + 'x' + M.h + ': ' + lit + ' px covered (' + (100 * lit / (M.w * M.h)).toFixed(1) + '%), rect ' + g.rect.map((v) => v.toFixed(2)).join(','); }
+    return mk + '\nfinal pass: ' + (!(g.mode > 0 && g.hasMask) ? 'off (no glass: mode ' + g.mode + ', mask ' + g.hasMask + ')' : g.mode > 2.5 ? 'ink' : 'glass') + '; scene ' + T.w + 'x' + T.h + ' (top row first):\n' + grid(a, T.w, T.h) + '\nscreen ' + cw + 'x' + ch + ':\n' + grid(b, cw, ch);
+  }
+
   /** One line about what the GPU made so far (for the Pi's timing log, to tell a black screen from a dark sky): the scene's average colour, the exposure and, on ES 2, the packed tables decoded. */
   diagnose() {
     const gl = this.gl, T = this.sceneTarget;
@@ -1173,6 +1218,7 @@ export class SkyEngine {
     const ad = this.tAdapt[this.adaptIdx];
     if (this.es2) {
       const a = rd(ad); o += ', exposure log ' + ((a[0] * 65536 + a[1] * 256 + a[2]) / 16777215 * 64 - 32).toFixed(2);
+      const cs = rd(this.tConsts), big = (t) => t.split(' ').map((v) => (+v * 16384).toPrecision(3)).join(' '); o += ', light (cd/m2) zenith ' + big(hdr(cs, 0)) + ' | ambient ' + big(hdr(cs, 4)) + ' | sun ' + big(hdr(cs, 8)) + ' | moon ' + big(hdr(cs, 12)) + ' | haze north ' + big(hdr(cs, (CONSTS_N + HAZE_N / 2) * 4));
       const sk = rd(this.tSkySun), tr = rd(this.tTrans);
       o += ', sky table centre ' + hdr(sk, ((this.tSkySun.h >> 1) * this.tSkySun.w + (this.tSkySun.w >> 1)) * 4) + ', transmittance centre ' + hdr(tr, ((this.tTrans.h >> 1) * this.tTrans.w + (this.tTrans.w >> 1)) * 4);
     } else { const a = rd(ad); o += ' (ES 3: tables are half floats)'; void a; }
@@ -1238,6 +1284,7 @@ export class SkyEngine {
     this._1f('uMie', s.mie);
     this._bindSkyUniforms(sky, sunAz, sunAlt, sunLux, moonAz, moonAlt, moonLux, natural, lp, camH);
     this._1i('uAdapt', 8);
+    this._1i('uConsts', 10); this._bind(10, this.tConsts.tex);
     this._m3('uCam', cam.mat);
     this._2f('uTan', cam.tan[0], cam.tan[1]);
     this._3f('uSunDir', sky.sun.dir);
