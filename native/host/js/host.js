@@ -139,7 +139,9 @@ function makeGL(canvas) {
   const es2 = __gl('isES2') === 1;
   const ensureScreen = () => {
     if (screen.w === canvas.width && screen.h === canvas.height && screen.fbo) return;
-    if (!screen.fbo) { screen.fbo = call('createFramebuffer'); screen.tex = call('createTexture'); }
+    // a new size gets a new texture and a new framebuffer (a GPU driver may keep the old size of a framebuffer whose texture is re-specified)
+    if (screen.fbo) { call('bindFramebuffer', C.FRAMEBUFFER, 0); call('deleteFramebuffer', screen.fbo); call('deleteTexture', screen.tex); }
+    screen.fbo = call('createFramebuffer'); screen.tex = call('createTexture');
     call('bindTexture', C.TEXTURE_2D, screen.tex);
     call('texImage2D', C.TEXTURE_2D, 0, C.RGBA8, canvas.width, canvas.height, 0, C.RGBA, C.UNSIGNED_BYTE, null);
     call('texParameteri', C.TEXTURE_2D, C.TEXTURE_MIN_FILTER, C.LINEAR);

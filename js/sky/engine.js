@@ -1183,7 +1183,10 @@ export class SkyEngine {
     const grid = (px, w, h) => { const out = []; for (let r = 0; r < 12; r++) { let line = ''; for (let c = 0; c < 32; c++) { const x = Math.min(w - 1, Math.floor((c + 0.5) * w / 32)), y = Math.min(h - 1, Math.floor((11.5 - r) * h / 12)), i = (y * w + x) * 4, v = px[i] + px[i + 1] + px[i + 2]; line += v < 12 ? '.' : v < 200 ? '+' : '#'; } out.push(line); } return out.join('\n'); };
     gl.bindFramebuffer(gl.FRAMEBUFFER, T.fbo); const a = new Uint8Array(T.w * T.h * 4); gl.readPixels(0, 0, T.w, T.h, gl.RGBA, gl.UNSIGNED_BYTE, a);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null); const cw = this.canvas.width, ch = this.canvas.height, b = new Uint8Array(cw * ch * 4); gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, b);
-    return 'final pass: ' + (!(g.mode > 0 && g.hasMask) ? 'off (no glass: mode ' + g.mode + ', mask ' + g.hasMask + ')' : g.mode > 2.5 ? 'ink' : 'glass') + '; scene ' + T.w + 'x' + T.h + ' (top row first):\n' + grid(a, T.w, T.h) + '\nscreen ' + cw + 'x' + ch + ':\n' + grid(b, cw, ch);
+    let mk = 'no mask texture';
+    const M = this.maskTarget;
+    if (M) { gl.bindFramebuffer(gl.FRAMEBUFFER, M.fbo); const m = new Uint8Array(M.w * M.h * 4); gl.readPixels(0, 0, M.w, M.h, gl.RGBA, gl.UNSIGNED_BYTE, m); gl.bindFramebuffer(gl.FRAMEBUFFER, null); let lit = 0; for (let i = 3; i < m.length; i += 4) if (m[i] > 40) lit++; mk = 'mask ' + M.w + 'x' + M.h + ': ' + lit + ' px covered (' + (100 * lit / (M.w * M.h)).toFixed(1) + '%), rect ' + g.rect.map((v) => v.toFixed(2)).join(','); }
+    return mk + '\nfinal pass: ' + (!(g.mode > 0 && g.hasMask) ? 'off (no glass: mode ' + g.mode + ', mask ' + g.hasMask + ')' : g.mode > 2.5 ? 'ink' : 'glass') + '; scene ' + T.w + 'x' + T.h + ' (top row first):\n' + grid(a, T.w, T.h) + '\nscreen ' + cw + 'x' + ch + ':\n' + grid(b, cw, ch);
   }
 
   /** One line about what the GPU made so far (for the Pi's timing log, to tell a black screen from a dark sky): the scene's average colour, the exposure and, on ES 2, the packed tables decoded. */
