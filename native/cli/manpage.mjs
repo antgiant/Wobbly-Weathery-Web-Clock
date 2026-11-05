@@ -2,10 +2,10 @@
 import { SETTINGS } from '../../schema/settings.js';
 import { PRESET_LIST } from '../../schema/presets.js';
 import { EXTRA, showValue } from './config.mjs';
-import { PROFILES, unmet } from './hardware.mjs';
+import { PROFILES } from './hardware.mjs';
 
 const esc = (s) => String(s).replace(/\\/g, '\\e').replace(/^([.'])/, '\\&$1').replace(/-/g, '\\-');
-const NEEDS = { gles3: 'an OpenGL ES 3 GPU (Pi 4, 5)', 'cores>=2': 'two or more cores', sensors: 'motion sensors: web page only' };
+const NEEDS = { gles3: 'an OpenGL ES 2 or 3 GPU (any Pi)', 'cores>=2': 'two or more cores', sensors: 'motion sensors: web page only' };
 const needText = (t) => NEEDS[t] || t;
 const range = (s) => s.type === 'enum' ? s.options.join(' | ') : s.type === 'number' ? `${s.min} to ${s.max}` : s.type === 'bool' ? 'on | off' : s.type === 'tri' ? 'auto | on | off' : s.type === 'text' ? `text, up to ${s.max} characters` : 'yyyy-mm-ddThh:mm';
 
@@ -104,7 +104,7 @@ wobbly\\-clock.conf(5), the LED panel guide in docs/LED\\-PANELS.md, https://git
 
 export function manConfig() {
   const presets = PRESET_LIST.map((p) => `.TP\n.B ${esc(p.id)}\n${esc(p.name)}. ${esc(p.note)}`).join('\n');
-  const machines = Object.values(PROFILES).map((p) => `${p.name}: ${unmet(['gles3'], p).length ? 'no ' : ''}OpenGL ES 3`).join('; ');
+  const machines = Object.values(PROFILES).map((p) => `${p.name}: ${p.gles >= 3 ? 'OpenGL ES 3' : p.gles === 2 ? 'OpenGL ES 2 (the shaders have an ES 2 form)' : 'no OpenGL ES'}`).join('; ');
   return header('wobbly-clock.conf', 5, 'File Formats') + `.SH NAME
 wobbly\\-clock.conf \\- settings for wobbly\\-clock
 .SH DESCRIPTION

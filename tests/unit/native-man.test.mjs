@@ -11,7 +11,7 @@ const conf = manConfig(), cmd = manCommand();
 
 check('every setting is in the .conf page, once, with its default and its allowed values', SETTINGS.every((s) => conf.split(`.B ${s.key}\n`).length === 2 && conf.split(`.B ${s.key}\n`)[1].split('.TP')[0].includes('Default:') && conf.split(`.B ${s.key}\n`)[1].split('.TP')[0].includes('Values:')));
 check('every preset is described', PRESET_LIST.every((p) => conf.includes(`.B ${p.id.replace(/-/g, '\\-')}\n`)));
-check('what needs a better GPU or more cores says so', /Needs an OpenGL ES 3 GPU/.test(conf) && /Needs two or more cores/.test(conf) && /web page only/.test(conf));
+check('what needs a better GPU or more cores says so', /Needs two or more cores/.test(conf) && /OpenGL ES 2 or 3 GPU/.test(conf) && /web page only/.test(conf));
 check('both pages have the sections a man page needs', ['NAME', 'DESCRIPTION', 'SEE ALSO'].every((s) => conf.includes(`.SH ${s}`) && cmd.includes(`.SH ${s}`)) && ['SYNOPSIS', 'COMMANDS', 'FILES', 'EXIT STATUS', 'EXAMPLES'].every((s) => cmd.includes(`.SH ${s}`)));
 check('every command in the page is a command the program has', ['setup', 'test', 'run', 'get', 'set', 'presets', 'preset', 'apply', 'import', 'export', 'install', 'status', 'update'].every((c) => cmd.includes(c)));
 const bad = (t) => t.split('\n').filter((l) => /^[^.\\]*\S/.test(l) && false || /^\.(?![A-Za-z]{1,3}\b)/.test(l) && !/^\.\\/.test(l));

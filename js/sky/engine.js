@@ -17,8 +17,9 @@ import {
   VERT_FULLSCREEN, FRAG_TRANSMITTANCE, FRAG_MULTISCATTER, FRAG_SKYVIEW,
 } from './glsl-atmosphere.js';
 import {
-  FRAG_NOISE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, FRAG_BLIT, FRAG_LED, FRAG_LED_PEAK, FRAG_SCENE,
+  FRAG_NOISE, FRAG_NOISE_DOWN, FRAG_ATLAS_PLACE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, FRAG_BLIT, FRAG_LED, FRAG_LED_PEAK, FRAG_LED_AVG, FRAG_SCENE,
 } from './glsl-scene.js';
+import { toES1, packSkyline, NOISE_ATLAS } from './portable.js';
 import { VERT_PLANTS, FRAG_PLANTS } from './glsl-plants.js';
 import { computeSky, DEG } from './astro.js';
 import { proceduralSkyline, horizonDip, SKYLINE_BINS, LANDSCAPES } from './landscape.js';
@@ -39,7 +40,7 @@ const norm3 = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0]
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 
 export class SkyEngine {
-  constructor(canvas, { baseUrl = '.', lutScale = 1, governor = false } = {}) {
+  constructor(canvas, { baseUrl = '.', lutScale = 1, governor = false, es2 = false } = {}) {
     this.canvas = canvas;
     this.baseUrl = baseUrl;
     // The quality governor (governor.js), when asked for: keeps frames between a floor and a ceiling by moving along a ladder of quality levels.
@@ -54,8 +55,10 @@ export class SkyEngine {
     });
     if (!gl) throw new Error('WebGL2 is not available');
     this.gl = gl;
+    // An OpenGL ES 2 GPU (Pi Zero, Zero 2, Pi 1-3) has no float render targets, no mip-level choice in shaders, no instancing: the same shaders are translated
+    // to GLSL ES 1.00 and the tables are packed into 8-bit textures (portable.js). `es2: true` takes that path on any GPU (for tests).
     const ext = gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float');
-    if (!ext) throw new Error('Floating-point render targets are not supported');
+    this.es2 = !!es2 || !ext;
 
     this.s = {
       lat: 40.7, lon: -74.0, elevM: 0, eyeM: 1.7,
@@ -98,6 +101,11 @@ export class SkyEngine {
   // time is the same whichever way it is done; on a GPU driver it keeps the main thread free while they build.)
   _program(vs, fs, attribs) {
     const gl = this.gl, p = gl.createProgram();
+    if (this.es2) {
+      const v = toES1(vs, 'vertex'), f = toES1(fs, 'fragment');
+      vs = v.src; fs = f.src;
+      if (v.usesVid) { attribs = { ...(attribs || {}) }; attribs.aVid = Object.keys(attribs).length; }       // no gl_VertexID: the vertex number comes from a buffer
+    }
     const shaders = [[gl.VERTEX_SHADER, vs], [gl.FRAGMENT_SHADER, fs]].map(([type, src]) => {
       const sh = gl.createShader(type);
       gl.shaderSource(sh, src);
@@ -141,6 +149,41 @@ export class SkyEngine {
   _4f(n, a, b, c, d) { if (!this._same(n, [a, b, c, d])) this.gl.uniform4f(this._u(this._cur, n), a, b, c, d); }
   _m3(n, m) { if (!this._same(n, Array.from(m))) this.gl.uniformMatrix3fv(this._u(this._cur, n), false, m); }
 
+  /**
+   * The vertex layout of a plant sprite buffer. One instance = [x z height type | seed variant], advanced per instance; a GPU without instancing (OpenGL ES 2)
+   * gets the same data once per corner instead (`_expand`), with the corner number as a third attribute.
+   */
+  _instanceAttribs(vao, buf) {
+    const gl = this.gl;
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    if (this.es2) {
+      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 28, 0);
+      gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 28, 16);
+      gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 28, 24);
+    } else {
+      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 24, 0); gl.vertexAttribDivisor(0, 1);
+      gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 24, 16); gl.vertexAttribDivisor(1, 1);
+    }
+    gl.bindVertexArray(null);
+  }
+  /** Instances (6 floats each) -> six vertices each (7 floats: the instance and the corner number), for a GPU that cannot draw instances. */
+  _expand(data, count) {
+    const out = new Float32Array(count * 6 * 7);
+    for (let i = 0; i < count; i++) for (let c = 0; c < 6; c++) {
+      const o = (i * 6 + c) * 7;
+      for (let j = 0; j < 6; j++) out[o + j] = data[i * 6 + j];
+      out[o + 6] = c;
+    }
+    return out;
+  }
+  /** Draws `count` plant sprites from the bound sprite buffer. */
+  _drawSprites(count) {
+    const gl = this.gl;
+    if (this.es2) gl.drawArrays(gl.TRIANGLES, 0, 6 * count);
+    else gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, count);
+  }
+
   _target(w, h, internal, format, type, filter = this.gl.LINEAR, wrap = this.gl.CLAMP_TO_EDGE) {
     const gl = this.gl;
     const tex = gl.createTexture();
@@ -162,38 +205,51 @@ export class SkyEngine {
     const gl = this.gl;
     gl.getExtension('KHR_parallel_shader_compile');                    // opt in: compiles then run on other threads
     this.vaoEmpty = gl.createVertexArray();
+    if (this.es2) {                                                    // vertex numbers 0..5 as an attribute (the shaders' aVid)
+      this.vidBuf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.vidBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 1, 2, 3, 4, 5]), gl.STATIC_DRAW);
+      gl.bindVertexArray(this.vaoEmpty);
+      gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 1, gl.FLOAT, false, 0, 0);
+      gl.bindVertexArray(null);
+    }
 
     this.pTrans = this._program(VERT_FULLSCREEN, FRAG_TRANSMITTANCE);
     this.pMS = this._program(VERT_FULLSCREEN, FRAG_MULTISCATTER);
     this.pSkyView = this._program(VERT_FULLSCREEN, FRAG_SKYVIEW);
-    this.pNoise = this._program(VERT_FULLSCREEN, FRAG_NOISE);
+    this.pNoise = this.es2 ? null : this._program(VERT_FULLSCREEN, FRAG_NOISE);          // (an ES 2 GPU has no integer arithmetic: data/noise.bin has the same picture)
     this.pAdapt = this._program(VERT_FULLSCREEN, FRAG_ADAPT);
     this.pScene = this._program(VERT_FULLSCREEN, FRAG_SCENE);
     this.pBlit = this._program(VERT_FULLSCREEN, FRAG_BLIT);
     performance.mark('sky:programs-compiled');
     this.pLed = this._program(VERT_FULLSCREEN, FRAG_LED);
     this.pLedPeak = this._program(VERT_FULLSCREEN, FRAG_LED_PEAK);
+    this.pLedAvg = this.es2 ? this._program(VERT_FULLSCREEN, FRAG_LED_AVG) : null;
     this.pStars = this._program(VERT_STARS, FRAG_STARS, { aStar: 0, aBV: 1 });
     this.pPlants = this._program(VERT_PLANTS, FRAG_PLANTS, { aInst: 0, aSeed: 1 });
 
-    const F = gl.RGBA16F, RGBA = gl.RGBA, HF = gl.HALF_FLOAT;
+    // the tables: half floats, or (OpenGL ES 2) 8-bit textures with the colour packed in (portable.js), read texel by texel, so never filtered by the hardware
+    const es2 = this.es2, F = es2 ? gl.RGBA8 : gl.RGBA16F, RGBA = gl.RGBA, HF = es2 ? gl.UNSIGNED_BYTE : gl.HALF_FLOAT, LF = es2 ? gl.NEAREST : gl.LINEAR;
     const ls = this.lutScale, sc = (v, min) => Math.max(min, Math.round(v * ls));
-    this.tTrans = this._target(sc(TRANS_W, 64), sc(TRANS_H, 16), F, RGBA, HF);
-    this.tMS = this._target(sc(MS_SIZE, 8), sc(MS_SIZE, 8), F, RGBA, HF);
-    this.tSkySun = this._target(sc(SKY_W, 64), sc(SKY_H, 48), F, RGBA, HF);
-    this.tSkyMoon = this._target(sc(SKY_W, 64), sc(SKY_H, 48), F, RGBA, HF);
+    this.tTrans = this._target(sc(TRANS_W, 64), sc(TRANS_H, 16), F, RGBA, HF, LF);
+    this.tMS = this._target(sc(MS_SIZE, 8), sc(MS_SIZE, 8), F, RGBA, HF, LF);
+    this.tSkySun = this._target(sc(SKY_W, 64), sc(SKY_H, 48), F, RGBA, HF, LF);
+    this.tSkyMoon = this._target(sc(SKY_W, 64), sc(SKY_H, 48), F, RGBA, HF, LF);
     this.tAdapt = [this._target(1, 1, F, RGBA, HF, gl.NEAREST), this._target(1, 1, F, RGBA, HF, gl.NEAREST)];
     this.adaptIdx = 0;
 
     // procedural tileable noise (clouds, water, ground speckle), with mips
-    this.tNoise = this._target(256, 256, gl.RGBA8, RGBA, gl.UNSIGNED_BYTE, gl.LINEAR_MIPMAP_LINEAR, gl.REPEAT);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.tNoise.fbo);
-    gl.viewport(0, 0, 256, 256);
-    this._use(this.pNoise);
-    gl.bindVertexArray(this.vaoEmpty);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-    gl.bindTexture(gl.TEXTURE_2D, this.tNoise.tex);
-    gl.generateMipmap(gl.TEXTURE_2D);
+    if (es2) this.tNoise = this._target(NOISE_ATLAS.w, NOISE_ATLAS.h, gl.RGBA8, RGBA, gl.UNSIGNED_BYTE, gl.LINEAR, gl.CLAMP_TO_EDGE);      // filled when the file has arrived (_noiseAtlas)
+    else {
+      this.tNoise = this._target(256, 256, gl.RGBA8, RGBA, gl.UNSIGNED_BYTE, gl.LINEAR_MIPMAP_LINEAR, gl.REPEAT);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.tNoise.fbo);
+      gl.viewport(0, 0, 256, 256);
+      this._use(this.pNoise);
+      gl.bindVertexArray(this.vaoEmpty);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.bindTexture(gl.TEXTURE_2D, this.tNoise.tex);
+      gl.generateMipmap(gl.TEXTURE_2D);
+    }
 
     // textures filled asynchronously
     const mk = (wrapS) => {
@@ -211,10 +267,10 @@ export class SkyEngine {
 
     this.texSkyline = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.texSkyline);
-    gl.texImage2D(gl.TEXTURE_2D, 0, F, SKYLINE_BINS, 1, 0, RGBA, gl.FLOAT, new Float32Array(SKYLINE_BINS * 4).fill(-1));
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    this._skylineData(new Float32Array(SKYLINE_BINS * 4).fill(-1));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, es2 ? gl.NEAREST : gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, es2 ? gl.NEAREST : gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, es2 ? gl.CLAMP_TO_EDGE : gl.REPEAT);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
     // stars: [x y z mag bv] per vertex
@@ -227,19 +283,11 @@ export class SkyEngine {
     // plants: one instance = [x z height type | seed variant], advanced per instance
     this.plantBuf = gl.createBuffer();
     this.vaoPlants = gl.createVertexArray();
-    gl.bindVertexArray(this.vaoPlants);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.plantBuf);
-    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 24, 0); gl.vertexAttribDivisor(0, 1);
-    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 24, 16); gl.vertexAttribDivisor(1, 1);
-    gl.bindVertexArray(null);
+    this._instanceAttribs(this.vaoPlants, this.plantBuf);
     // the Christmas tree: two instances of the plant sprite (the tree, and its reflection when it floats on the sea)
     this.treeBuf = gl.createBuffer();
     this.vaoTree = gl.createVertexArray();
-    gl.bindVertexArray(this.vaoTree);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.treeBuf);
-    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 4, gl.FLOAT, false, 24, 0); gl.vertexAttribDivisor(0, 1);
-    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 24, 16); gl.vertexAttribDivisor(1, 1);
-    gl.bindVertexArray(null);
+    this._instanceAttribs(this.vaoTree, this.treeBuf);
     for (const [vao, buf] of [[this.vaoStars, this.starBuf], [this.vaoPlanets, this.planetBuf]]) {
       gl.bindVertexArray(vao);
       gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -289,6 +337,7 @@ export class SkyEngine {
       im.src = url(p);
     });
     const tasks = [
+      this.es2 ? fetch(url('data/noise.bin')).then(r => r.arrayBuffer()).then(buf => { this._noiseAtlas(new Uint8Array(buf)); this.assets.noise = true; }) : Promise.resolve(),
       fetch(url('data/stars.bin')).then(r => r.arrayBuffer()).then(buf => {
         const n = buf.byteLength / 6, dv = new DataView(buf), out = new Float32Array(n * 5);
         for (let i = 0; i < n; i++) {
@@ -353,7 +402,41 @@ export class SkyEngine {
       l.skyline = sk.data; l.albedo = sk.albedo; l.haze = sk.haze; l.ocean = sk.ocean;
     }
     gl.bindTexture(gl.TEXTURE_2D, this.texSkyline);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, SKYLINE_BINS, 1, 0, gl.RGBA, gl.FLOAT, l.skyline);
+    this._skylineData(l.skyline);
+  }
+
+  /** Uploads the skyline (4 floats per azimuth bin) into the bound texture: half floats, or packed into two rows of bytes on an ES 2 GPU. */
+  _skylineData(data) {
+    const gl = this.gl;
+    if (this.es2) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, SKYLINE_BINS, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, packSkyline(data));
+    else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, SKYLINE_BINS, 1, 0, gl.RGBA, gl.FLOAT, data);
+  }
+
+  /** ES 2: the noise texture (256 x 256 x RGBA, data/noise.bin) with its mip levels laid out in one texture (see FRAG_NOISE_PLACE). */
+  _noiseAtlas(bytes) {
+    const gl = this.gl, N = NOISE_ATLAS;
+    this.pNoiseDown = this.pNoiseDown || this._program(VERT_FULLSCREEN, FRAG_NOISE_DOWN);
+    this.pAtlasPlace = this.pAtlasPlace || this._program(VERT_FULLSCREEN, FRAG_ATLAS_PLACE);
+    const levels = N.levels.map(({ s }) => this._target(s, s, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.LINEAR, gl.REPEAT));
+    gl.bindTexture(gl.TEXTURE_2D, levels[0].tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 256, 0, gl.RGBA, gl.UNSIGNED_BYTE, bytes);
+    gl.bindVertexArray(this.vaoEmpty);
+    this._use(this.pNoiseDown);
+    for (let k = 1; k < levels.length; k++) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, levels[k].fbo); gl.viewport(0, 0, levels[k].w, levels[k].h);
+      this._1i('uSrc', 0); this._bind(0, levels[k - 1].tex); this._2f('uSize', levels[k].w, levels[k].h);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.tNoise.fbo);
+    this._use(this.pAtlasPlace);
+    this._1i('uSrc', 0); this._1f('uWrap', 1);
+    for (const { k, s, y } of N.levels) {
+      gl.viewport(0, y, s + 2, s + 2);
+      this._bind(0, levels[k].tex); this._2f('uSize', s, s); this._1f('uY', y);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+    gl.bindVertexArray(null);
+    for (const l of levels) { gl.deleteTexture(l.tex); gl.deleteFramebuffer(l.fbo); }
   }
 
   _resetScale() {
@@ -427,6 +510,7 @@ export class SkyEngine {
       this._1f('uMie', mie);
       this._1f('uGroundAlbedo', 0.3);
       this._1i('uTrans', 0);
+      this._2f('uTransPx', this.tTrans.w, this.tTrans.h);
       this._bind(0, this.tTrans.tex);
       this._runPass(this.tMS, this.pMS);
       this.staticDirty = false;
@@ -446,6 +530,7 @@ export class SkyEngine {
       this._1f('uElev', elev);
       this._1f('uCamH', camH);
       this._1i('uTrans', 0); this._1i('uMS', 1);
+      this._2f('uTransPx', this.tTrans.w, this.tTrans.h); this._2f('uMSPx', this.tMS.w, this.tMS.h);
       this._bind(0, this.tTrans.tex); this._bind(1, this.tMS.tex);
       this._runPass(target, this.pSkyView);
     };
@@ -710,17 +795,21 @@ export class SkyEngine {
     const glassOn = g.mode > 0 && g.hasMask;
     gl.disable(gl.BLEND);
     gl.bindTexture(gl.TEXTURE_2D, T.tex);
-    if (glassOn) {
+    if (glassOn && !this.es2) {
       if (scene) gl.generateMipmap(gl.TEXTURE_2D);          // frosting blurs through the mip chain
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
     } else gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    if (glassOn && this.es2 && (scene || !this.sceneMips)) this._sceneMips();
     const led = g.led.on;
     if (led) this._ensureComp(cw, ch);
     gl.bindFramebuffer(gl.FRAMEBUFFER, led ? this.compTarget.fbo : null);
     gl.viewport(0, 0, cw, ch);
     this._use(this.pBlit);
     this._1i('uTex', 0); this._bind(0, T.tex);
+    this._1f('uTexW', T.w);
+    if (glassOn && this.es2) for (let k = 1; k <= 7; k++) { this._1i('uMip' + k, 4 + k); this._bind(4 + k, this.sceneMips[k - 1].tex); }
     this._1i('uMask', 1); this._bind(1, this.maskTex);
+    if (glassOn && this.es2) this._bindMaskMips(12);
     const dpr = cw / Math.max(1, this.canvas.clientWidth);
     this._4f('uGlass', g.frost, glassOn ? g.mode : 0, g.stroke * dpr, 0);
     this._4f('uMaskRect', g.rect[0], g.rect[1], g.rect[2], g.rect[3]);
@@ -747,6 +836,71 @@ export class SkyEngine {
     if (led) this._ledPass(cw, ch);
   }
 
+  /** ES 2: the scene's mip levels 1..7 as separate textures (each a bilinear read of the one above: the average of 2x2 texels), for the glass's frosting. */
+  _sceneMips() {
+    const gl = this.gl, T = this.sceneTarget;
+    if (!this.sceneMips || this.sceneMips.src !== T) {
+      if (this.sceneMips) for (const m of this.sceneMips) { gl.deleteTexture(m.tex); gl.deleteFramebuffer(m.fbo); }
+      this.sceneMips = []; this.sceneMips.src = T;
+      let w = T.w, h = T.h;
+      for (let k = 1; k <= 7; k++) { w = Math.max(1, w >> 1); h = Math.max(1, h >> 1); this.sceneMips.push(this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE)); }
+    }
+    if (!this.pNoiseDown) this.pNoiseDown = this._program(VERT_FULLSCREEN, FRAG_NOISE_DOWN);
+    gl.disable(gl.BLEND);
+    gl.bindVertexArray(this.vaoEmpty);
+    this._use(this.pNoiseDown);
+    let src = T.tex;
+    for (const m of this.sceneMips) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, m.fbo); gl.viewport(0, 0, m.w, m.h);
+      this._1i('uSrc', 0); this._bind(0, src); this._2f('uSize', m.w, m.h);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      src = m.tex;
+    }
+  }
+
+  /**
+   * ES 2: the mask's mip levels 1..7 stacked in one texture (each with a border of its own edge texels), the way FRAG_BLIT's maskLod reads them. Each level is a
+   * bilinear read of the one above (the average of 2x2 texels), made in textures of their own and then copied into the stack. `src` is the mask's texture.
+   */
+  _maskMips(src, w, h) {
+    const gl = this.gl;
+    let st = this.maskMipState;
+    if (!st || st.w !== w || st.h !== h) {
+      if (st) { for (const l of st.levels) { gl.deleteTexture(l.tex); gl.deleteFramebuffer(l.fbo); } gl.deleteTexture(st.atlas.tex); gl.deleteFramebuffer(st.atlas.fbo); }
+      const levels = []; let lw = w, lh = h, y = 0;
+      for (let k = 1; k <= 7; k++) { lw = Math.max(1, lw >> 1); lh = Math.max(1, lh >> 1); const t = this._target(lw, lh, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE); t.y = y; levels.push(t); y += lh + 2; }
+      const atlas = this._target(levels[0].w + 2, y, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);
+      st = this.maskMipState = { w, h, levels, atlas };
+    }
+    if (!this.pNoiseDown) this.pNoiseDown = this._program(VERT_FULLSCREEN, FRAG_NOISE_DOWN);
+    if (!this.pAtlasPlace) this.pAtlasPlace = this._program(VERT_FULLSCREEN, FRAG_ATLAS_PLACE);
+    gl.disable(gl.BLEND);
+    gl.bindVertexArray(this.vaoEmpty);
+    this._use(this.pNoiseDown);
+    let from = src;
+    for (const m of st.levels) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, m.fbo); gl.viewport(0, 0, m.w, m.h);
+      this._1i('uSrc', 0); this._bind(0, from); this._2f('uSize', m.w, m.h);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      from = m.tex;
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, st.atlas.fbo);
+    this._use(this.pAtlasPlace);
+    this._1i('uSrc', 0); this._1f('uWrap', 0);
+    for (const m of st.levels) {
+      gl.viewport(0, m.y, m.w + 2, m.h + 2);
+      this._bind(0, m.tex); this._2f('uSize', m.w, m.h); this._1f('uY', m.y);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+  }
+  _bindMaskMips(unit) {
+    const st = this.maskMipState;
+    if (!st) return;
+    this._1i('uMaskMips', unit); this._bind(unit, st.atlas.tex);
+    this._2f('uMaskAtlasPx', st.atlas.w, st.atlas.h);
+    st.levels.forEach((m, i) => this._4f('uMaskLv' + (i + 1), m.w, m.h, m.y, 0));
+  }
+
   _ensureComp(w, h) {
     const gl = this.gl;
     if (this.compTarget && this.compTarget.w === w && this.compTarget.h === h) return;
@@ -761,12 +915,32 @@ export class SkyEngine {
     this.peakTarget = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.NEAREST);       // one texel per LED: read back exactly
   }
 
+  _ensureAvg(w, h) {
+    const gl = this.gl;
+    if (this.avgTarget && this.avgTarget.w === w && this.avgTarget.h === h) return;
+    if (this.avgTarget) { gl.deleteTexture(this.avgTarget.tex); gl.deleteFramebuffer(this.avgTarget.fbo); }
+    this.avgTarget = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.NEAREST);
+  }
+
   /** The finished picture -> a grid of square pixels with black lines between them (64x32, or 32x64 when upright). */
   _ledPass(cw, ch) {
     const gl = this.gl, L = this.glass.led, C = this.compTarget;
     gl.bindTexture(gl.TEXTURE_2D, C.tex);
-    gl.generateMipmap(gl.TEXTURE_2D);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    if (!this.es2) {                                            // (an ES 2 GPU reads single texels and adds them up itself)
+      gl.generateMipmap(gl.TEXTURE_2D);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    }
+    if (this.es2) {                                             // each LED's block averaged into a cols x rows picture
+      this._ensureAvg(L.cols, L.rows);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this.avgTarget.fbo);
+      gl.viewport(0, 0, L.cols, L.rows);
+      this._use(this.pLedAvg);
+      this._1i('uComp', 0); this._bind(0, C.tex);
+      this._2f('uRes', cw, ch);
+      this._4f('uLed', L.cols, L.rows, 0, 0);
+      gl.bindVertexArray(this.vaoEmpty);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
     // stars: the brightest pixel of each LED's block, in a tiny cols x rows picture the LED shader then reads
     const g = this.glass;
     if (L.stars) {
@@ -776,6 +950,7 @@ export class SkyEngine {
       this._use(this.pLedPeak);
       this._1i('uComp', 0); this._bind(0, C.tex);
       this._1i('uMask', 2); this._bind(2, this.maskTex);
+      if (g.hasMask && g.mode > 0 && this.es2) this._bindMaskMips(3);
       this._2f('uRes', cw, ch);
       this._4f('uLed', L.cols, L.rows, 0, 0);
       this._4f('uMaskRect', g.rect[0], g.rect[1], g.rect[2], g.rect[3]);
@@ -788,6 +963,7 @@ export class SkyEngine {
     gl.viewport(0, 0, cw, ch);
     this._use(this.pLed);
     this._1i('uComp', 0); this._bind(0, C.tex);
+    if (this.es2) { this._1i('uAvg', 4); this._bind(4, this.avgTarget.tex); }
     this._1i('uPeak', 3); this._bind(3, L.stars ? this.peakTarget.tex : C.tex);
     this._1f('uStars', L.stars || 0);
     this._2f('uRes', cw, ch);
@@ -831,11 +1007,12 @@ export class SkyEngine {
     gl.bindTexture(gl.TEXTURE_2D, this.maskTex);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
-    gl.generateMipmap(gl.TEXTURE_2D);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, this.es2 ? gl.LINEAR : gl.LINEAR_MIPMAP_LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    if (this.es2) this._maskMips(this.maskTex, canvas.width, canvas.height);
+    else gl.generateMipmap(gl.TEXTURE_2D);
     g.rect = rect; g.maskW = canvas.width; g.maskH = canvas.height; g.stroke = strokeCssPx; g.hasMask = true;
     this.redrawGlass();
   }
@@ -855,7 +1032,7 @@ export class SkyEngine {
     }
     if (!this.maskTarget || this.maskTarget.w !== w || this.maskTarget.h !== h) {
       if (this.maskTarget) { gl.deleteTexture(this.maskTarget.tex); gl.deleteFramebuffer(this.maskTarget.fbo); }
-      this.maskTarget = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.LINEAR_MIPMAP_LINEAR, gl.CLAMP_TO_EDGE);
+      this.maskTarget = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, this.es2 ? gl.LINEAR : gl.LINEAR_MIPMAP_LINEAR, gl.CLAMP_TO_EDGE);
       this.maskTex = this.maskTarget.tex;
     }
     const T = this.maskTarget;
@@ -886,7 +1063,8 @@ export class SkyEngine {
     }
     gl.bindVertexArray(null);
     gl.blendEquation(gl.FUNC_ADD); gl.disable(gl.BLEND);
-    gl.bindTexture(gl.TEXTURE_2D, T.tex); gl.generateMipmap(gl.TEXTURE_2D);
+    if (this.es2) this._maskMips(T.tex, w, h);
+    else { gl.bindTexture(gl.TEXTURE_2D, T.tex); gl.generateMipmap(gl.TEXTURE_2D); }
     g.rect = rect; g.maskW = w; g.maskH = h; g.stroke = strokeCssPx; g.hasMask = true;
     this.redrawGlass();
   }
@@ -953,14 +1131,30 @@ export class SkyEngine {
   snapshot(w, h) {
     const gl = this.gl, T = this.sceneTarget;
     if (!T) return null;
-    if (!this._snap || this._snap.w !== w || this._snap.h !== h) this._snap = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, T.fbo);
-    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this._snap.fbo);
-    gl.blitFramebuffer(0, 0, T.w, T.h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.LINEAR);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this._snap.fbo);
     const px = new Uint8Array(w * h * 4);
-    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    if (this.es2) {                                                    // no blit: read the whole picture and shrink it here (by averaging blocks)
+      const full = new Uint8Array(T.w * T.h * 4);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, T.fbo);
+      gl.readPixels(0, 0, T.w, T.h, gl.RGBA, gl.UNSIGNED_BYTE, full);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      for (let y = 0; y < h; y++) {
+        const y0 = Math.floor(y * T.h / h), y1 = Math.max(y0 + 1, Math.floor((y + 1) * T.h / h));
+        for (let x = 0; x < w; x++) {
+          const x0 = Math.floor(x * T.w / w), x1 = Math.max(x0 + 1, Math.floor((x + 1) * T.w / w));
+          const acc = [0, 0, 0, 0]; let n = 0;
+          for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) { const o = (yy * T.w + xx) * 4; acc[0] += full[o]; acc[1] += full[o + 1]; acc[2] += full[o + 2]; acc[3] += full[o + 3]; n++; }
+          const o = (y * w + x) * 4; px[o] = acc[0] / n; px[o + 1] = acc[1] / n; px[o + 2] = acc[2] / n; px[o + 3] = acc[3] / n;
+        }
+      }
+    } else {
+      if (!this._snap || this._snap.w !== w || this._snap.h !== h) this._snap = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, T.fbo);
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this._snap.fbo);
+      gl.blitFramebuffer(0, 0, T.w, T.h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.LINEAR);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this._snap.fbo);
+      gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
     const c = document.createElement('canvas'); c.width = w; c.height = h;
     const img = new ImageData(w, h);
     for (let y = 0; y < h; y++) img.data.set(px.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);   // GL rows run bottom to top
@@ -980,6 +1174,7 @@ export class SkyEngine {
     this._1i('uTrans', 0); this._bind(0, this.tTrans.tex);
     this._1i('uSkySun', 2); this._bind(2, this.tSkySun.tex);
     this._1i('uSkyMoon', 3); this._bind(3, this.tSkyMoon.tex);
+    this._2f('uTransPx', this.tTrans.w, this.tTrans.h); this._2f('uSkyPx', this.tSkySun.w, this.tSkySun.h);
     this._4f('uSunA', Math.sin(sunAz), Math.cos(sunAz), sunAlt, sunLux);
     this._4f('uMoonA', Math.sin(moonAz), Math.cos(moonAz), moonAlt, moonLux);
     this._3f('uNightLum', natural);
@@ -992,7 +1187,7 @@ export class SkyEngine {
     const gl = this.gl, p = this.s.plants;
     if (data) {
       gl.bindBuffer(gl.ARRAY_BUFFER, this.plantBuf);
-      gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+      gl.bufferData(gl.ARRAY_BUFFER, this.es2 ? this._expand(data, count) : data, gl.STATIC_DRAW);
       p.count = count;
     }
     if (palette) p.palette = palette;
@@ -1009,7 +1204,8 @@ export class SkyEngine {
     if (h != null) t.h = h;
     const x = Math.sin(t.az * DEG) * t.dist, z = Math.cos(t.az * DEG) * t.dist;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.treeBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([x, z, t.h, 10, 0.37, 0.5, x, z, t.h, 11, 0.37, 0.5]), gl.STATIC_DRAW);
+    const tree = new Float32Array([x, z, t.h, 10, 0.37, 0.5, x, z, t.h, 11, 0.37, 0.5]);
+    gl.bufferData(gl.ARRAY_BUFFER, this.es2 ? this._expand(tree, 2) : tree, gl.STATIC_DRAW);
     this.dirty = true;
   }
 
@@ -1039,13 +1235,14 @@ export class SkyEngine {
     this._3f('uDry', pal.dry); this._3f('uRock', pal.rock);
     this._1f('uSnowCover', Math.max(pal.snow || 0, w.snowCover));
     this._1f('uOcean', s.landscape.ocean ? 1 : 0);
+    this._2f('uResPx', this.sceneTarget.w, this.sceneTarget.h);
     if (plantsOn) {
       gl.bindVertexArray(this.vaoPlants);
-      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, p.count);
+      this._drawSprites(p.count);
     }
     if (treeOn) {                                   // the tree last, it is nearer than most plants; on the sea its reflection goes with it
       gl.bindVertexArray(this.vaoTree);
-      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, s.landscape.ocean ? 2 : 1);
+      this._drawSprites(s.landscape.ocean ? 2 : 1);
     }
     gl.bindVertexArray(null);
     gl.disable(gl.BLEND);

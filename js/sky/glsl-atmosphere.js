@@ -18,10 +18,13 @@
 // Units: kilometres. Radiometric unit: radiance per unit illuminance of the
 // light source, so shaders multiply by the sun / moon illuminance in lux.
 
+import { PORTABLE } from './portable.js';
+
 export const VERT_FULLSCREEN = `#version 300 es
 out vec2 vUv;
 void main() {
-  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  float id = float(gl_VertexID);                      // 0, 1, 2: one big triangle
+  vec2 p = vec2(id > 0.5 && id < 1.5 ? 2.0 : 0.0, id > 1.5 ? 2.0 : 0.0);
   vUv = p;
   gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
 }`;
@@ -29,6 +32,7 @@ void main() {
 export const ATMOS_COMMON = `
 precision highp float;
 precision highp sampler2D;
+${PORTABLE}
 
 const float PI  = 3.14159265358979323846;
 const float BOT = 6360.0;   // ground radius, km
@@ -120,18 +124,19 @@ void main() {
     medium(length(p) - BOT, sR, sM, ext);
     tau += ext * dt;
   }
-  oColor = vec4(exp(-tau), 1.0);
+  oColor = hdrPack(exp(-tau));
 }`;
 
 // ---- Pass 2: multiple scattering (isotropic, infinite-order series) ----
 export const FRAG_MULTISCATTER = `#version 300 es
 ${ATMOS_COMMON}
 uniform sampler2D uTrans;
+uniform vec2 uTransPx;      // size of the transmittance table, texels
 uniform float uGroundAlbedo;
 in vec2 vUv;
 out vec4 oColor;
 
-vec3 trans(float r, float mu) { return texture(uTrans, transUv(r, mu)).rgb; }
+vec3 trans(float r, float mu) { return hdrTex(uTrans, transUv(r, mu), uTransPx); }
 
 void main() {
   float sunCos = vUv.x * 2.0 - 1.0;
@@ -186,7 +191,7 @@ void main() {
   float inv = 1.0 / float(NA * NA);
   Lsum *= 4.0 * PI * inv;
   fsum *= inv;
-  oColor = vec4(Lsum / (1.0 - fsum), 1.0);
+  oColor = hdrPack(Lsum / (1.0 - fsum));
 }`;
 
 // ---- Pass 3: sky-view LUT (one per light: sun, moon) ----
@@ -195,12 +200,13 @@ export const FRAG_SKYVIEW = `#version 300 es
 ${ATMOS_COMMON}
 uniform sampler2D uTrans;
 uniform sampler2D uMS;
+uniform vec2 uTransPx, uMSPx;   // sizes of those tables, texels
 uniform float uElev;   // light elevation above the local horizon, rad
 uniform float uCamH;   // camera height above sea level, km
 in vec2 vUv;
 out vec4 oColor;
 
-vec3 trans(float r, float mu) { return texture(uTrans, transUv(r, mu)).rgb; }
+vec3 trans(float r, float mu) { return hdrTex(uTrans, transUv(r, mu), uTransPx); }
 
 void main() {
   float phi = PI * vUv.x * vUv.x;
@@ -233,10 +239,10 @@ void main() {
     float mu = dot(p / rr, sunDir);
     vec3 sunT = trans(rr, mu) * earthShadow(rr, mu);
     vec2 msUv = vec2(mu * 0.5 + 0.5, clamp((rr - BOT) / (TOP - BOT), 0.0, 1.0));
-    vec3 ms = texture(uMS, msUv).rgb;
+    vec3 ms = hdrTex(uMS, msUv, uMSPx);
     vec3 S = sunT * (sR * pR + vec3(sM * pM)) + ms * (sR + vec3(sM));
     L += thr * (S - S * stepT) / ext;
     thr *= stepT;
   }
-  oColor = vec4(L, dot(thr, vec3(1.0 / 3.0)));
+  oColor = hdrPack(L);
 }`;

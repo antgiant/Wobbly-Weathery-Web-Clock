@@ -26,6 +26,8 @@ uniform float uTime;
 uniform vec2 uWind;   // km/s at cloud height (east, north)
 uniform float uKey, uBoost, uWet, uFogDens;
 uniform float uOcean;   // 1 when the landscape is the sea: the Christmas tree floats and bobs
+uniform vec2 uResPx;   // canvas size, px (the sprite's pixel size gives the edge softness on a GPU without derivatives)
+out float vAA;
 out vec4 vInst;
 out vec2 vUv;
 out vec2 vSeed;
@@ -33,7 +35,13 @@ out vec3 vSunL, vAmbL, vHaze;
 out vec2 vSunSide;
 out float vFog, vExpo;
 
-const vec2 CORNER[6] = vec2[6](vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 1.0));
+// the quad's six corners by vertex number (two triangles)
+vec2 cornerOf(int i) {
+  if (i == 0 || i == 3) return vec2(0.0, 0.0);
+  if (i == 1) return vec2(1.0, 0.0);
+  if (i == 2 || i == 4) return vec2(1.0, 1.0);
+  return vec2(0.0, 1.0);
+}
 
 float aspectOf(int t) {
   if (t == 0 || t == 5 || t == 6) return 1.1;
@@ -57,7 +65,7 @@ float flexOf(int t) {
 }
 
 void main() {
-  vec2 c = CORNER[gl_VertexID];
+  vec2 c = cornerOf(gl_VertexID);
   int type = int(aInst.w + 0.5);
   vec3 base = vec3(aInst.x, -uEyeM + (type >= 10 ? uOcean * 0.10 * sin(uTime * 0.8 + 1.3) : 0.0), aInst.y);
   float dist = max(length(base.xz), 0.5);
@@ -88,6 +96,7 @@ void main() {
   vec2 ndc = vec2(cam.x / (cam.z * uTan.x), cam.y / (cam.z * uTan.y));
   gl_Position = vec4(ndc, 0.0, 1.0);
 
+  vAA = 0.9 * max(cam.z * uTan.x / max(w, 1e-3) * 2.0 / uResPx.x, cam.z * uTan.y / max(h, 1e-3) * 2.0 / uResPx.y);   // 0.9 / the sprite's size in px (what fwidth gives)
   vUv = c;
   vInst = aInst;
   vSeed = aSeed;
@@ -104,12 +113,13 @@ void main() {
   vec3 sc = transpose(uCam) * uSunDir;                  // sun in camera space: x across the screen, z in front
   vSunSide = sc.xz;
   vFog = 1.0 - exp(-dist * uFogDens);
-  vExpo = calcExpo(exp(texelFetch(uAdapt, ivec2(0), 0).r), uKey, uBoost);
+  vExpo = calcExpo(exp(adaptLog(uAdapt)), uKey, uBoost);
 }`;
 
 export const FRAG_PLANTS = `#version 300 es
 precision highp float;
 ${DISPLAY_FNS}
+in float vAA;
 in vec4 vInst;
 in vec2 vUv;
 in vec2 vSeed;
@@ -166,7 +176,11 @@ void main() {
   float seed = vSeed.x, vari = vSeed.y;
   if (type == 11) uv.x += 0.012 * sin(uv.y * 60.0 + uTime * 1.5);      // ripples
   vec3 emit = vec3(0.0);                                  // light the sprite gives off itself
+#ifdef WOBBLY_ES2
+  float aa = vAA + 1e-4;
+#else
   float aa = max(fwidth(uv.x), fwidth(uv.y)) * 0.9 + 1e-4;
+#endif
   float a = 0.0;
   vec3 col = uGrass;
   float shadeLow = 0.0;                                  // 1 = ambient-occluded at the base
@@ -205,7 +219,7 @@ void main() {
       vec2 q = uv - vec2(0.53, 0.80);
       for (int k = 0; k < 6; k++) {
         float fk = float(k);
-        float sd = (k % 2 == 0) ? 1.0 : -1.0;
+        float sd = (fk - 2.0 * floor(fk * 0.5) < 0.5) ? 1.0 : -1.0;
         float s = q.x * sd / (0.30 + 0.16 * hh(seed, fk));
         float rise = 0.20 + 0.16 * hh(seed, fk + 5.0);
         float droop = 0.30 + 0.35 * hh(seed, fk + 9.0);
@@ -247,8 +261,8 @@ void main() {
       float r = length(d);
       float tw = 0.55 + 0.45 * sin(uTime * (1.6 + 0.5 * hh(fk, 1.0)) + fk * 1.9);
       float core = smoothstep(0.016, 0.006, r), halo = exp(-r * r / 0.00045);
-      emit += bulbColor(k % 5) * (core * 1.6 + halo * 0.7) * tw;
-      near += bulbColor(k % 5) * exp(-r * r / 0.004) * tw;
+      emit += bulbColor(k - 5 * (k / 5)) * (core * 1.6 + halo * 0.7) * tw;
+      near += bulbColor(k - 5 * (k / 5)) * exp(-r * r / 0.004) * tw;
       glowA = max(glowA, max(core, halo * 0.8 * tw));
     }
     emit += (0.25 * vec3(0.05, 0.35, 0.10) + 0.22 * near) * body;       // the boughs are lit by their own bulbs

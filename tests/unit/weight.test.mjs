@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { check, done } from '../lib/check.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const BUDGET = { precacheKB: 1500, ownScriptKB: 470,   // was 450: the quality governor, the GPU-drawn glass mask and raindrops (about 20 KB) let the Pi draw at 15 to 60 fps; was 420 before: the QR code, the city list, time zones and share links v2/v3 added about 45 KB of features
+const BUDGET = { precacheKB: 1500, ownScriptKB: 495,   // was 470: the ES 2 form of the shaders (translator, packed tables, helpers: about 20 KB) lets the Pi Zero and Pi 3 draw on their GPUs with the same files; was 450: the quality governor, the GPU-drawn glass mask and raindrops (about 20 KB) let the Pi draw at 15 to 60 fps; was 420 before: the QR code, the city list, time zones and share links v2/v3 added about 45 KB of features
    largestFileKB: 130, cssKB: 80 };
 
 const sw = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');

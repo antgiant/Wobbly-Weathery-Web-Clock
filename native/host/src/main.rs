@@ -50,7 +50,7 @@ fn start_watchdog() {
 const EMBED: &[(&str, &str)] = &[
     ("host/host.js", include_str!("../js/host.js")), ("host/dom.js", include_str!("../js/dom.js")),
     ("host/polyfills.js", include_str!("../js/polyfills.js")), ("host/boot.js", include_str!("../js/boot.js")),
-    ("host/gputest.js", include_str!("../js/gputest.js")), ("host/es2translate.js", include_str!("../js/es2translate.js")),
+    ("host/gputest.js", include_str!("../js/gputest.js")),
 ];
 fn embedded(name: &str) -> Option<String> {
     let (n, _) = EMBED.iter().find(|(k, _)| *k == name)?.clone();
@@ -199,7 +199,8 @@ usage: wobbly-clock-run [--config FILE] [--web DIR] [--sink fb[:DEV]|ppm:DIR|mat
   --web DIR       use the page's files from this folder instead of the copy inside the program (for working on the page)\n\
   --sink          where frames go (default: the config's output: hdmi = fb, matrix = the LED panel)\n\
   --gpu-test      probe this GPU on the OpenGL ES 2 path and print what it can do (for the Pi Zero, 1 and 3)\n\
-  --software      draw on the CPU (Mesa llvmpipe), as a Pi 3 or Zero must; chosen automatically when the GPU has no OpenGL ES 3\n\
+  --software      draw on the CPU (Mesa llvmpipe); chosen automatically when there is no GPU context at all\n\
+  --es2           take the OpenGL ES 2 path (the Pi Zero and 3) on any GPU, for tests; chosen automatically when the GPU has no OpenGL ES 3\n\
   --size WxH      the picture size for the ppm sink; --frames N stop after N frames; --at EPOCH_MS pretend it is this moment\n\
 tests: wobbly-clock-run <repo-root> <out.ppm> [--app] [--w=N --h=N --search=... --conf=JSON ...]");
     if code == 0 { println!("{text}"); } else { eprintln!("{text}"); }
@@ -262,14 +263,22 @@ fn main() {
     let force_software = flags.iter().any(|(k, _)| k == "software");
     if force_software && std::env::var("WOBBLY_SOFTWARE").is_err() { reexec_software(); }
     let opened = if gpu_test { egl::Egl::open(2) } else if std::env::var("WOBBLY_FAKE_NO_ES3").is_ok() && std::env::var("WOBBLY_SOFTWARE").is_err() { Err("simulated: no EGL configuration for OpenGL ES 3".to_string()) } else { egl::Egl::open(3) };   // (the variable is for the test of the fallback)
+    // No ES 3: the Pi Zero (all models), 1, 2 and 3 have OpenGL ES 2 in hardware, and the page's shaders run there in their ES 2 form (js/sky/portable.js). Only when there is
+    // no GPU context at all does the program fall back to the CPU renderer. (WOBBLY_FAKE_NO_ES3 tests that fallback; --es2 makes any GPU take the ES 2 path.)
     let egl = match opened {
         Ok(e) => e,
         Err(e) => {
-            if std::env::var("WOBBLY_SOFTWARE").is_err() && !e.contains("libEGL") { eprintln!("wobbly-clock-run: no OpenGL ES 3 on this GPU ({e}): drawing on the CPU instead (slower)"); reexec_software(); }
-            eprintln!("wobbly-clock-run: {e}"); std::process::exit(1)
+            if std::env::var("WOBBLY_SOFTWARE").is_err() && !e.contains("libEGL") {
+                let try_es2 = !gpu_test && std::env::var("WOBBLY_FAKE_NO_ES3").is_err() && std::env::var("WOBBLY_NO_ES2").is_err();
+                match if try_es2 { egl::Egl::open(2) } else { Err("not tried".to_string()) } {
+                    Ok(e2) => { eprintln!("wobbly-clock-run: no OpenGL ES 3 on this GPU ({e}): using its OpenGL ES 2 (the page's shaders in their ES 2 form)"); e2 }
+                    Err(e2) => { eprintln!("wobbly-clock-run: no OpenGL ES 3 on this GPU ({e}), and ES 2 gives: {e2}: drawing on the CPU instead (slower)"); reexec_software(); }
+                }
+            } else { eprintln!("wobbly-clock-run: {e}"); std::process::exit(1) }
         }
     };
     let gl = Rc::new(gl::Gl::new(egl));
+    if flags.iter().any(|(k, _)| k == "es2") { gl.set_es2(true); }
     let rt = Runtime::new().unwrap();
     rt.set_memory_limit(512 << 20);
     rt.set_max_stack_size(4 << 20);

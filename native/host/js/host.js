@@ -128,6 +128,7 @@ function makeGL(canvas) {
   const gl = Object.create(C);
   const screen = { w: 0, h: 0, fbo: 0, tex: 0 };
   const call = (n, ...a) => __gl(n, ...a);
+  const es2 = __gl('isES2') === 1;
   const ensureScreen = () => {
     if (screen.w === canvas.width && screen.h === canvas.height && screen.fbo) return;
     if (!screen.fbo) { screen.fbo = call('createFramebuffer'); screen.tex = call('createTexture'); }
@@ -141,7 +142,8 @@ function makeGL(canvas) {
   const wrapNew = (n) => () => ({ id: call(n) });
   Object.assign(gl, {
     canvas, drawingBufferWidth: canvas.width, drawingBufferHeight: canvas.height,
-    getExtension: (n) => (n === 'EXT_color_buffer_float' || n === 'EXT_color_buffer_half_float' || n === 'KHR_parallel_shader_compile') ? {} : null,
+    // an OpenGL ES 2 GPU has no float render targets: saying so makes the engine take its ES 2 path (packed 8-bit tables, no instancing, portable.js)
+    getExtension: (n) => (n === 'KHR_parallel_shader_compile' || (!es2 && (n === 'EXT_color_buffer_float' || n === 'EXT_color_buffer_half_float'))) ? {} : null,
     createTexture: wrapNew('createTexture'), createBuffer: wrapNew('createBuffer'), createFramebuffer: wrapNew('createFramebuffer'), createVertexArray: wrapNew('createVertexArray'),
     createProgram: wrapNew('createProgram'), createShader: (t) => ({ id: call('createShader', t) }),
     deleteTexture: (o) => call('deleteTexture', idOf(o)), deleteBuffer: (o) => call('deleteBuffer', idOf(o)), deleteFramebuffer: (o) => call('deleteFramebuffer', idOf(o)),
