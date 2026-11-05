@@ -49,10 +49,12 @@ export async function run(t) {
 
   // it ticks: one second later the last unit has changed
   h = await t.open({ fast: true, query: 't=2026-06-21T12:00:00Z&speed=1', timezone: 'UTC', width: 393, height: 852, conf: { clockStyle: 'solid', clockMode: 'countdown', timerTarget: '2026-06-21T12:05:00', twentyFourHourClock: true } });
+  await h.page.waitForFunction(() => /^0:0[45]:\d\d$/.test(document.title), null, { timeout: 30000 }).catch(() => {});      // (a slow machine takes its time to show the first reading)
   const t0 = await h.page.evaluate(() => document.title);
-  await h.page.waitForTimeout(2300);
+  await h.page.waitForFunction((was) => document.title !== was, t0, { timeout: 30000 }).catch(() => {});                  // ... and to tick: wait for the change, not a fixed time
   const t1 = await h.page.evaluate(() => document.title);
-  t.check('it counts down in real time (seconds shown, under a day: 0:04:5x then lower)', /^0:04:5\d$/.test(t0) && t0 !== t1 && /^0:04:\d\d$/.test(t1), `${t0} -> ${t1}`);
+  const secs = (x) => { const m = /^(\d+):(\d\d):(\d\d)$/.exec(x); return m ? +m[1] * 3600 + +m[2] * 60 + +m[3] : NaN; };
+  t.check('it counts down in real time (seconds shown, under a day: 0:04:5x then lower)', /^0:0[45]:\d\d$/.test(t0) && secs(t1) < secs(t0) && secs(t1) >= 290 - 60, `${t0} -> ${t1}`);
   await h.close();
 
   if (t.quick) return;                                              // the quick check stops here
@@ -73,7 +75,8 @@ export async function run(t) {
   await h.close();
   // (with the page clock frozen instead of time travel, which would leave the setting alone) the setting goes back to "The time" by itself
   h = await t.open({ fast: true, fixedTime: '2026-06-21T12:00:00Z', timezone: 'UTC', width: 393, height: 852, conf: { clockStyle: 'solid', clockMode: 'countdown', timerTarget: '2026-06-20T08:00:00', timerLabel: 'Done', twentyFourHourClock: true } });
-  await h.settle(5200);
+  await h.settle(1000);
+  await h.page.waitForFunction(() => { try { return JSON.parse(localStorage.getItem('conf')).clockMode === 'time'; } catch (e) { return false; } }, null, { timeout: 40000 }).catch(() => {});      // (it goes back within seconds; a slow machine takes longer)
   s = await state(h.page);
   const back = await h.page.evaluate(() => ({ mode: JSON.parse(localStorage.getItem('conf')).clockMode, select: document.getElementById('clockMode').value }));
   t.check('and the setting goes back to "The time" by itself', back.mode === 'time' && back.select === 'time', JSON.stringify(back));

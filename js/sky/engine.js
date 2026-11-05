@@ -17,7 +17,7 @@ import {
   VERT_FULLSCREEN, FRAG_TRANSMITTANCE, FRAG_MULTISCATTER, FRAG_SKYVIEW,
 } from './glsl-atmosphere.js';
 import {
-  FRAG_NOISE, FRAG_NOISE_DOWN, FRAG_ATLAS_PLACE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, fragBlit, FRAG_LED, FRAG_LED_PEAK, FRAG_LED_AVG, FRAG_SCENE_SKY, FRAG_SCENE_CLOUD, FRAG_SCENE_FOG, FRAG_SCENE_TERRAIN, FRAG_CONSTS, CONSTS_N, HAZE_N,
+  FRAG_NOISE, FRAG_NOISE_DOWN, FRAG_ATLAS_PLACE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, fragBlit, FRAG_LED, FRAG_LED_PEAK, FRAG_LED_AVG, FRAG_SCENE_SKY, FRAG_SCENE_CLOUD, FRAG_SCENE_FOG, FRAG_SCENE_TERRAIN, fragTerrain, FRAG_CONSTS, CONSTS_N, HAZE_N,
 } from './glsl-scene.js';
 import { toES1, packSkyline, NOISE_ATLAS } from './portable.js';
 import { VERT_PLANTS, FRAG_PLANTS } from './glsl-plants.js';
@@ -136,7 +136,14 @@ export class SkyEngine {
   }
   /** The final pass in its form for what is on the screen: 'off' (no clock glass), 'ink' (the LED panel's flat ink) or 'glass'; each made the first time it is needed. */
   _blitProgram(kind) { return this.pBlits[kind] || (this.pBlits[kind] = this._program(VERT_FULLSCREEN, fragBlit(kind))); }
-  _use(P) { this._ready(P); this.gl.useProgram(P.prog); this._cur = P; }
+  _use(P) {
+    this._ready(P); this.gl.useProgram(P.prog); this._cur = P;
+    if (P.label === undefined) {                                        // the first use: a name for the log (which shader is which)
+      P.label = '?';
+      for (const k of Object.keys(this)) { if (k === '_cur') continue; const v = this[k]; if (v === P) { P.label = k.replace(/^p(?=[A-Z])/, ''); break; } if (k === 'pBlits') for (const b of Object.keys(v)) if (v[b] === P) P.label = 'final pass: ' + b; }
+      if (this.gl.__label) this.gl.__label(P.prog, P.label);
+    }
+  }
   // Uniform setters. A program keeps its uniforms between draws, so a value that has not changed is not sent again: most of the hundreds of values set for a
   // frame are the same as the last frame's, and on a slow machine each call across to the driver costs. (`vals` holds what each program was last given.)
   _same(n, a) {
@@ -225,7 +232,7 @@ export class SkyEngine {
     this.pSceneSky = this._program(VERT_FULLSCREEN, FRAG_SCENE_SKY);          // the sky and the ground are two programs into one picture (glsl-scene.js: one is too big for a small GPU)
     this.pSceneCloud = this._program(VERT_FULLSCREEN, FRAG_SCENE_CLOUD);        // one cloud layer, drawn up to three times
     this.pSceneFog = this._program(VERT_FULLSCREEN, FRAG_SCENE_FOG);
-    this.pSceneTerrain = this._program(VERT_FULLSCREEN, FRAG_SCENE_TERRAIN);
+    this.pSceneTerrain = this._program(VERT_FULLSCREEN, this.es2 ? fragTerrain('land') : FRAG_SCENE_TERRAIN);          // (a small GPU gets the sea as a program of its own)
     this.pBlits = {};                                            // the final pass in the form that is needed (_blitProgram)
     performance.mark('sky:programs-compiled');
     this.pLed = this._program(VERT_FULLSCREEN, FRAG_LED);
@@ -796,6 +803,11 @@ export class SkyEngine {
     if (w.fog > 0.005) { this._use(this.pSceneFog); setScene(); gl.drawArrays(gl.TRIANGLES, 0, 3); }
     this._use(this.pSceneTerrain); setScene();
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if (this.es2 && land.ocean) {
+      this.pSceneOcean = this.pSceneOcean || this._program(VERT_FULLSCREEN, fragTerrain('ocean'));
+      this._use(this.pSceneOcean); setScene();
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
     gl.disable(gl.BLEND);
 
     // ---- plants: alpha-blended sprites that also knock the stars' visibility mask down ----
@@ -839,28 +851,47 @@ export class SkyEngine {
       const snowRate = (w.precip || 0) * (w.snowfall || 0), rainRate = (w.precip || 0) * (1 - (w.snowfall || 0));
       this.wx = { snow: on ? Math.min(1, snowRate * 1.4) : 0, rain: on ? Math.min(1, rainRate * 1.3) : 0 };       // (read by the tests)
     }
-    // An ES 2 GPU gets the glass as up to three small programs (body, weather, outline), each reading the one before; the rest is one program.
+    // An ES 2 GPU gets the glass as small programs, each reading what the ones before made (a Pi Zero's driver could not fit the whole glass in one: it drew nothing): the height field and
+    // slope (ggeo), the shadow and halo (gaura), for stained glass the tube's colours (gemit, ghalo), the body (gbody), snow and rain when there are any (gwx), the outline (gout).
     const kind = !glassOn ? 'off' : g.mode > 2.5 ? 'ink' : 'glass';
-    const passes = this.es2 && kind === 'glass' ? ['gbody', ...(this.wx.snow > 0.01 || this.wx.rain > 0.01 ? ['gwx'] : []), 'gout'] : [kind];
-    if (passes.length > 1) this._ensurePing(cw, ch);
+    const stained = g.mode > 1.5 && g.mode <= 2.5;
+    const passes = this.es2 && kind === 'glass' ? ['ggeo', 'gaura', ...(stained ? ['gemit', 'ghalo'] : []), 'gbody', ...(this.wx.snow > 0.01 || this.wx.rain > 0.01 ? ['gwx'] : []), 'gout'] : [kind];
+    if (passes.length > 1) { this._ensurePing(cw, ch); this._ensureGlassT(cw, ch); }
     const dpr = cw / Math.max(1, this.canvas.clientWidth);
-    let prev = null;
-    passes.forEach((pass, i) => {
-      const last = i === passes.length - 1;
-      const out = last ? (led ? this.compTarget : null) : this.pingT[i % 2];
+    let prev = null, n = 0;
+    for (const pass of passes) {
+      const last = pass === passes[passes.length - 1];
+      const own = passes.length > 1 && this.glassT[pass];                // a pass that makes an input of a later one
+      const out = last ? (led ? this.compTarget : null) : own || this.pingT[n++ % 2];
       gl.bindFramebuffer(gl.FRAMEBUFFER, out ? out.fbo : null);
       gl.viewport(0, 0, cw, ch);
       this._use(this._blitProgram(pass));
       this._blitUniforms(T, glassOn, led, cw, ch, dpr, prev, last);
+      this._bindGlassInputs(pass);
       gl.bindVertexArray(this.vaoEmpty);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
-      prev = out;
-    });
+      if (!own) prev = out;
+    }
     if (led) this._ledPass(cw, ch);
   }
 
+  _ensureGlassT(w, h) {
+    const gl = this.gl;
+    if (this.glassT && this.glassT.w === w && this.glassT.h === h) return;
+    if (this.glassT) for (const k of ['ggeo', 'gaura', 'gemit', 'ghalo']) { gl.deleteTexture(this.glassT[k].tex); gl.deleteFramebuffer(this.glassT[k].fbo); }
+    this.glassT = { w, h };
+    for (const k of ['ggeo', 'gaura', 'gemit', 'ghalo']) this.glassT[k] = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);
+  }
+  /** The body pass reads what the passes before it made (units 1 to 4: nothing else it reads is on them). */
+  _bindGlassInputs(pass) {
+    if (pass !== 'gbody' || !this.glassT) return;
+    const G = this.glassT;
+    this._1i('uGeo', 1); this._bind(1, G.ggeo.tex); this._1i('uAura', 2); this._bind(2, G.gaura.tex);
+    this._1i('uEmit', 3); this._bind(3, G.gemit.tex); this._1i('uHalo', 4); this._bind(4, G.ghalo.tex);
+  }
+
   /** The uniforms and textures of a final pass (the program is already in use); `prev` is the picture the pass before it made. */
-  _blitUniforms(T, glassOn, led, cw, ch, dpr, prev, last) {
+  _blitUniforms(T, glassOn, led, cw, ch, dpr, prev, last, prevUnit = 7) {
     const gl = this.gl, g = this.glass;
     this._1i('uTex', 0); this._bind(0, T.tex);
     this._1f('uTexW', T.w);
@@ -882,7 +913,7 @@ export class SkyEngine {
     this._1f('uDropsOn', g.dropsOn ? 1 : 0);
     this._1i('uFull', 3); this._bind(3, this.overlayFullTex);
     this._1f('uFullOn', last && led && g.overlayFull ? 1 : 0);
-    this._1i('uPrev', 7); if (prev) this._bind(7, prev.tex);
+    this._1i('uPrev', prevUnit); if (prev) this._bind(prevUnit, prev.tex);
   }
 
   /**
@@ -1224,13 +1255,10 @@ export class SkyEngine {
       const d = new Uint8Array(cw * ch * 4); gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, d);
       if (this.es2 && g.mode > 0 && g.hasMask && this.pingT) {
         const dpr = cw / Math.max(1, this.canvas.clientWidth), led = g.led.on;
-        for (const [k, what] of [['dbgtex', 'uTex read as it is'], ['dbgscene', 'the scene mip atlas (level 1)'], ['dbgmask', 'the mask coverage'], ['dbgprev', 'the picture of the pass before']]) {
-          gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, cw, ch); gl.clearColor(1, 0, 1, 1); gl.clear(gl.COLOR_BUFFER_BIT);
-          this._use(this._blitProgram(k)); this._blitUniforms(T, true, led, cw, ch, dpr, this.pingT[0], true);
-          gl.bindVertexArray(this.vaoEmpty); gl.drawArrays(gl.TRIANGLES, 0, 3);
-          const e = new Uint8Array(cw * ch * 4); gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, e);
-          probe += '\nexperiment ' + k + ' (' + what + '):\n' + grid(e, cw, ch);
-        }
+        const draw = (k, fbo, prev, unit) => { gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.viewport(0, 0, cw, ch); gl.clearColor(1, 0, 1, 1); gl.clear(gl.COLOR_BUFFER_BIT); this._use(this._blitProgram(k)); this._blitUniforms(T, true, led, cw, ch, dpr, prev, true, unit); this._bindGlassInputs(k); gl.bindVertexArray(this.vaoEmpty); gl.drawArrays(gl.TRIANGLES, 0, 3); };
+        const shot = () => { gl.bindFramebuffer(gl.FRAMEBUFFER, null); const e = new Uint8Array(cw * ch * 4); gl.readPixels(0, 0, cw, ch, gl.RGBA, gl.UNSIGNED_BYTE, e); let un = 0; for (let i = 0; i < e.length; i += 4) if (e[i] === 255 && e[i + 1] === 0 && e[i + 2] === 255) un++; return grid(e, cw, ch) + '\n(' + un + ' of ' + cw * ch + ' px were never drawn on)'; };
+        this._ensureGlassT(cw, ch);
+        for (const k of ['ggeo', 'gaura', 'gbody']) { draw(k, null, this.pingT[0], 7); probe += '\nexperiment the pass ' + k + ' straight to the screen:\n' + shot(); }
       }
       probe += '\nplain copy of the scene on the screen:\n' + grid(d, cw, ch) + '\nGL error before the probe ' + err0 + ', after ' + gl.getError();
     } catch (e) { probe += '\nprobe failed: ' + e; }

@@ -206,6 +206,29 @@ function makeGL(canvas) {
     const bumps = {}; G.__bumpLog = (k, el) => { const n = k + ' on ' + (el ? (el.id || el.localName) : '?'); bumps[n] = (bumps[n] || 0) + 1; };
     G.__profDump = () => { const pt = G.__pt; { const rows = Object.entries(bumps).sort((x, y) => y[1] - x[1]).slice(0, 6); if (rows.length) { __print('--- page changes that make the layout be worked out again (count, change) ---'); for (const [k, v] of rows) __print(String(v).padStart(8) + '  ' + k); } for (const k in bumps) delete bumps[k]; } { const rows = Object.entries(G.__timerTime).sort((x, y) => y[1].ms - x[1].ms).slice(0, 8); if (rows.length) { __print('--- timer callbacks since the last dump (ms, count, start of source) ---'); for (const [k, v] of rows) __print(String(Math.round(v.ms)).padStart(8) + '  x' + String(v.n).padEnd(4) + k); } for (const k in G.__timerTime) delete G.__timerTime[k]; } __print('--- CPU time besides drawing, this frame ---'); for (const k in pt) { __print(String(Math.round(pt[k])).padStart(8) + '  ' + k); delete pt[k]; }; const rows = Object.entries(prof).sort((a, b) => b[1].ms - a[1].ms).slice(0, 14); __print('--- GL time by call (ms, count) ---'); rows.forEach(([k, v]) => __print(String(Math.round(v.ms)).padStart(8) + '  x' + String(v.n).padEnd(5) + k)); for (const k in prof) delete prof[k]; };
   }
+  if (G.__args && (G.__args.timing || G.__args.profile)) {
+    // Which shader the driver could not fit into its registers: the first draw of each program (that is when the driver builds it) is timed, and the driver's complaints counted around it.
+    const labels = {}, lens = {}, seen = {}, srcLen = {}; let cur = 0;
+    const shSrc = gl.shaderSource, attach = gl.attachShader, useP = gl.useProgram;
+    gl.__label = (p, n) => { labels[p.id !== undefined ? p.id : p] = n; };
+    gl.shaderSource = (s, src) => { srcLen[s.id] = src.length; return shSrc(s, src); };
+    gl.attachShader = (p, s) => { (lens[p.id] ||= []).push(srcLen[s.id] || 0); return attach(p, s); };
+    gl.useProgram = (p) => { cur = p ? p.id : 0; return useP(p); };
+    G.__shaderReport = [];
+    for (const k of ['drawArrays', 'drawArraysInstanced']) {
+      const f = gl[k];
+      gl[k] = (...a) => {
+        if (seen[cur] || !cur) return f(...a);
+        seen[cur] = 1;
+        const before = call('regFails'), t = __now(); const r = f(...a); call('finish');
+        const ms = Math.round(__now() - t); const t2 = __now(); while (__now() - t2 < 40) { /* the driver's messages come through a pipe: give them a moment */ }
+        const n = call('regFails') - before;
+        const line = '[shader] ' + (labels[cur] || 'program ' + cur) + ' (' + (lens[cur] || []).join('+') + ' chars): first draw ' + ms + ' ms' + (n ? ', THE DRIVER COULD NOT FIT IT INTO ITS REGISTERS (' + n + (n > 1 ? ' times' : ' time') + ')' : '');
+        G.__shaderReport.push(line); __print(line);
+        return r;
+      };
+    }
+  }
   return gl;
 }
 

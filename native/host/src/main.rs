@@ -212,6 +212,8 @@ tests: wobbly-clock-run <repo-root> <out.ppm> [--app] [--w=N --h=N --search=... 
 /// way. That goes through here (stderr is a pipe for the program's own lifetime): the lines of such a dump are dropped and one line says it happened; everything else is
 /// passed on as it came. WOBBLY_RAW_STDERR=1 turns this off.
 static ORIG_STDERR: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(-1);
+/// How many times the driver said it could not fit a shader into its registers (the filter counts them; the page asks, to say which shader it was).
+pub static REG_FAILS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 /// Ends the program. If stderr was put through the filter below, the real one is put back and the filter is given a moment to pass on what it holds.
 fn leave(code: i32) -> ! {
     extern "C" { fn dup2(a: i32, b: i32) -> i32; }
@@ -238,7 +240,7 @@ fn quiet_driver_noise() {
                 let t = String::from_utf8_lossy(&line);
                 let is_dump = t.starts_with("Failed to register allocate") || (dump && (t.is_empty() || t.starts_with(' ') || t.starts_with('\t') || t.starts_with("BLOCK") || t.starts_with("->") || t.starts_with(|c: char| c.is_ascii_digit()) || t.starts_with("temp") || t.starts_with("Spill")));
                 if is_dump {
-                    if t.starts_with("Failed to register allocate") { let _ = writeln!(out, "wobbly-clock-run: the GPU driver could not fit a shader into its registers and is trying another way (its listing is not shown; set WOBBLY_RAW_STDERR=1 to see it)"); }
+                    if t.starts_with("Failed to register allocate") { REG_FAILS.fetch_add(1, std::sync::atomic::Ordering::Relaxed); let _ = writeln!(out, "wobbly-clock-run: the GPU driver could not fit a shader into its registers and is trying another way (its listing is not shown; set WOBBLY_RAW_STDERR=1 to see it)"); }
                     dump = true; hidden += 1; continue;
                 }
                 dump = false;
