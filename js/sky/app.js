@@ -41,9 +41,19 @@ function init() {
     return;
   }
   performance.mark('sky:engine-created');
+  { const d = parseFloat(new URLSearchParams(location.search).get('dpr')); if (d > 0) engine.set({ forceDpr: Math.min(d, 6) }); }     // ?dpr=3: draw at more than twice the screen's pixels (to see what a bigger screen would cost)
   engine.onTick = (ms) => { vars.tick = ms; };           // the clock ticks as fast as the governor says the frames allow
   window.__sky = engine;                         // handy for debugging / tests
-  if (new URLSearchParams(location.search).has('stats')) import('./stats.js').then((m) => m.initStats(engine, canvas));       // ?stats: frames a second and the picture's size, tap to copy
+  {                                                            // ?stats: frames a second and the picture's size, tap to copy (?stats=0 turns it off; once asked for, it comes back on this device's next visits)
+    let want = false;
+    let mode = ''; try { const v = new URLSearchParams(location.search).get('stats'); if (v === '0') localStorage.removeItem('stats'); else if (v !== null) localStorage.setItem('stats', v || '1'); mode = localStorage.getItem('stats') || ''; want = !!mode; } catch (_) { mode = new URLSearchParams(location.search).get('stats'); want = mode !== null; }
+    if (want) {
+      const note = document.createElement('div');                // (shown at once, so a missing read-out says whether this code ran at all)
+      note.style.cssText = 'position:fixed;left:6px;top:6px;z-index:99999;padding:4px 8px;border-radius:6px;background:rgba(0,0,0,.7);color:#9f9;font:11px ui-monospace,Menlo,monospace';
+      note.textContent = 'stats: loading...'; document.body.appendChild(note);
+      import('./stats.js').then((m) => { note.remove(); m.initStats(engine, canvas, mode); }).catch((e) => { note.style.color = '#f99'; note.textContent = 'stats failed: ' + (e && e.message || e); });
+    }
+  }
   setControls(new Controls(engine, { onToast: toast, onChange: () => { glassRef?.updateLight(); }, onUserMove: () => updateHomeButton(), onReset: () => returnToDefaultView() }));
   window.__controls = controls;
   const glassRef = initGlass(engine, () => engine._basis());
