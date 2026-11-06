@@ -921,7 +921,7 @@ export class SkyEngine {
    * Each level is a bilinear read of the one above (the average of 2x2 texels), made in textures of their own and then copied into the stack. `kind` is 'mask' or
    * 'scene'; `src` is the texture's WebGL object, w x h its size.
    */
-  _mipAtlas(kind, src, w, h) {
+  _mipAtlas(kind, src, w, h, count = 7) {
     const gl = this.gl;
     const all = this.mipState || (this.mipState = {});
     let st = all[kind];
@@ -938,7 +938,8 @@ export class SkyEngine {
     gl.bindVertexArray(this.vaoEmpty);
     this._use(this.pNoiseDown);
     let from = src;
-    for (const m of st.levels) {
+    const used = count < 7 ? st.levels.slice(0, count) : st.levels;               // (a level the shader cannot ask for is not built: each is two jobs for the GPU)
+    for (const m of used) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, m.fbo); gl.viewport(0, 0, m.w, m.h);
       this._1i('uSrc', 0); this._bind(0, from); this._2f('uSize', m.w, m.h);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -947,7 +948,7 @@ export class SkyEngine {
     gl.bindFramebuffer(gl.FRAMEBUFFER, st.atlas.fbo);
     this._use(this.pAtlasPlace);
     this._1i('uSrc', 0); this._1f('uWrap', 0);
-    for (const m of st.levels) {
+    for (const m of used) {
       gl.viewport(0, m.y, m.w + 2, m.h + 2);
       this._bind(0, m.tex); this._2f('uSize', m.w, m.h); this._1f('uY', m.y);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -961,6 +962,19 @@ export class SkyEngine {
     this._1i('u' + N + 'Mips', unit); this._bind(unit, st.atlas.tex);
     this._2f('u' + N + 'MipsPx', st.atlas.w, st.atlas.h);
     st.levels.forEach((m, i) => this._4f('u' + N + 'Lv' + (i + 1), m.w, m.h, m.y, 0));
+  }
+
+  /**
+   * How many of the glass mask's mip levels the final passes can read (the rest need not be built). The coarsest blur they ask for is the halo, 1.5 strokes wide, or the outline,
+   * which is never thinner than one LED cell: in mask texels, its logarithm to base 2; a read takes that level and the next.
+   */
+  _maskLevels(w, rect, strokeCssPx) {
+    const g = this.glass, cw = this.canvas.width, ch = this.canvas.height;
+    const dpr = cw / Math.max(1, this.canvas.clientWidth);
+    const cell = g.led.on ? Math.max(2, Math.floor(Math.min(cw / g.led.cols, ch / g.led.rows))) : 0;
+    const maskScale = w / Math.max(1e-6, rect[2] * cw);                      // mask texels to a canvas pixel
+    const px = Math.max(1.5 * strokeCssPx * dpr, cell, 1.6);
+    return Math.max(1, Math.min(7, Math.ceil(Math.log2(Math.max(1, px * maskScale))) + 1));
   }
 
   _ensureComp(w, h) {
@@ -1080,7 +1094,7 @@ export class SkyEngine {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    if (this.es2) this._mipAtlas('mask', this.maskTex, canvas.width, canvas.height);
+    if (this.es2) this._mipAtlas('mask', this.maskTex, canvas.width, canvas.height, this._maskLevels(canvas.width, rect, strokeCssPx));
     else gl.generateMipmap(gl.TEXTURE_2D);
     g.rect = rect; g.maskW = canvas.width; g.maskH = canvas.height; g.stroke = strokeCssPx; g.hasMask = true;
     this.redrawGlass();
@@ -1132,7 +1146,7 @@ export class SkyEngine {
     }
     gl.bindVertexArray(null);
     gl.blendEquation(gl.FUNC_ADD); gl.disable(gl.BLEND);
-    if (this.es2) this._mipAtlas('mask', T.tex, w, h);
+    if (this.es2) this._mipAtlas('mask', T.tex, w, h, this._maskLevels(w, rect, strokeCssPx));
     else { gl.bindTexture(gl.TEXTURE_2D, T.tex); gl.generateMipmap(gl.TEXTURE_2D); }
     g.rect = rect; g.maskW = w; g.maskH = h; g.stroke = strokeCssPx; g.hasMask = true;
     this.redrawGlass();
