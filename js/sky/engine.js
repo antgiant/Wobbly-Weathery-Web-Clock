@@ -65,7 +65,7 @@ export class SkyEngine {
       view: { heading: 180, pitch: 12, fov: 80, basis: null },
       weather: { ...CLEAR },
       mie: 2.0,
-      quality: 'auto', scale: 0.75, maxDpr: 2,
+      quality: 'auto', scale: 0.75, maxDpr: 2, forceDpr: 0,
       bodySize: 2.0, nightBoost: 1.0, bortle: 3, cloudMotion: 1, twinkle: true,
       fps: 15, reducedMotion: false, lowPower: false, digitWeather: true,
       landscape: { type: 'hills', skyline: null, albedo: [0.12, 0.17, 0.07], haze: [0.35, 0.3, 0.55], ocean: false, seed: 1 },
@@ -667,7 +667,7 @@ export class SkyEngine {
     const perfNow = performance.now();
 
     // canvas / scene size
-    const dpr = Math.min(window.devicePixelRatio || 1, s.maxDpr);
+    const dpr = s.forceDpr || Math.min(window.devicePixelRatio || 1, s.maxDpr);       // (forceDpr: ?dpr=n, a test of what a bigger screen would cost)
     const out = this.glass.led.on || this.s.outScale == null ? 1 : this.s.outScale;       // the output's own size, below 1 when the governor saves work (the screen enlarges it)
     const cw = Math.max(2, Math.floor(this.canvas.clientWidth * dpr * out));
     const ch = Math.max(2, Math.floor(this.canvas.clientHeight * dpr * out));
