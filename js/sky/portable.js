@@ -32,6 +32,7 @@ export const SKYLINE_PACK = { off: 1.5, range: 4.0 };
 export const PORTABLE = `
 const float HDR_LO = -30.0, HDR_HI = 6.0;
 #ifdef WOBBLY_ES2
+#define SKYLUT_SCALE 1.0
 mat3 transpose(mat3 m) { return mat3(m[0][0], m[1][0], m[2][0], m[0][1], m[1][1], m[2][1], m[0][2], m[1][2], m[2][2]); }
 
 // ---- HDR colour in 8-bit RGBA: 12 bits log brightness, 10 + 10 bits colour ratios ----
@@ -123,6 +124,7 @@ vec4 texel(sampler2D s, vec2 ij, vec2 size) { return texture(s, (floor(ij) + 0.5
 vec3 hdrFetch(sampler2D s, vec2 uv) { return hdrDecode(texture(s, uv)); }                    // one packed texel, not blended (the texture is NEAREST filtered)
 vec4 texel0(sampler2D s, vec2 ij, vec2 size, float rho) { return texture(s, (floor(ij) + 0.5) / size); }       // (the texture has no mip levels here, so no level is chosen)
 #else
+#define SKYLUT_SCALE 2048.0
 vec4 hdrPack(vec3 c) { return vec4(c, 1.0); }
 vec3 hdrFetch(sampler2D s, vec2 uv) { return texture(s, uv).rgb; }
 vec3 hdrTex(sampler2D s, vec2 uv, vec2 px) { return texture(s, uv).rgb; }

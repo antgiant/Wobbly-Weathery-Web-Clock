@@ -47,7 +47,7 @@ if (A.present) {
   const renderer = String(__gl('getString', 0x1F01));
   const soft = /llvmpipe|softpipe|swrast/i.test(renderer);
   const q = new URLSearchParams(searchText);
-  if (!q.has('gov') && !A.nogov) { q.set('gov', '1'); q.set('minfps', String(A.minfps || 15)); q.set('maxfps', String(A.maxfps || 60)); if (soft && !q.has('level')) q.set('level', '1'); }   // the quality governor: 15 to 60 frames a second
+  if (!q.has('gov') && !A.nogov) { q.set('gov', '1'); q.set('minfps', String(A.minfps || 15)); q.set('maxfps', String(A.maxfps || 60)); if (soft && !q.has('level')) q.set('level', '1'); if (A.level != null && A.level !== '') q.set('level', String(A.level)); if (A.pin) q.set('pin', '1'); }   // the quality governor: 15 to 60 frames a second
   searchText = q.toString();
   __print('drawing with: ' + renderer + (q.has('gov') ? ' (quality governor: ' + (A.minfps || 15) + ' to ' + (A.maxfps || 60) + ' fps)' : ''));
 }

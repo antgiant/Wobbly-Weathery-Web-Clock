@@ -244,5 +244,5 @@ void main() {
     L += thr * (S - S * stepT) / ext;
     thr *= stepT;
   }
-  oColor = hdrPack(L);
+  oColor = hdrPack(L * SKYLUT_SCALE);          // (per unit of sunlight the twilight sky is about 1e-7: a half float has nothing finer than 6e-8, which made the sky's brightness jump in steps)
 }`;

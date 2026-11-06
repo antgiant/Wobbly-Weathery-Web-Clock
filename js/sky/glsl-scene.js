@@ -37,8 +37,8 @@ vec3 skyLum(vec3 d) {
   float hl = length(h);
   vec2 hn = hl > 1e-4 ? h / hl : vec2(0.0, 1.0);
   vec3 L = vec3(0.0);
-  if (uSunA.w > 0.0)  L += hdrTex(uSkySun,  skyUv(e, dot(hn, uSunA.xy)), uSkyPx)  * uSunA.w;
-  if (uMoonA.w > 0.0) L += hdrTex(uSkyMoon, skyUv(e, dot(hn, uMoonA.xy)), uSkyPx) * uMoonA.w;
+  if (uSunA.w > 0.0)  L += hdrTex(uSkySun,  skyUv(e, dot(hn, uSunA.xy)), uSkyPx)  * (uSunA.w / SKYLUT_SCALE);
+  if (uMoonA.w > 0.0) L += hdrTex(uSkyMoon, skyUv(e, dot(hn, uMoonA.xy)), uSkyPx) * (uMoonA.w / SKYLUT_SCALE);
   float ec = max(e, 0.0);
   float sz = cos(ec);
   float vr = 1.0 / sqrt(max(1.0 - 0.9693 * sz * sz, 0.04));   // van Rhijn airglow layer
@@ -1345,11 +1345,9 @@ vec4 finish(vec3 L, float alpha) {
   // ---------- exposure, scotopic shift, tonemap ----------
   vec3 c = toDisplay(L, expo, rainRel);
   // triangular dither avoids banding in the dark gradients
-  // (wider in the dark: a step of 8 bits is easiest to see there, on a phone's OLED screen especially, and the gradients of twilight sit there)
   float n1 = hash12(gl_FragCoord.xy + uFrame * 1.31);
   float n2 = hash12(gl_FragCoord.yx + uFrame * 2.17 + 11.0);
-  float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
-  c += (n1 + n2 - 1.0) * uDither * mix(2.0, 1.0, smoothstep(0.02, 0.25, lum)) / 255.0;
+  c += (n1 + n2 - 1.0) * uDither / 255.0;
 
   return vec4(clamp(c, 0.0, 1.0), alpha);
 }`;
