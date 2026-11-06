@@ -84,6 +84,7 @@ export class SkyEngine {
     this.lastPlanets = -1e9;
     this.lutState = { sunAlt: 9, moonAlt: 9, camH: -1, mie: -1 };
     this.frameNo = 0;
+    this.ditherScale = (() => { const v = typeof location !== 'undefined' ? parseFloat(new URLSearchParams(location.search).get('dither')) : NaN; return Number.isFinite(v) ? Math.max(0, Math.min(6, v)) : 1; })();     // ?dither=n: to try a wider or no dither
     this.lastRender = 0;
     this.perf = { acc: 0, n: 0, last: 0 };
     this.fast = false;              // look-around / drag: render every display frame
@@ -794,6 +795,7 @@ export class SkyEngine {
     this._1f('uDip', dip);
     this._1f('uAdaptScale', adaptScale);
     this._1f('uFrame', frameNo);
+    this._1f('uDither', this.ditherScale);
     };
     gl.disable(gl.BLEND);
     this._use(this.pSceneSky); setScene();                    // every pixel that is not wholly terrain
