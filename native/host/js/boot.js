@@ -135,6 +135,7 @@ if (A.present) {
     const rt0 = performance.now(); const px = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); if (A.profile) G.__pt['readPixels (picture off the GPU)'] = (G.__pt['readPixels (picture off the GPU)'] || 0) + performance.now() - rt0;
     const dim = $('dimmer'), level = dim && !dim.hidden ? Math.max(0, 1 - (parseFloat(dim.style.opacity) || 0)) : 1;
     { const t0 = performance.now(); __present(w, h, px.buffer, level); if (A.profile) G.__pt['output (the sink: picture file, framebuffer or panel)'] = (G.__pt['output (the sink: picture file, framebuffer or panel)'] || 0) + performance.now() - t0; } presented++;
+    const tm0 = performance.now();
     if (A.timing) {
       let r = 0, g = 0, b = 0, n = 0; const step = Math.max(1, Math.floor(w * h / 2000)) * 4;           // the average colour of the picture, to see a black screen from a dark one
       for (let i = 0; i < px.length; i += step) { r += px[i]; g += px[i + 1]; b += px[i + 2]; n++; }
@@ -142,11 +143,13 @@ if (A.present) {
       if ((presented === 2 || presented === 12) && G.__sky && G.__sky.diagnose) { try { __print('diagnose: ' + G.__sky.diagnose()); } catch (e) { __print('diagnose failed: ' + e); } }
       __print('[' + Math.round(performance.now()) + ' ms] frame ' + presented + ' presented ' + w + 'x' + h + ', average colour ' + Math.round(r / n) + ',' + Math.round(g / n) + ',' + Math.round(b / n) + ', dimmer ' + level.toFixed(2));
     }
-    if (A.profile && G.__profDump) G.__profDump();
+    if (A.profile) G.__pt['send: the timing line (average colour, text)'] = (G.__pt['send: the timing line (average colour, text)'] || 0) + performance.now() - tm0;
+    if (A.profile && G.__profDump) { const pd0 = performance.now(); G.__profDump(); G.__pt['the profile report itself (it is inside the "send" timer above, and not part of a real frame)'] = performance.now() - pd0; }
   };
   await until(() => !!G.__sky, 30000);
   if (A.profile && G.__sky) {      // time the engine's own CPU-side parts (the drawing inside them is counted by the GL profile)
     const e = G.__sky;
+    G.__wrapFns(e, 'engine.', /^(_u|_same|_[1-4][fiv]|_m[234]f|_bind|_use)$/);     // (every method by itself: the table "engine methods")
     for (const [k, label] of [['render', 'engine.render, everything inside it'], ['_updateAstro', 'astronomy (sun, moon, planets)'], ['_updateLuts', 'sky tables, incl. their drawing'], ['setGlassMask', 'glass mask upload'], ['_autoScale', 'automatic scale'], ['_blit', 'engine: the final passes (_blit), uniforms and draws'], ['setGlassGeometry', 'engine: the glass mask drawn on the GPU (setGlassGeometry)'], ['setGlassDropsGeometry', 'engine: the raindrops drawn'], ['setGlass', 'engine: setGlass']]) {
       if (typeof e[k] !== 'function') continue; const f = e[k].bind(e);
       e[k] = (...a) => { const t = performance.now(), g0 = G.__glClock; const r = f(...a); const d = performance.now() - t; G.__pt[label] = (G.__pt[label] || 0) + d; const js = label + ' [its own JavaScript, less the GL calls]'; G.__pt[js] = (G.__pt[js] || 0) + d - (G.__glClock - g0); return r; };
