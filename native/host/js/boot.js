@@ -47,9 +47,10 @@ if (A.present) {
   const renderer = String(__gl('getString', 0x1F01));
   const soft = /llvmpipe|softpipe|swrast/i.test(renderer);
   const q = new URLSearchParams(searchText);
-  if (!q.has('gov') && !A.nogov) { q.set('gov', '1'); q.set('minfps', String(A.minfps || 15)); q.set('maxfps', String(A.maxfps || 60)); if (soft && !q.has('level')) q.set('level', '1'); if (A.level != null && A.level !== '') q.set('level', String(A.level)); if (A.pin) q.set('pin', '1'); if (A.noscissor) q.set('noscissor', '1'); if (A.rung != null && A.rung !== '') q.set('rung', String(A.rung)); q.set('detail', A.detail ? String(A.detail) : (() => { try { const d = JSON.parse(localStorage.getItem('conf') || '{}').detail; if (d === 'sharp' || d === 'smooth') return d; } catch (_) { /* the default */ } return A.ledCols ? 'smooth' : 'sharp'; })()); }       // (a display keeps its size and its sharp digits; an LED panel is small anyway)   // the quality governor: 15 to 60 frames a second
+  if (A.nogov) q.set('gov', '0');       // (the ladder is on by default, in the page: the 'adapt' setting turns it off or holds it, --nogov 1 off for a run)
+  if (!q.has('gov')) { q.set('minfps', String(A.minfps || 15)); q.set('maxfps', String(A.maxfps || 60)); if (soft && !q.has('level')) q.set('level', '1'); if (A.level != null && A.level !== '') q.set('level', String(A.level)); if (A.pin) q.set('pin', '1'); if (A.noscissor) q.set('noscissor', '1'); if (A.rung != null && A.rung !== '') q.set('rung', String(A.rung)); q.set('detail', A.detail ? String(A.detail) : (() => { try { const d = JSON.parse(localStorage.getItem('conf') || '{}').detail; if (d === 'sharp' || d === 'smooth') return d; } catch (_) { /* the default */ } return A.ledCols ? 'smooth' : 'sharp'; })()); }       // (a display keeps its size and its sharp digits; an LED panel is small anyway)   // the quality governor: 15 to 60 frames a second
   searchText = q.toString();
-  __print('drawing with: ' + renderer + (q.has('gov') ? ' (quality governor: ' + (A.minfps || 15) + ' to ' + (A.maxfps || 60) + ' fps)' : ''));
+  __print('drawing with: ' + renderer + (q.get('gov') !== '0' ? ' (capability ladder: ' + (A.minfps || 15) + ' to ' + (A.maxfps || 60) + ' fps)' : ''));
 }
 const search = searchText ? (searchText[0] === '?' ? searchText : '?' + searchText) : '';
 G.location = { search, hash: '', href: doc.baseURI + search, origin: 'file://', protocol: 'file:', host: '', hostname: '', pathname: '/index.html', reload() {}, assign() {}, replace() {} };

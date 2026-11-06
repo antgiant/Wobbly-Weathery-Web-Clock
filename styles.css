@@ -1504,3 +1504,7 @@ html[data-kiosk] #hud {
 html[data-kiosk] body {
   cursor: none;
 }
+
+/* The capability ladder has given this option up (js/sky/ladderui.js): greyed out, with a note, until the device can have it back */
+.field.ladder-off { opacity: 0.55; }
+.field.ladder-off .ladder-note { display: block; margin-top: 4px; font-size: 0.8em; opacity: 0.9; }

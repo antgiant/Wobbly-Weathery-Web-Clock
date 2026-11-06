@@ -4,7 +4,7 @@
 import { conf } from '../config.js';
 import { now } from '../simtime.js';
 import { engine, controls, glass } from './core.js';
-import { applyQuality, applyLandscape, applyWeather, applyPlants, applyTree, applyLocation, applySim, syncTimeData, scheduleLiveData, dayLoad } from './data.js';
+import { applyQuality, applyAdapt, applyLandscape, applyWeather, applyPlants, applyTree, applyLocation, applySim, syncTimeData, scheduleLiveData, dayLoad } from './data.js';
 import { applyView, atDefault, updateHud, updateVrReadout, applySensorFixes, setViewMode, setBaseMode, returnToDefaultView, updateHomeButton } from './view.js';
 import { updateClockColor } from './appearance.js';
 import { updateCountdown, updateRain } from './alerts.js';
@@ -34,6 +34,7 @@ export function bindSettings() {
   };
 
   bindSelect('quality', 'quality', applyQuality);
+  bindSelect('adapt', 'adapt', () => { applyAdapt(); });             // takes the ladder on, off or holds it at a step
   bindSelect('detail', 'detail', () => {});                 // read by the Raspberry Pi program when it starts
   bindRange('brightnessDay', 'brightnessDay', () => { updateDim(); poke('dim'); }, 'brightnessDayOut', (v) => `${Math.round(v * 100)}%`);
   bindRange('brightnessNight', 'brightnessNight', () => { updateDim(); poke('dim'); }, 'brightnessNightOut', (v) => `${Math.round(v * 100)}%`);
