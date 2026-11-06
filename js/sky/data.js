@@ -204,6 +204,14 @@ export function statusText() {
   return [base, t === 'ocean' || t === 'city' ? (t === 'ocean' ? state.seaText : '') : bio].filter(Boolean).join(' · ');
 }
 
+/** The 'adapt' setting: the capability ladder on (auto), off, or held at a step (js/sky/capability.js). A URL's ?gov=0 or ?gov=1 outranks it. */
+export function applyAdapt() {
+  if (!engine) return;
+  const gv = new URLSearchParams(location.search).get('gov');
+  if (gv !== null) return;                                 // the address decides (tests, the Raspberry Pi program)
+  engine.setAdapt(conf.adapt || 'auto', conf.detail === 'smooth' ? 'smooth' : 'sharp');
+}
+
 export function applyQuality() {
   if (!engine) return;
   const rm = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;

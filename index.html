@@ -48,6 +48,7 @@
   <link rel="modulepreload" href="js/sky/governor.js">
   <link rel="modulepreload" href="js/sky/capability.js">
   <link rel="modulepreload" href="js/sky/flatsky.js">
+  <link rel="modulepreload" href="js/sky/ladderui.js">
   <link rel="modulepreload" href="js/sky/glsl-mask.js">
   <link rel="modulepreload" href="js/sky/portable.js">
   <link rel="modulepreload" href="js/sky/glass.js">
@@ -426,6 +427,22 @@
                 <option value="high">High</option>
               </select>
               <p class="hint" id="perfStatus"></p>
+            </div>
+            <div class="field">
+              <label class="field__label" for="adapt">Adapt to this device</label>
+              <select id="adapt">
+                <option value="auto">Automatic (recommended): give things up only as the device must, to keep the time right</option>
+                <option value="off">Off: everything I chose, even if the clock falls behind</option>
+                <option value="weather">Always: rain and snow standing still</option>
+                <option value="ambient">Always: clouds, water and plants standing still too</option>
+                <option value="tick">Always: seconds that tick, not morph</option>
+                <option value="seconds-off">Always: no seconds</option>
+                <option value="slow">Always: one picture a minute</option>
+                <option value="solid">Always: solid digits, not glass</option>
+                <option value="flat-ground">Always: flat ground too</option>
+                <option value="gradient-sky">Always: a gradient sky too (the simplest picture)</option>
+              </select>
+              <p class="hint">Options this device has given up (or that you hold off here) are greyed out below, with a note, until the device can have them back. The clock always shows the right time.</p>
             </div>
             <div class="field">
               <label class="field__label" for="detail">When the device is slow, keep</label>

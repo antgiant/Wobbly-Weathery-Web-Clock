@@ -11,7 +11,7 @@
 // one (drifting clouds, water, twinkle) ~15 fps, and look-around modes run at
 // the display rate with the render scale adapting to hold the frame rate.
 
-import { Capability } from './capability.js';
+import { Capability, RUNG_OF } from './capability.js';
 import { VERT_STROKE, FRAG_STROKE, VERT_LIGHT, FRAG_LIGHT, VERT_DROP, FRAG_DROP, VERT_TRAIL, FRAG_TRAIL } from './glsl-mask.js';
 import {
   VERT_FULLSCREEN, FRAG_TRANSMITTANCE, FRAG_MULTISCATTER, FRAG_SKYVIEW,
@@ -409,7 +409,7 @@ export class SkyEngine {
     if ('weather' in patch || 'mie' in patch) this.staticDirty = true;
     if ('elevM' in patch || 'eyeM' in patch) this.lutDirty = true;
     if ('landscape' in patch) this._applySkyline();
-    if ('quality' in patch) this._resetScale();
+    if ('quality' in patch) { this._resetScale(); if (this.gov) this.applyKnobs(); }
     this.dirty = true;
   }
 
@@ -482,7 +482,7 @@ export class SkyEngine {
   applyKnobs() {
     const g = this.gov; if (!g) return;
     const k = g.knobs;
-    this.s.scale = k.scale;
+    this.s.scale = Math.min(k.scale, { low: 0.5, medium: 0.75 }[this.s.quality] || 1);          // (the Quality setting still caps the sky's size: Low and Medium are smaller than the ladder's top)
     this.s.outScale = this.glass.led.on ? 1 : k.outScale;          // an LED panel needs its cells at the size they are read back
     this.starFrac = k.stars;
     if (this.knobs && this.knobs.glass === false && k.glass !== false) this._mipsStale = true;            // the glass is back: its tables are rebuilt
@@ -495,7 +495,44 @@ export class SkyEngine {
   onPresent(fn) { this.presenters.add(fn); return () => this.presenters.delete(fn); }
   /** Called at the start of any work that ends in a picture (the page's glass drawing, a full render): the first call since the last picture is when this frame's cost starts. */
   markWork() { if (this._work0 == null) this._work0 = performance.now(); }
-  _presented(kind) { const since = this._work0; this._work0 = null; for (const fn of this.presenters) fn(this, kind, since); }
+  _presented(kind) {
+    const since = this._work0; this._work0 = null;
+    for (const fn of this.presenters) fn(this, kind, since);
+    if (this.autoProbe && this.gov && !document.hidden) this._probe(kind, since);
+  }
+  /**
+   * A browser cannot be asked what a frame cost: its GL calls return before the GPU is done (Safari's finish does not even wait). So now and then, once a second (and for a sky
+   * redraw, once in five seconds), one pixel is read back: that waits for everything queued, and the time since the work began is the frame's true cost, which goes to the ladder.
+   * The Raspberry Pi program measures its own (it reads every picture back), so it leaves this off.
+   */
+  _probe(kind, since) {
+    const now = performance.now(), gl = this.gl;
+    const due = kind === 'scene' ? now - (this._probeScene || -1e9) >= 5000 || now - (this._probeAt || -1e9) >= 1000 : now - (this._probeAt || -1e9) >= 1000;
+    if (!due) return;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, this._probePx || (this._probePx = new Uint8Array(4)));
+    const cost = performance.now() - (since != null && now - since < 5000 ? since : now);
+    this._probeAt = now; if (kind === 'scene') this._probeScene = now;
+    this.reportFrame(cost, kind);
+  }
+
+  /**
+   * The 'adapt' setting at run time: 'auto' takes the capability ladder on, 'off' takes it away (everything the settings say), a rung name holds it at that step (and the ones before).
+   * `profile` is 'sharp' (the picture keeps its size) or 'smooth' (the whole picture may shrink).
+   */
+  setAdapt(mode, profile) {
+    if (mode === 'off') {
+      this.gov = null; this.knobs = undefined;
+      this.s.outScale = 1; this._resetScale();
+      if (this.onKnobs) this.onKnobs(null);
+      this.dirty = true;
+      return;
+    }
+    this._profile = profile || this._profile || 'sharp';
+    const hold = mode in RUNG_OF;
+    this.gov = new Capability({ profile: this._profile, ...(hold ? { rung: RUNG_OF[mode], pin: true } : {}) });
+    this.applyKnobs();
+  }
 
   // ----------------------------------------------------------- astronomy ---
   _updateAstro(perfNow, force) {

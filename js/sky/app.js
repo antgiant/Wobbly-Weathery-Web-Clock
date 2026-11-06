@@ -9,6 +9,8 @@
 import { conf, clockStyleNow, lowPower, vars, cap, adjustTimeSize } from '../config.js';
 import { getSim } from '../simtime.js';
 import { SkyEngine } from './engine.js';
+import { RUNG_OF } from './capability.js';
+import { applyLadderUi } from './ladderui.js';
 import { Controls } from './controls.js';
 import { initGlass } from './glass.js';
 import { canvas, engine, controls, setEngine, setControls, setGlass, ov, num, toast, state } from './core.js';
@@ -33,9 +35,14 @@ function init() {
   try {
     {
       const qs = new URLSearchParams(location.search), n = (k, d) => (Number.isFinite(parseFloat(qs.get(k))) ? parseFloat(qs.get(k)) : d);
-      // ?gov=1 (the Pi's program sets it): the quality governor keeps frames between ?minfps (15) and ?maxfps (60); ?level= starts it somewhere, ?rung= on a rung of the capability ladder
-      // (js/sky/capability.js), ?pin holds both, ?detail=sharp keeps the output size (a display: only the sky is drawn smaller)
-      setEngine(new SkyEngine(canvas, { baseUrl: '.', lutScale: n('lut', 1), es2: qs.has('es2'), governor: qs.has('gov') ? { floorFps: n('minfps', 15), ceilFps: n('maxfps', 60), level: qs.has('level') ? n('level', 5) : undefined, pin: qs.has('pin'), rung: n('rung', 0), profile: qs.get('detail') === 'sharp' ? 'sharp' : 'smooth' } : false }));
+      // The capability ladder (js/sky/capability.js) is on by default and holds the clock right whatever the device: the 'adapt' setting can turn it off or hold it at a step. The address outranks
+      // the setting: ?gov=0 off, ?gov=1 on (also for automation: a browser driven by a test (navigator.webdriver) runs without it unless ?gov=1, so the tests see everything they ask for);
+      // ?minfps (15) and ?maxfps (60) bound the frames (a browser starts at the top resolution and steps down if it must; the Raspberry Pi program starts in the middle and climbs), ?level= starts the resolution somewhere, ?rung= on a rung, ?pin holds both, ?detail=sharp|smooth (a display keeps its size and
+      // draws the sky smaller; the whole picture may shrink on a small panel)
+      const adapt = conf.adapt || 'auto', gv = qs.get('gov'), hold = adapt in RUNG_OF;
+      const on = gv !== null ? gv !== '0' : adapt !== 'off' && !navigator.webdriver;
+      const profile = qs.get('detail') === 'sharp' ? 'sharp' : qs.get('detail') === 'smooth' ? 'smooth' : conf.detail === 'smooth' ? 'smooth' : 'sharp';
+      setEngine(new SkyEngine(canvas, { baseUrl: '.', lutScale: n('lut', 1), es2: qs.has('es2'), governor: on ? { floorFps: n('minfps', 15), ceilFps: n('maxfps', 60), level: qs.has('level') ? n('level', 5) : typeof window.__present === 'function' ? undefined : 99, pin: qs.has('pin') || (hold && gv === null), rung: qs.has('rung') ? n('rung', 0) : hold && gv === null ? RUNG_OF[adapt] : 0, profile } : false }));
     }
   } catch (e) {
     startFallback(e.message);
@@ -43,17 +50,24 @@ function init() {
   }
   performance.mark('sky:engine-created');
   { const d = parseFloat(new URLSearchParams(location.search).get('dpr')); if (d > 0) engine.set({ forceDpr: Math.min(d, 6) }); }     // ?dpr=3: draw at more than twice the screen's pixels (to see what a bigger screen would cost)
-  { const ps = document.getElementById('perfStatus'); if (ps && !engine.gov) ps.textContent = 'This browser draws everything at the quality set above.'; }
   engine.noScissor = new URLSearchParams(location.search).has('noscissor');          // (to compare the pictures with and without limiting the glass passes to the digits)
-  engine.onTick = (ms) => { vars.tick = ms; if (engine.gov) cap.lead = engine.gov.leadMs; };           // the clock ticks as fast as the governor says the frames allow
-  engine.onKnobs = (k) => {                                  // the capability ladder moved: what the hardware can handle outranks the settings
-    const ps = document.getElementById('perfStatus');
-    if (ps) ps.textContent = k.rung > 0 ? 'Right now: ' + engine.gov.name + ' (' + engine.gov.why + '). The settings below cannot change this: the clock must show the right time.' : 'Right now: everything this device can show.';
-    const changed = cap.seconds !== k.seconds || cap.cadence !== k.cadence;
-    cap.seconds = k.seconds; cap.cadence = k.cadence; cap.lead = engine.gov ? engine.gov.leadMs : 0;
-    if (changed) { adjustTimeSize(); window.dispatchEvent(new Event('capchange')); window.dispatchEvent(new Event('clocklayout')); }
+  engine.autoProbe = typeof window.__present !== 'function';          // a browser reads one pixel back now and then to learn what a frame truly costs (the Raspberry Pi program measures its own)
+  engine.onTick = (ms) => { vars.tick = engine.autoProbe ? Math.max(ms, 1000 / conf.steps) : ms; if (engine.gov) cap.lead = engine.gov.leadMs; };           // the clock ticks as fast as the governor says the frames allow (a browser: never faster than its own steps setting)
+  engine.onKnobs = (k) => {                                  // the capability ladder moved (or was taken away): what the hardware can handle outranks the settings
+    const ps = document.getElementById('perfStatus'), held = (conf.adapt || 'auto') !== 'auto' && (conf.adapt in RUNG_OF);
+    const was = { s: cap.seconds, c: cap.cadence, w: cap.weather, a: cap.ambient };
+    if (!k) {                                                // no ladder: everything the settings say
+      cap.seconds = 'morph'; cap.cadence = 'live'; cap.weather = true; cap.ambient = true; cap.lead = 0; vars.tick = 0;
+      if (ps) ps.textContent = 'Adapting is off: everything you chose is drawn, even if this device cannot keep up.';
+    } else {
+      if (ps) ps.textContent = k.rung > 0 ? 'Right now: ' + engine.gov.name + ' (' + engine.gov.why + (held ? '; held by Adapt to this device' : '') + '). The clock must show the right time, so what is given up cannot be switched back on below.' : 'Right now: everything this device can show.';
+      cap.seconds = k.seconds; cap.cadence = k.cadence; cap.weather = k.weather; cap.ambient = k.ambient; cap.lead = engine.gov ? engine.gov.leadMs : 0;
+    }
+    applyLadderUi(k, held);
+    if (was.a !== cap.ambient) updateWind();
+    if (was.s !== cap.seconds || was.c !== cap.cadence) { adjustTimeSize(); window.dispatchEvent(new Event('capchange')); window.dispatchEvent(new Event('clocklayout')); }
   };
-  if (engine.gov) engine.onKnobs(engine.knobs);                  // (says where it stands from the start)
+  engine.onKnobs(engine.gov ? engine.knobs : null);               // (says where it stands from the start)
   window.__sky = engine;                         // handy for debugging / tests
   {                                                            // ?stats: frames a second and the picture's size, tap to copy (?stats=0 turns it off; once asked for, it comes back on this device's next visits)
     let want = false;

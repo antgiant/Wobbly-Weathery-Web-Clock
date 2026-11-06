@@ -253,6 +253,29 @@
    "fallback": "low"
   },
   {
+   "key": "adapt",
+   "type": "enum",
+   "default": "auto",
+   "options": [
+    "auto",
+    "off",
+    "weather",
+    "ambient",
+    "tick",
+    "seconds-off",
+    "slow",
+    "solid",
+    "flat-ground",
+    "gradient-sky"
+   ],
+   "tab": "scene",
+   "advanced": true,
+   "label": "Adapt to this device",
+   "shareable": false,
+   "preset": false,
+   "doc": "auto | off | weather | ambient | tick | seconds-off | slow | solid | flat-ground | gradient-sky: auto (the default) gives things up only as the device needs to keep the clock right, in a fixed order: rain and snow in motion (weather), cloud and water motion (ambient), seconds (tick, then seconds-off), one picture a minute (slow), then the glass (solid), the landscape (flat-ground) and the sky (gradient-sky). A settings of a feature the device has given up has no effect until it can have it back. off turns the adapting off: everything chosen, whatever the device can keep up with (the clock may fall behind). A name holds the clock at that step and the ones before it"
+  },
+  {
    "key": "detail",
    "type": "enum",
    "default": "auto",

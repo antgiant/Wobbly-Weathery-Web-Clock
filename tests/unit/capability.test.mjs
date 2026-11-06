@@ -1,7 +1,8 @@
 // The capability ladder: the clock must always show the right time, so the engine gives things up in a fixed order until the cost fits, whatever the user chose.
 // Run: node tests/unit/capability.test.mjs
 import { check, done } from '../lib/check.mjs';
-import { Capability, RUNGS, BUDGET } from '../../js/sky/capability.js';
+import { Capability, RUNGS, BUDGET, RUNG_OF, GIVEN_UP, givenUp } from '../../js/sky/capability.js';
+import { SETTINGS } from '../../schema/settings.js';
 import { LADDER, SHARP_LADDER } from '../../js/sky/governor.js';
 
 const R = (name) => RUNGS.indexOf(name);
@@ -97,4 +98,20 @@ check('the budgets grow down the ladder', BUDGET[R('tick')].glass < BUDGET[R('se
 // the lead for drawing the next minute ahead of time covers the slowest recent redraw
 { const c = new Capability({ rung: R('slow clock') }); c.report(7000, 'glass', 0); c.report(6000, 'glass', 1);
   check('the lead covers the slowest redraw with margin', c.leadMs >= 7000 * 1.4, `${c.leadMs} ms`); }
+
+// the settings screens: what each rung greys out, and that every name the setting offers is a rung (or auto / off)
+{ const c = new Capability({}), at = (r) => { c.rung = r; return givenUp(c.knobs); };
+  check('nothing is given up on the full rung, and with no ladder at all', Object.keys(at(0)).length === 0 && Object.keys(givenUp(null)).length === 0);
+  check('the weather rung greys out the rain and snow option only', JSON.stringify(Object.keys(at(R('weather')))) === JSON.stringify(['digitWeather']));
+  check('the ambient rung adds cloud and water motion and wind sway', ['cloudMotion', 'windSway', 'digitWeather'].every((k) => k in at(R('ambient'))));
+  check('tick keeps the seconds option; seconds off locks it', !('hideSeconds' in at(R('tick'))) && at(R('seconds off')).hideSeconds === 'seconds');
+  check('the slow clock gives up nothing more than seconds off', Object.keys(at(R('slow clock'))).length === Object.keys(at(R('seconds off'))).length);
+  check('solid digits grey out the glass options', GIVEN_UP.glass.every((k) => k in at(R('solid digits'))));
+  check('flat ground greys out landscape, plants and the tree; the gradient sky the sky options', GIVEN_UP.landscape.every((k) => k in at(R('flat ground'))) && GIVEN_UP.sky.every((k) => k in at(R('gradient sky'))));
+  check('the sky options stay available until the sky itself is given up', !GIVEN_UP.sky.some((k) => k in at(R('flat ground'))));
+  const keys = new Set(SETTINGS.map((s) => s.key));
+  check('every setting the ladder greys out exists', Object.values(GIVEN_UP).flat().concat(['hideSeconds']).every((k) => keys.has(k)));
+  const adapt = SETTINGS.find((s) => s.key === 'adapt');
+  check('the adapt setting offers auto, off and a name for every rung from weather to gradient sky', adapt && adapt.default === 'auto' && ['auto', 'off', ...Object.keys(RUNG_OF)].every((o) => adapt.options.includes(o)) && adapt.options.length === 2 + Object.keys(RUNG_OF).length);
+  check('the rung names the setting uses are the ladder\'s own', RUNG_OF.weather === R('weather') && RUNG_OF.ambient === R('ambient') && RUNG_OF.tick === R('tick') && RUNG_OF['seconds-off'] === R('seconds off') && RUNG_OF.slow === R('slow clock') && RUNG_OF.solid === R('solid digits') && RUNG_OF['flat-ground'] === R('flat ground') && RUNG_OF['gradient-sky'] === R('gradient sky')); }
 done();

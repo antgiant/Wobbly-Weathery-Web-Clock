@@ -21,6 +21,8 @@
 // Pure maths like the governor: the caller passes costs and the time, so it is tested in node.
 import { Governor, LADDER, SHARP_LADDER } from './governor.js';
 
+/** The 'adapt' setting's names for holding the ladder at a rung (and the steps before it). */
+export const RUNG_OF = { weather: 1, ambient: 2, tick: 3, 'seconds-off': 4, slow: 5, solid: 6, 'flat-ground': 7, 'gradient-sky': 8 };
 export const RUNGS = ['full', 'weather', 'ambient', 'tick', 'seconds off', 'slow clock', 'solid digits', 'flat ground', 'gradient sky', 'smaller picture', 'smallest picture'];
 export const WHY = [
   'everything on',
@@ -47,6 +49,27 @@ export const BUDGET = [
   { glass: 40000, scene: 40000 },
   { glass: 40000, scene: 40000 },
 ];
+
+/** What each rung switches off, by the setting keys it makes pointless (the settings screens grey these out, ladderui.js). Seconds act on the clock: hideSeconds is shown on and locked. */
+export const GIVEN_UP = {
+  weather: ['digitWeather'],
+  ambient: ['cloudMotion', 'windSway'],
+  glass: ['clockStyle', 'glassFrost', 'glassGlow', 'glassGlowColor', 'legibility'],
+  landscape: ['landscape', 'plants', 'holidayTree'],
+  sky: ['bodySize', 'nightBrightness', 'lightPollution', 'showLabels'],
+};
+/** The setting keys the ladder has given up at these knobs, each with the feature it gave up (`null`: no ladder: nothing). */
+export function givenUp(k) {
+  if (!k) return {};
+  const out = {};
+  if (!k.weather) for (const key of GIVEN_UP.weather) out[key] = 'weather';
+  if (!k.ambient) for (const key of GIVEN_UP.ambient) out[key] = 'ambient';
+  if (k.seconds === 'off') out.hideSeconds = 'seconds';
+  if (!k.glass) for (const key of GIVEN_UP.glass) out[key] = 'glass';
+  if (!k.landscape) for (const key of GIVEN_UP.landscape) out[key] = 'landscape';
+  if (!k.sky) for (const key of GIVEN_UP.sky) out[key] = 'sky';
+  return out;
+}
 
 export class Capability {
   /**
