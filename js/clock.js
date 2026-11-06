@@ -218,7 +218,9 @@ function clock() {
 var clockTimer = 0;
 function loop() {
   clockTimer = 0;
+  var tp = window.__tp, t0 = tp && performance.now();             // (the native host's --profile adds up the phases)
   var morphing = clock();
+  if (tp) tp('page loop: clock() (the digits, the date, the seconds)', t0);
   if (document.hidden) return;                 // the visibilitychange below restarts it
   var sim = getSim();
   var delay = morphing || sway.flutter || (sim && sim.scale > 1) ? (vars.tick || vars.step) : 1005 - simNow().getMilliseconds();     // vars.tick: the quality governor's pace (js/sky/governor.js), when there is one

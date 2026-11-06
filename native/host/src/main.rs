@@ -151,6 +151,14 @@ fn n_c2d_count() -> usize { canvas2d::count() }
 /// Resident memory of this program in MB (Linux), or 0.
 fn rss_mb() -> f64 { std::fs::read_to_string("/proc/self/statm").ok().and_then(|s| s.split_whitespace().nth(1).and_then(|v| v.parse::<f64>().ok())).map(|p| p * 4096.0 / 1048576.0).unwrap_or(0.0) }
 fn n_rss() -> f64 { rss_mb() }
+/// The CPU time this program has used so far, "user,system" in ms (Linux; the kernel counts it in 10 ms ticks): set against the wall clock it says whether a run is waiting (for the GPU, a timer) or computing,
+/// and the system part is the driver's own work.
+fn n_cpu() -> String {
+    let t = std::fs::read_to_string("/proc/self/stat").unwrap_or_default();
+    let f: Vec<&str> = t.rsplit(')').next().unwrap_or("").split_whitespace().collect();
+    let g = |i: usize| f.get(i).and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0) * 10.0;
+    format!("{},{}", g(11), g(12))
+}
 fn n_exit(code: i32) { OUT.with(|o| if let Some(x) = o.borrow_mut().take() { x.finish(); }); leave(code) }
 fn n_presents() -> f64 { PRESENTS.with(|p| p.get()) as f64 }
 fn n_c2d_resize(id: usize, w: u32, h: u32) { canvas2d::resize(id, w, h) }
@@ -326,6 +334,7 @@ fn main() {
     if flags.iter().any(|(k, _)| k == "es2") { gl.set_es2(true); }
     let rt = Runtime::new().unwrap();
     rt.set_memory_limit(512 << 20);
+    if let Some(mb) = std::env::var("WOBBLY_GC_MB").ok().and_then(|v| v.parse::<usize>().ok()) { rt.set_gc_threshold(mb << 20); eprintln!("wobbly-clock-run: the JavaScript heap is collected after every {mb} MB of new memory (WOBBLY_GC_MB)"); }
     rt.set_max_stack_size(4 << 20);
     rt.set_loader(Res, Load);
     let ctx = Context::full(&rt).unwrap();
@@ -339,6 +348,8 @@ fn main() {
         g.set("__gl", Function::new(ctx.clone(), n_gl)).unwrap();
         g.set("__now", Function::new(ctx.clone(), n_now)).unwrap();
         g.set("__print", Function::new(ctx.clone(), |s: String| eprintln!("{s}"))).unwrap();
+        g.set("__cpu", Function::new(ctx.clone(), n_cpu)).unwrap();
+        g.set("__qjsgc", Function::new(ctx.clone(), |c: Ctx<'_>| { let t = Instant::now(); c.run_gc(); t.elapsed().as_secs_f64() * 1000.0 })).unwrap();
         g.set("__readfile", Function::new(ctx.clone(), n_readfile)).unwrap();
         g.set("__readtext", Function::new(ctx.clone(), n_readtext)).unwrap();
         g.set("__decode", Function::new(ctx.clone(), n_decode)).unwrap();

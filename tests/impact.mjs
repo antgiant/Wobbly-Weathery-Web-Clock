@@ -21,6 +21,7 @@ export const RULES = [
   [/^js\/(install)\.js$/, ['options']],
   [/^js\/(offline|version)\.js$|^sw\.js$|^manifest\.webmanifest$|^icons\//, ['offline', 'smoke']],
   [/^js\/(wakelock|settings_gear)\.js$/, ['settings', 'options']],
+  [/^js\/sky\/stats\.js$/, ['perf']],                                                  // the ?stats read-out (nothing runs without it)
   [/^js\/sky\/governor\.js$/, ['sky', 'led', 'perf']],                         // the quality governor (off unless asked for; the Pi's program asks)
   [/^js\/sky\/glsl-scene\.js$/, ['sky', 'led', 'digitweather']],
   [/^js\/sky\/portable\.js$/, ['sky', 'led', 'digitweather', 'options', 'maskgpu', 'dropsgpu']],       // the ES 2 form of the shaders (Pi Zero, 3): the same pictures from every shader
