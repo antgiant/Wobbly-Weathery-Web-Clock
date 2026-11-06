@@ -47,7 +47,8 @@ export async function run(t) {
 
   // 5. in an ordinary browser the ladder is on by default, measures real frames, and the setting overrides it
   { const h = await t.open({ fast: true, query: NOON, width: 900, height: 700, init: NOT_AUTOMATION });
-    await h.settle(3500);
+    await h.settle(1500);
+    await h.page.waitForFunction(() => window.__sky.gov && window.__sky.gov.cost != null, null, { timeout: 40000 }).catch(() => {});          // (a slow runner takes a while to draw the first frames and make the first probe)
     const r = await h.page.evaluate(() => ({ gov: !!window.__sky.gov, rung: window.__sky.gov && window.__sky.gov.rung, cost: window.__sky.gov && window.__sky.gov.cost, probe: window.__sky.autoProbe, adapt: document.getElementById('adapt').value }));
     t.check('in an ordinary browser the ladder is on by default', r.gov && r.adapt === 'auto', JSON.stringify(r));
     t.check('... it reads real frame costs back (a probe a second)', r.probe === true && r.cost != null, JSON.stringify(r));
