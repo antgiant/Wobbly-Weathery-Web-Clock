@@ -115,7 +115,7 @@ class Ctx2D {
 }
 
 // ---- --profile: where the CPU time goes besides drawing (the 2D canvas natives are timed here; the engine's calls in boot.js) ----
-G.__pt = {};
+G.__pt = {}; G.__glClock = 0;                                                                       // (the time spent inside GL calls so far: a phase's own JavaScript is its time less this)
 G.__tp = (k, t0) => { G.__pt[k] = (G.__pt[k] || 0) + performance.now() - t0; };           // (the page's own code adds its phases here when it is profiled)
 if (G.__args && G.__args.profile) {
   for (const k of ['__c2d_call', '__c2d_read']) { const f = G[k]; G[k] = (...a) => { const t = __now(); const r = f(...a); G.__pt['2D canvas (tiny-skia)'] = (G.__pt['2D canvas (tiny-skia)'] || 0) + __now() - t; return r; }; }
@@ -206,7 +206,7 @@ function makeGL(canvas) {
     }
     const byName = G.__glByName = {};                                                                  // every GL call by function name: how many, and how long they take (the heavy ones are the ones a driver does work for)
     for (const k of Object.keys(gl)) { const f = gl[k]; if (typeof f !== 'function' || k === 'canvas' || /^(_|get(Extension|ShaderInfoLog|ProgramInfoLog|ShaderParameter|ProgramParameter|UniformLocation)$)/.test(k)) continue;
-      gl[k] = (...a) => { const t = __now(); const r = f(...a); const e = byName[k] || (byName[k] = { n: 0, ms: 0 }); e.n++; e.ms += __now() - t; return r; }; }
+      gl[k] = (...a) => { const t = __now(); const r = f(...a); const e = byName[k] || (byName[k] = { n: 0, ms: 0 }); e.n++; const d = __now() - t; e.ms += d; G.__glClock += d; return r; }; }
     const bumps = {}; G.__bumpLog = (k, el) => { const n = k + ' on ' + (el ? (el.id || el.localName) : '?'); bumps[n] = (bumps[n] || 0) + 1; };
     G.__profDump = () => { const pt = G.__pt; { const rows = Object.entries(bumps).sort((x, y) => y[1] - x[1]).slice(0, 6); if (rows.length) { __print('--- page changes that make the layout be worked out again (count, change) ---'); for (const [k, v] of rows) __print(String(v).padStart(8) + '  ' + k); } for (const k in bumps) delete bumps[k]; } { const rows = Object.entries(G.__timerTime).sort((x, y) => y[1].ms - x[1].ms).slice(0, 8); if (rows.length) { __print('--- timer callbacks since the last dump (ms, count, start of source) ---'); for (const [k, v] of rows) __print(String(Math.round(v.ms)).padStart(8) + '  x' + String(v.n).padEnd(4) + k); } for (const k in G.__timerTime) delete G.__timerTime[k]; } __print('--- CPU time besides drawing, this frame ---'); for (const k in pt) { __print(String(Math.round(pt[k])).padStart(8) + '  ' + k); delete pt[k]; }; const rows = Object.entries(prof).sort((a, b) => b[1].ms - a[1].ms).slice(0, 14); { const rows2 = Object.entries(G.__glByName).sort((a, b) => b[1].ms - a[1].ms).slice(0, 10); __print('--- GL calls by function (ms, count) ---'); rows2.forEach(([k, v]) => __print(String(Math.round(v.ms * 10) / 10).padStart(8) + '  x' + String(v.n).padEnd(5) + k)); for (const k in G.__glByName) delete G.__glByName[k]; } __print('--- GL time by call (ms, count) ---'); rows.forEach(([k, v]) => __print(String(Math.round(v.ms)).padStart(8) + '  x' + String(v.n).padEnd(5) + k)); for (const k in prof) delete prof[k]; };
   }

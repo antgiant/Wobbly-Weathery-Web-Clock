@@ -149,7 +149,7 @@ if (A.present) {
     const e = G.__sky;
     for (const [k, label] of [['render', 'engine.render, everything inside it'], ['_updateAstro', 'astronomy (sun, moon, planets)'], ['_updateLuts', 'sky tables, incl. their drawing'], ['setGlassMask', 'glass mask upload'], ['_autoScale', 'automatic scale'], ['_blit', 'engine: the final passes (_blit), uniforms and draws'], ['setGlassGeometry', 'engine: the glass mask drawn on the GPU (setGlassGeometry)'], ['setGlassDropsGeometry', 'engine: the raindrops drawn'], ['setGlass', 'engine: setGlass']]) {
       if (typeof e[k] !== 'function') continue; const f = e[k].bind(e);
-      e[k] = (...a) => { const t = performance.now(); const r = f(...a); G.__pt[label] = (G.__pt[label] || 0) + performance.now() - t; return r; };
+      e[k] = (...a) => { const t = performance.now(), g0 = G.__glClock; const r = f(...a); const d = performance.now() - t; G.__pt[label] = (G.__pt[label] || 0) + d; const js = label + ' [its own JavaScript, less the GL calls]'; G.__pt[js] = (G.__pt[js] || 0) + d - (G.__glClock - g0); return r; };
     }
   }
   if (A.ledCols && G.__sky) G.__sky.glass.led.gap = 0;                 // the panel needs the cells' own colours, with no dark lines between
