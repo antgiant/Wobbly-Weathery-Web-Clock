@@ -75,11 +75,12 @@ export async function updateClockColor() {
   setInk(INK[pick].css, INK[pick].rgb, INK[pick].halo);
 }
 
+let faviconCanvas = null;
 export async function updateFavicon() {
   if (document.hidden) return;
   const px = await engine?.samplePixels([[0.5, 0.92], [0.5, 0.35]]);
   if (!px) return;
-  const c = document.createElement('canvas'); c.width = c.height = 32;
+  const c = faviconCanvas || (faviconCanvas = document.createElement('canvas')); c.width = c.height = 32;       // (one canvas, used again: a new one a minute was left to the garbage collector, which on a slow machine comes late)
   const ctx = c.getContext('2d');
   const g = ctx.createLinearGradient(0, 0, 0, 32);
   const css = (p) => `rgb(${Math.round(p.r * 255)},${Math.round(p.g * 255)},${Math.round(p.b * 255)})`;

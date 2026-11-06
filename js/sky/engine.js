@@ -1318,7 +1318,7 @@ export class SkyEngine {
       gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
-    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const c = this._snapCanvas || (this._snapCanvas = document.createElement('canvas')); c.width = w; c.height = h;       // (used again: see updateFavicon)
     const img = new ImageData(w, h);
     for (let y = 0; y < h; y++) img.data.set(px.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);   // GL rows run bottom to top
     c.getContext('2d').putImageData(img, 0, 0);
