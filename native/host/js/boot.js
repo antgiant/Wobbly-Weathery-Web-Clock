@@ -141,9 +141,11 @@ if (A.present) {
       for (let i = 0; i < px.length; i += step) { r += px[i]; g += px[i + 1]; b += px[i + 2]; n++; }
       if ((presented === 3 || presented === 12 || presented === 40) && G.__sky && G.__sky.maps) { try { __print('maps: ' + G.__sky.maps()); } catch (e) { __print('maps failed: ' + e); } }
       if ((presented === 2 || presented === 12) && G.__sky && G.__sky.diagnose) { try { __print('diagnose: ' + G.__sky.diagnose()); } catch (e) { __print('diagnose failed: ' + e); } }
-      __print('[' + Math.round(performance.now()) + ' ms] frame ' + presented + ' presented ' + w + 'x' + h + ', average colour ' + Math.round(r / n) + ',' + Math.round(g / n) + ',' + Math.round(b / n) + ', dimmer ' + level.toFixed(2));
+      const cp = (typeof __cpu === 'function' ? __cpu() : '0,0').split(',').map(Number), wn = performance.now(); const cu = cp[0] - (G.__cpu0 ? G.__cpu0[0] : 0), cs = cp[1] - (G.__cpu0 ? G.__cpu0[1] : 0), cw = wn - (G.__cpu0 ? G.__cpu0[2] : 0); G.__cpu0 = [cp[0], cp[1], wn];
+      __print('[' + Math.round(wn) + ' ms] frame ' + presented + ' presented ' + w + 'x' + h + ', average colour ' + Math.round(r / n) + ',' + Math.round(g / n) + ',' + Math.round(b / n) + ', dimmer ' + level.toFixed(2) + ' | since the last frame: ' + Math.round(cw) + ' ms wall, cpu ' + Math.round(cu) + ' user + ' + Math.round(cs) + ' system (10 ms steps)');
     }
     if (A.profile) G.__pt['send: the timing line (average colour, text)'] = (G.__pt['send: the timing line (average colour, text)'] || 0) + performance.now() - tm0;
+    if (A.profile && typeof __qjsgc === 'function') { __print('--- the JavaScript heap ---'); __print('  the program holds ' + (typeof __rss === 'function' ? Math.round(__rss()) : '?') + ' MB'); const gc = __qjsgc(); __print('  a full collection takes ' + (Math.round(gc * 10) / 10) + ' ms'); }
     if (A.profile && G.__profDump) { const pd0 = performance.now(); G.__profDump(); G.__pt['the profile report itself (it is inside the "send" timer above, and not part of a real frame)'] = performance.now() - pd0; }
   };
   await until(() => !!G.__sky, 30000);
