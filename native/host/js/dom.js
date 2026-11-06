@@ -58,14 +58,14 @@ export class Node_ extends EventTarget_ {
   insertBefore(c, ref) {
     if (c instanceof Fragment) { [...c.childNodes].forEach((x) => this.insertBefore(x, ref)); return c; }
     if (c.parentNode) c.parentNode.removeChild(c);
-    const i = ref ? this.childNodes.indexOf(ref) : -1; if (i < 0) this.childNodes.push(c); else this.childNodes.splice(i, 0, c); c.parentNode = this; VER++; return c;
+    const i = ref ? this.childNodes.indexOf(ref) : -1; if (i < 0) this.childNodes.push(c); else this.childNodes.splice(i, 0, c); c.parentNode = this; if (c.nodeType !== 3) { VER++; if (globalThis.__bumpLog) globalThis.__bumpLog('add ' + c.localName, this); } return c;          // (text is not measured here: the boxes come from the canvas and the clock's drawings, so a change of text is no change of layout)
   }
-  removeChild(c) { const i = this.childNodes.indexOf(c); if (i >= 0) { this.childNodes.splice(i, 1); c.parentNode = null; VER++; } return c; }
+  removeChild(c) { const i = this.childNodes.indexOf(c); if (i >= 0) { this.childNodes.splice(i, 1); c.parentNode = null; if (c.nodeType !== 3) { VER++; if (globalThis.__bumpLog) globalThis.__bumpLog('remove ' + c.localName, this); } } return c; }
   replaceChild(n, o) { this.insertBefore(n, o); return this.removeChild(o); }
   remove(i) { if (typeof i === 'number' && this.localName === 'select') { const o = this.querySelectorAll('option')[i]; if (o) o.remove(); return; } if (this.parentNode) this.parentNode.removeChild(this); }
   contains(n) { while (n) { if (n === this) return true; n = n.parentNode; } return false; }
   get textContent() { return this.childNodes.map((c) => c.textContent).join(''); }
-  set textContent(t) { this.childNodes.forEach((c) => (c.parentNode = null)); this.childNodes = []; if (t !== '' && t != null) this.appendChild(new Text(String(t))); }
+  set textContent(t) { if (this.childNodes.length === 1 && this.childNodes[0].nodeType === 3 && this.childNodes[0].data === String(t)) return; this.childNodes.forEach((c) => { c.parentNode = null; if (c.nodeType !== 3) VER++; }); this.childNodes = []; if (t !== '' && t != null) this.appendChild(new Text(String(t))); }
 }
 export class Text extends Node_ { constructor(t) { super(); this.data = t; this.nodeType = 3; } get textContent() { return this.data; } set textContent(t) { this.data = String(t); } get nodeValue() { return this.data; } }
 export class Fragment extends Node_ { constructor() { super(); this.nodeType = 11; } }
