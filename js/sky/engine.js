@@ -17,8 +17,9 @@ import {
   VERT_FULLSCREEN, FRAG_TRANSMITTANCE, FRAG_MULTISCATTER, FRAG_SKYVIEW,
 } from './glsl-atmosphere.js';
 import {
-  FRAG_NOISE, FRAG_NOISE_DOWN, FRAG_ATLAS_PLACE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, fragBlit, FRAG_LED, FRAG_LED_PEAK, FRAG_LED_AVG, FRAG_SCENE_SKY, FRAG_SCENE_CLOUD, FRAG_SCENE_FOG, FRAG_SCENE_TERRAIN, fragTerrain, FRAG_CONSTS, CONSTS_N, HAZE_N,
+  FRAG_NOISE, FRAG_NOISE_DOWN, FRAG_ATLAS_PLACE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, fragBlit, FRAG_LED, FRAG_LED_PEAK, FRAG_LED_AVG, FRAG_SCENE_SKY, FRAG_SCENE_CLOUD, FRAG_SCENE_FOG, FRAG_SCENE_TERRAIN, fragTerrain, FRAG_CONSTS, CONSTS_N, HAZE_N, FRAG_FLAT,
 } from './glsl-scene.js';
+import { flatPalette } from './flatsky.js';
 import { toES1, packSkyline, NOISE_ATLAS } from './portable.js';
 import { VERT_PLANTS, FRAG_PLANTS } from './glsl-plants.js';
 import { computeSky, DEG } from './astro.js';
@@ -484,6 +485,7 @@ export class SkyEngine {
     this.s.scale = k.scale;
     this.s.outScale = this.glass.led.on ? 1 : k.outScale;          // an LED panel needs its cells at the size they are read back
     this.starFrac = k.stars;
+    if (this.knobs && this.knobs.glass === false && k.glass !== false) this._mipsStale = true;            // the glass is back: its tables are rebuilt
     this.knobs = k;
     if (this.onKnobs) this.onKnobs(k);                // the page: seconds, the clock's rhythm, the light timer
     this.dirty = true;
@@ -806,10 +808,7 @@ export class SkyEngine {
     this._1f('uDither', this.ditherScale);
     };
     gl.disable(gl.BLEND);
-    if (K && !K.landscape) {                                  // no landscape: the ground is a flat colour (the sky program leaves it alone), lit as the day is
-      const f = Math.min(0.55, Math.max(0.02, (sky.sun.alt + 12) / 40)), gc = ground.map((c) => Math.min(1, c * f * 1.6));
-      gl.clearColor(gc[0], gc[1], gc[2], 0); gl.clear(gl.COLOR_BUFFER_BIT);
-    }
+    if (K && !K.landscape) this._drawFlat(cam, sky, 0);       // no landscape: the ground is a colour fading towards the horizon (the sky program leaves it alone where the ridges are)
     this._use(this.pSceneSky); setScene();                    // every pixel that is not wholly terrain
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.enable(gl.BLEND);                                      // everything after the sky goes over it by its own coverage; the fourth channel (the stars' sky-visibility) shrinks by the same share
@@ -853,16 +852,28 @@ export class SkyEngine {
     this._presented('scene');
   }
 
+  /** One cheap pass of the flat sky and ground (flatsky.js): mode 0 the ground colour everywhere, 1 the whole picture. The scene's target must be bound. */
+  _drawFlat(cam, sky, mode) {
+    const gl = this.gl, s = this.s, w = s.weather;
+    if (!this.pFlat) this.pFlat = this._program(VERT_FULLSCREEN, FRAG_FLAT);
+    const pal = flatPalette(sky.sun.alt, Math.max(w.cover[0], w.cover[1], w.cover[2]), w.precip || 0, s.landscape.albedo);
+    gl.disable(gl.BLEND);
+    this._use(this.pFlat);
+    this._m3('uCam', cam.mat); this._2f('uTan', cam.tan[0], cam.tan[1]);
+    this._3f('uZen', pal.zenith); this._3f('uHor', pal.horizon); this._3f('uGN', pal.groundNear); this._3f('uGF', pal.groundFar);
+    this._1f('uMode', mode);
+    gl.bindVertexArray(this.vaoEmpty);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
   /**
-   * The last rung of the capability ladder: no sky. The scene is one flat colour, from the sun's height (day blue to night), and the digits go over it as always. No tables, no
-   * shaders of the sky: the cost is the final passes only.
+   * A rung of the capability ladder: no sky. The scene is a gradient sky over a fading ground (flatsky.js), from the sun's height and the weather's cover, and the digits go over it
+   * as always. No tables, no shaders of the sky: the cost is the flat pass and the final passes.
    */
   _renderFlat(rw, rh, sky, firstRender, perfNow) {
     const gl = this.gl, T = this.sceneTarget;
-    const t = Math.min(1, Math.max(0, (sky.sun.alt + 12) / 22)), c = [0.02 + 0.36 * t, 0.025 + 0.55 * t, 0.06 + 0.84 * t];
-    gl.disable(gl.BLEND);
     gl.bindFramebuffer(gl.FRAMEBUFFER, T.fbo); gl.viewport(0, 0, T.w, T.h);
-    gl.clearColor(c[0], c[1], c[2], 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    this._drawFlat(this._camera(rw, rh), sky, 1);
     this._blit(true);
     this._mipsValid = this.glass.mode > 0 && this.glass.hasMask;
     this.dirty = false;
@@ -883,7 +894,7 @@ export class SkyEngine {
       if (scene) gl.generateMipmap(gl.TEXTURE_2D);          // frosting blurs through the mip chain
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
     } else gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    if (glassOn && this.es2 && (scene || !(this.mipState && this.mipState.scene) || this.mipState.scene.src !== T)) { this._mipAtlas('scene', T.tex, T.w, T.h); this.mipState.scene.src = T; }
+    if (glassOn && this.es2 && !(this.knobs && this.knobs.glass === false) && (scene || this._mipsStale || !(this.mipState && this.mipState.scene) || this.mipState.scene.src !== T)) { this._mipAtlas('scene', T.tex, T.w, T.h); this.mipState.scene.src = T; this._mipsStale = false; }
     const led = g.led.on;
     if (led) this._ensureComp(cw, ch);
     {                                                                  // snow and rain on the digits: from the weather being drawn
@@ -893,7 +904,8 @@ export class SkyEngine {
     }
     // An ES 2 GPU gets the glass as small programs, each reading what the ones before made (a Pi Zero's driver could not fit the whole glass in one: it drew nothing): the height field and
     // slope (ggeo), the shadow and halo (gaura), for stained glass the tube's colours (gemit, ghalo), the body (gbody), snow and rain when there are any (gwx), the outline (gout).
-    const kind = !glassOn ? 'off' : g.mode > 2.5 ? 'ink' : 'glass';
+    const solid = glassOn && this.knobs && this.knobs.glass === false;       // the capability ladder: solid digits, one cheap pass (no glass: no tables of the scene or the mask)
+    const kind = !glassOn ? 'off' : solid || g.mode > 2.5 ? 'ink' : 'glass';
     const stained = g.mode > 1.5 && g.mode <= 2.5;
     const passes = this.es2 && kind === 'glass' ? ['ggeo', 'gaura', ...(stained ? ['gemit', 'ghalo'] : []), 'gbody', ...(this.wx.snow > 0.01 || this.wx.rain > 0.01 ? ['gwx'] : []), 'gout'] : [kind];
     if (passes.length > 1) { this._ensurePing(cw, ch); this._ensureGlassT(cw, ch); }
@@ -1212,7 +1224,7 @@ export class SkyEngine {
     }
     gl.bindVertexArray(null);
     gl.blendEquation(gl.FUNC_ADD); gl.disable(gl.BLEND);
-    if (this.es2) this._mipAtlas('mask', T.tex, w, h, this._maskLevels(w, rect, strokeCssPx));
+    if (this.es2 && !(this.knobs && this.knobs.glass === false)) this._mipAtlas('mask', T.tex, w, h, this._maskLevels(w, rect, strokeCssPx));
     else { gl.bindTexture(gl.TEXTURE_2D, T.tex); gl.generateMipmap(gl.TEXTURE_2D); }
     g.rect = rect; g.maskW = w; g.maskH = h; g.stroke = strokeCssPx; g.hasMask = true;
     this.redrawGlass();

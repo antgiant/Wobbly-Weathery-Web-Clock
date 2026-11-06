@@ -758,6 +758,27 @@ void main() {
     oColor.rgb = mix(oColor.rgb, o.rgb, o.a);
   }
 }`;
+/**
+ * The cheapest sky and ground (flatsky.js): from the view direction, a sky that is a gradient from the horizon to overhead and a ground that fades from its near colour to its far one
+ * towards the horizon. uMode 0 draws the ground colour everywhere (under the real sky, which is drawn over it where there is no ridge), 1 the whole picture. The fourth channel is
+ * the stars' sky-visibility, as in the real scene.
+ */
+export const FRAG_FLAT = `#version 300 es
+precision highp float;
+uniform mat3 uCam;
+uniform vec2 uTan;
+uniform vec3 uZen, uHor, uGN, uGF;
+uniform float uMode;
+in vec2 vUv;
+out vec4 oColor;
+void main() {
+  vec2 ndc = vUv * 2.0 - 1.0;
+  vec3 d = normalize(uCam * normalize(vec3(ndc.x * uTan.x, ndc.y * uTan.y, 1.0)));
+  float e = d.y;
+  if (uMode > 0.5 && e >= 0.0) { oColor = vec4(mix(uHor, uZen, pow(clamp(e, 0.0, 1.0), 0.45)), 1.0); return; }
+  oColor = vec4(mix(uGF, uGN, clamp(-e * 3.0, 0.0, 1.0)), 0.0);
+}`;
+
 /** The final pass: kind 'off' (no clock glass), 'ink' (flat ink on the LED panel's solid style) or 'glass'. */
 export const fragBlit = (kind) => `#version 300 es\n#define BLIT_${kind.toUpperCase()} 1${BLIT_SOURCE}`;
 
