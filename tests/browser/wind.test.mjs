@@ -66,7 +66,8 @@ export async function run(t) {
   // gusts: the digits keep moving, but not while saving power
   h = await q(0, { windSway: 'full' });
   await h.settle(2500);
-  const a = await digits(h.page); await h.page.waitForTimeout(1100); const b = await digits(h.page);
+  const a = await digits(h.page); let b = a;
+  for (let i = 0; i < 24 && JSON.stringify(a.m0) === JSON.stringify(b.m0); i++) { await h.page.waitForTimeout(500); b = await digits(h.page); }      // (a slow machine takes longer than a second to draw the next shape: wait for it, up to twelve seconds)
   t.check('lean and gusts: the digits flutter (the shapes change from second to second even when the minute does not)', JSON.stringify(a.m0) !== JSON.stringify(b.m0));
   const fl = await h.page.evaluate(async () => (await import('/js/wind.js')).sway.flutter);
   t.check('gusts are on in a storm at normal power', fl === true);
