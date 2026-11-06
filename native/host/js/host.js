@@ -16,14 +16,14 @@ G.setTimeout = (fn, ms = 0, ...a) => { const id = tid++; timers.push({ id, at: _
 G.clearTimeout = (id) => { timers = timers.filter(t => t.id !== id); };
 G.setInterval = (fn, ms) => { const id = tid++; const re = () => { timers.push({ id, at: __now() + ms, fn: () => { re(); fn(); }, src: fn }); }; re(); return id; };
 G.clearInterval = G.clearTimeout;
-G.requestAnimationFrame = (fn) => G.setTimeout(() => fn(performance.now()), 0);
+G.requestAnimationFrame = (fn) => { const id = tid++; timers.push({ id, at: __now(), fn: () => fn(performance.now()), src: fn }); return id; };
 G.cancelAnimationFrame = G.clearTimeout;
 // --profile: the time each kind of timer callback takes (named by the start of its source), so the page's own work shows up besides the GPU's
 const timerTime = {};
 G.__timerTime = timerTime;
 G.__pump = () => {
   const now = __now(); const due = timers.filter(t => t.at <= now); timers = timers.filter(t => t.at > now);
-  if (G.__args && G.__args.profile) due.forEach(t => { const t0 = __now(); t.fn(); const k = String(t.src || t.fn).replace(/\s+/g, ' ').slice(0, 110); const e = timerTime[k] || (timerTime[k] = { ms: 0, n: 0 }); e.ms += __now() - t0; e.n++; });
+  if (G.__args && G.__args.profile) due.forEach(t => { const t0 = __now(); t.fn(); const sf = t.src || t.fn; const k = (sf.name ? sf.name + ': ' : '') + String(sf).replace(/\s+/g, ' ').slice(0, 90); const e = timerTime[k] || (timerTime[k] = { ms: 0, n: 0 }); e.ms += __now() - t0; e.n++; });
   else due.forEach(t => t.fn());
   return timers.length;
 };
@@ -116,6 +116,7 @@ class Ctx2D {
 
 // ---- --profile: where the CPU time goes besides drawing (the 2D canvas natives are timed here; the engine's calls in boot.js) ----
 G.__pt = {};
+G.__tp = (k, t0) => { G.__pt[k] = (G.__pt[k] || 0) + performance.now() - t0; };           // (the page's own code adds its phases here when it is profiled)
 if (G.__args && G.__args.profile) {
   for (const k of ['__c2d_call', '__c2d_read']) { const f = G[k]; G[k] = (...a) => { const t = __now(); const r = f(...a); G.__pt['2D canvas (tiny-skia)'] = (G.__pt['2D canvas (tiny-skia)'] || 0) + __now() - t; return r; }; }
 }

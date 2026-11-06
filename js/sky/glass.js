@@ -242,13 +242,17 @@ export function initGlass(engine, getBasis) {
   function draw() {
     raf = 0;
     if (!active()) return;
+    const tp = window.__tp, tt = tp && performance.now();             // (the native host's --profile adds up the phases)
     const L = measure();
+    if (tp) tp('page glass.draw: measure', tt);
     if (!L) return;
     const { svgs, x0, y0, scale } = L;
     const stained = style() === 'stained';
     mW = L.mw; mH = L.mh;
     if (engine.canDrawMask && !window.__canvasMask) {              // the GPU draws the strokes (glsl-mask.js); the CPU only lists the geometry
+      const tg = tp && performance.now();
       const geo = geometry(L, stained);
+      if (tp) tp('page glass.draw: geometry (the strokes as lists)', tg);
       lastPolys = geo.polys;
       inkStroke = L.strokePx * L.scale; inkStale = true;
       engine.setGlassGeometry({ w: L.mw, h: L.mh, rect: L.rect, strokeCssPx: L.strokePx, strokes: geo.strokes, lights: geo.lights, black: stained });
