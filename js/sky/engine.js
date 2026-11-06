@@ -84,7 +84,7 @@ export class SkyEngine {
     this.lastPlanets = -1e9;
     this.lutState = { sunAlt: 9, moonAlt: 9, camH: -1, mie: -1 };
     this.frameNo = 0;
-    this.ditherScale = (() => { const v = typeof location !== 'undefined' ? parseFloat(new URLSearchParams(location.search).get('dither')) : NaN; return Number.isFinite(v) ? Math.max(0, Math.min(6, v)) : 1; })();     // ?dither=n: to try a wider or no dither
+    this.ditherScale = (() => { try { const v = parseFloat(new URLSearchParams(location.search).get('dither')); return Number.isFinite(v) ? Math.max(0, Math.min(6, v)) : 1; } catch (_) { return 1; } })();     // ?dither=n: to try a wider or no dither (a host without a page address keeps 1)
     this.lastRender = 0;
     this.perf = { acc: 0, n: 0, last: 0 };
     this.fast = false;              // look-around / drag: render every display frame
