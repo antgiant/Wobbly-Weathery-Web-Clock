@@ -158,7 +158,7 @@ var still = {};          // per digit slot: the shape it was last drawn as when 
 function clock() {
   if (document.hidden) return false;           // nothing to animate in a background tab
   var now = simNow();
-  if (cap.cadence === 'minute' && !getSim()) {                  // one picture a minute: from a little before the minute the next one is drawn (and the host holds it back until the minute)
+  if ((cap.cadence === 'minute' || cap.ahead) && window.__holdsFrames && !getSim()) {                  // one picture a minute (or the seconds off): the minute: from a little before the minute the next one is drawn (and the host holds it back until the minute)
     var toMin = 60000 - (+now % 60000);
     if (toMin <= cap.lead + 1500) { now = new Date(+now + toMin); window.__presentAt = +now; } else window.__presentAt = 0;
   } else window.__presentAt = 0;
@@ -231,10 +231,13 @@ function loop() {
   var sim = getSim();
   if (window.__why) window.__why('clock loop ran, short wait because: ' + (morphing ? 'a digit is about to change' : sway.flutter ? 'sway flutter' : sim && sim.scale > 1 ? 'time travel' : 'none (waits for the next second)'));
   var delay = morphing || sway.flutter || (sim && sim.scale > 1) ? (vars.tick || vars.step) : 1005 - simNow().getMilliseconds();
-  if (cap.cadence === 'minute' && !sim) {                        // wake once a minute, a lead before it, to draw the next minute's picture
-    var t1 = +simNow(), wake = Math.ceil((t1 + 1) / 60000) * 60000 - cap.lead;
-    if (wake - t1 < 500) wake += 60000;
-    delay = wake - t1;
+  if (cap.cadence === 'minute' && !sim) {
+    var t1 = +simNow();
+    if (window.__holdsFrames) {                                   // wake once a minute, a lead before it, to draw the next minute's picture (the host shows it on the minute)
+      var wake = Math.ceil((t1 + 1) / 60000) * 60000 - cap.lead;
+      if (wake - t1 < 500) wake += 60000;
+      delay = wake - t1;
+    } else delay = Math.ceil((t1 + 1) / 60000) * 60000 + 30 - t1;   // a browser cannot hold a picture back: draw it just after the minute turns (never before)
   }     // vars.tick: the quality governor's pace (js/sky/governor.js), when there is one
   clockTimer = setTimeout(loop, delay);
 }

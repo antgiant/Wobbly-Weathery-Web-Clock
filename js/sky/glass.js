@@ -124,7 +124,7 @@ export function initGlass(engine, getBasis) {
     if (!svgs.length || !W || !H) return null;
     const pad = strokePx * 1.6 + 8;                                  // room for the shadow and blur
     x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(W, x1 + pad); y1 = Math.min(H, y1 + pad);
-    const scale = Math.min(window.devicePixelRatio || 1, 1.5);
+    const scale = Math.min(window.devicePixelRatio || 1, 1.5, engine.maxTexture / Math.max(1, x1 - x0, y1 - y0));       // (and the mask is no bigger than the GPU's biggest texture)
     const mw = Math.max(2, Math.round((x1 - x0) * scale)), mh = Math.max(2, Math.round((y1 - y0) * scale));
     return { svgs, x0, y0, scale, strokePx, mw, mh, rect: [x0 / W, y0 / H, (x1 - x0) / W, (y1 - y0) / H] };
   }

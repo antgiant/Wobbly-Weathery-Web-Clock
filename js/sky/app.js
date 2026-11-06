@@ -57,11 +57,11 @@ function init() {
     const ps = document.getElementById('perfStatus'), held = (conf.adapt || 'auto') !== 'auto' && (conf.adapt in RUNG_OF);
     const was = { s: cap.seconds, c: cap.cadence, w: cap.weather, a: cap.ambient };
     if (!k) {                                                // no ladder: everything the settings say
-      cap.seconds = 'morph'; cap.cadence = 'live'; cap.weather = true; cap.ambient = true; cap.lead = 0; vars.tick = 0;
+      cap.seconds = 'morph'; cap.cadence = 'live'; cap.ahead = false; cap.weather = true; cap.ambient = true; cap.lead = 0; vars.tick = 0;
       if (ps) ps.textContent = 'Adapting is off: everything you chose is drawn, even if this device cannot keep up.';
     } else {
       if (ps) ps.textContent = k.rung > 0 ? 'Right now: ' + engine.gov.name + ' (' + engine.gov.why + (held ? '; held by Adapt to this device' : '') + '). The clock must show the right time, so what is given up cannot be switched back on below.' : 'Right now: everything this device can show.';
-      cap.seconds = k.seconds; cap.cadence = k.cadence; cap.weather = k.weather; cap.ambient = k.ambient; cap.lead = engine.gov ? engine.gov.leadMs : 0;
+      cap.seconds = k.seconds; cap.cadence = k.cadence; cap.ahead = !!k.ahead; cap.weather = k.weather; cap.ambient = k.ambient; cap.lead = engine.gov ? engine.gov.leadMs : 0;
     }
     applyLadderUi(k, held);
     if (was.a !== cap.ambient) updateWind();

@@ -182,6 +182,7 @@ function makeGL(canvas) {
   const wrapNew = (n) => () => ({ id: call(n) });
   Object.assign(gl, {
     canvas, drawingBufferWidth: canvas.width, drawingBufferHeight: canvas.height,
+    MAX_TEXTURE_SIZE: 0x0D33, getParameter: (p) => (p === 0x0D33 ? (+call('getIntegerv', p, 1) || 2048) : 0),       // (the biggest picture this GPU makes: the engine keeps its pictures within it)
     // an OpenGL ES 2 GPU has no float render targets: saying so makes the engine take its ES 2 path (packed 8-bit tables, no instancing, portable.js)
     getExtension: (n) => (n === 'KHR_parallel_shader_compile' || (!es2 && (n === 'EXT_color_buffer_float' || n === 'EXT_color_buffer_half_float'))) ? {} : null,
     createTexture: wrapNew('createTexture'), createBuffer: wrapNew('createBuffer'), createFramebuffer: wrapNew('createFramebuffer'), createVertexArray: wrapNew('createVertexArray'),

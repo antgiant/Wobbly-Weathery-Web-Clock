@@ -1,7 +1,7 @@
 // The capability ladder: the clock must always show the right time, so the engine gives things up in a fixed order until the cost fits, whatever the user chose.
 // Run: node tests/unit/capability.test.mjs
 import { check, done } from '../lib/check.mjs';
-import { Capability, RUNGS, BUDGET, RUNG_OF, GIVEN_UP, givenUp } from '../../js/sky/capability.js';
+import { Capability, RUNGS, BUDGET, RUNG_OF, GIVEN_UP, givenUp, quietFor } from '../../js/sky/capability.js';
 import { SETTINGS } from '../../schema/settings.js';
 import { LADDER, SHARP_LADDER } from '../../js/sky/governor.js';
 
@@ -98,6 +98,16 @@ check('the budgets grow down the ladder', BUDGET[R('tick')].glass < BUDGET[R('se
 // the lead for drawing the next minute ahead of time covers the slowest recent redraw
 { const c = new Capability({ rung: R('slow clock') }); c.report(7000, 'glass', 0); c.report(6000, 'glass', 1);
   check('the lead covers the slowest redraw with margin', c.leadMs >= 7000 * 1.4, `${c.leadMs} ms`); }
+
+// the time must be right at the minute: from the seconds-off rung on, the minute is drawn ahead and a sky redraw is never started where it could cross the minute
+{ const k = (name) => new Capability({ rung: R(name) }).knobs;
+  check('the minute is drawn ahead only where no seconds are shown', !k('tick').ahead && k('seconds off').ahead && k('slow clock').ahead && k('gradient sky').ahead);
+  check('the sky is redrawn at most once a minute from the seconds-off rung', k('seconds off').skyMs >= 60000 && k('tick').skyMs < 60000, `${k('seconds off').skyMs} / ${k('tick').skyMs}`);
+  // a Zero redrawing its sky in 8 s with a 1.5 s lead
+  check('a sky redraw waits when it could still run at the minute', quietFor(10000, 8000, 3000) > 10000 && quietFor(10000, 8000, 3000) < 10200, `${quietFor(10000, 8000, 3000)}`);
+  check('... and may start when there is room', quietFor(30000, 8000, 3000) === 0 && quietFor(20000, 100, 700) === 0);
+  check('the quiet window is capped, so a very slow sky still gets drawn once a minute', quietFor(46000, 1e6, 1e6) === 0 && quietFor(40000, 1e6, 1e6) > 0);
+  check('just after the minute it may start again', quietFor(59000, 8000, 3000) === 0, `${quietFor(59000, 8000, 3000)}`); }
 
 // the settings screens: what each rung greys out, and that every name the setting offers is a rung (or auto / off)
 { const c = new Capability({}), at = (r) => { c.rung = r; return givenUp(c.knobs); };
