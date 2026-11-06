@@ -1,16 +1,17 @@
 // What the hardware can handle: a ladder of rungs below the quality governor's resolution levels. The clock must always show the right time, so when even the cheapest picture costs
-// too much the engine gives things up in a fixed order until the time is right, whatever the user chose (a clock that shows the wrong time is worth nothing). The cheap looks come
-// before the loss of seconds and of live drawing, so those last longer:
+// too much the engine gives things up in a fixed order until the time is right, whatever the user chose (a clock that shows the wrong time is worth nothing). The seconds go before
+// the glass and the real sky and ground do: the picture a person looks at stays as rich as the hardware can draw, and a clock that cannot keep pace with its seconds shows the minutes
+// beautifully instead of the seconds badly.
 //
 //    0 full            everything the quality governor allows
 //    1 weather         no rain or snow in motion (streaks, drops on the digits): the weather stays as light and cloud, standing still
 //    2 ambient         no cloud or water drift, plant sway or twinkle: the sky is redrawn only when the sun has moved
-//    3 solid digits    no glass: flat digits in one cheap pass (the glass is the most expensive thing drawn every second)
-//    4 flat ground     no terrain, plants or tree: the ground is a colour fading towards the horizon
-//    5 gradient sky    no sky tables, clouds or stars: a gradient from the sun's height (flatsky.js)
-//    6 tick            seconds shown but not morphing: each second is drawn once, on the second
-//    7 seconds off     no seconds; the picture is redrawn when it must be (a new minute, the light)
-//    8 slow clock      one picture a minute, drawn ahead of time and shown on the minute
+//    3 tick            seconds shown but not morphing: each second is drawn once, on the second
+//    4 seconds off     no seconds; the picture is redrawn when it must be (a new minute, the light)
+//    5 slow clock      one picture a minute, drawn ahead of time and shown on the minute (so a redraw may take most of a minute)
+//    6 solid digits    no glass: flat digits in one cheap pass (the glass is the most expensive thing drawn)
+//    7 flat ground     no terrain, plants or tree: the ground is a colour fading towards the horizon
+//    8 gradient sky    no sky tables, clouds or stars: a gradient from the sun's height (flatsky.js)
 //    9 smaller         the whole picture at half the size (the screen enlarges it): only when even that much is too slow for one picture a minute
 //   10 smallest        a quarter of the size
 //
@@ -20,26 +21,29 @@
 // Pure maths like the governor: the caller passes costs and the time, so it is tested in node.
 import { Governor, LADDER, SHARP_LADDER } from './governor.js';
 
-export const RUNGS = ['full', 'weather', 'ambient', 'solid digits', 'flat ground', 'gradient sky', 'tick', 'seconds off', 'slow clock', 'smaller picture', 'smallest picture'];
+export const RUNGS = ['full', 'weather', 'ambient', 'tick', 'seconds off', 'slow clock', 'solid digits', 'flat ground', 'gradient sky', 'smaller picture', 'smallest picture'];
 export const WHY = [
   'everything on',
   'rain and snow stand still (the frames cost too much)',
   'clouds, water and plants stand still (the frames cost too much)',
-  'the digits are solid, not glass (the frames cost too much)',
-  'the ground is a flat colour (the frames cost too much)',
-  'the sky is a gradient (the frames cost too much)',
   'seconds tick instead of morphing (the frames cost too much)',
   'seconds are hidden (a second could be missed)',
   'one picture a minute (a redraw takes too long to keep pace)',
-  'a smaller picture (it takes too long even once a minute)',
+  'the digits are solid, not glass (even one picture a minute takes too long)',
+  'the ground is a flat colour (even one picture a minute takes too long)',
+  'the sky is a gradient (even one picture a minute takes too long)',
+  'a smaller picture (it takes too long even without glass, landscape or sky)',
   'the smallest picture (it takes too long even at half the size)',
 ];
 /** The most a single redraw of the digits (glass) and of the sky (scene) may take on each rung, ms: more than that and the clock could not keep up with what the rung promises. */
 export const BUDGET = [
-  null, null, null, null, null, null,     // the live rungs: the quality governor's frame budget
+  null, null, null,                       // the live rungs: the quality governor's frame budget
   { glass: 600, scene: 900 },             // tick: a redraw must end inside its second
   { glass: 2500, scene: 6000 },           // seconds off: the light timer only
   { glass: 40000, scene: 40000 },         // slow clock: a minute to draw the next one (the lead is 1.4 x the redraw: 40 s leaves the minute's last seconds)
+  { glass: 40000, scene: 40000 },
+  { glass: 40000, scene: 40000 },
+  { glass: 40000, scene: 40000 },
   { glass: 40000, scene: 40000 },
   { glass: 40000, scene: 40000 },
 ];
@@ -55,7 +59,7 @@ export class Capability {
     this.gov = new Governor({ ladder: profile === 'sharp' ? SHARP_LADDER : LADDER, pin, ...gov, ...(this.rung > 0 ? { level: 0 } : {}) });      // (a rung given up means the picture is already the cheapest)
     this.pin = !!pin; this.retryMs = retryMs;
     this.glass = []; this.scene = [];       // the last redraw costs of each kind, ms
-    this.over = 0;                          // reports in a row that were too costly for this rung
+    this.over = 0; this.overGlass = 0; this.overScene = 0;       // reports in a row that were too costly for this rung
     this.retryAt = this.rung > 0 ? this.retryMs : Infinity; this.changes = 0;
   }
 
@@ -71,10 +75,11 @@ export class Capability {
     const k = this.gov.knobs, r = this.rung;
     return {
       ...k,
-      skyMs: r < 6 ? k.skyMs : r < 8 ? Math.max(k.skyMs, 15000) : 60000,       // the sun moves a quarter of a degree a minute: a still sky need not be drawn more often than that on the slow rungs
-      weather: r < 1, ambient: r < 2, glass: r < 3, landscape: r < 4, sky: r < 5,
-      seconds: r < 6 ? 'morph' : r < 7 ? 'tick' : 'off',
-      cadence: r < 8 ? 'live' : 'minute',
+      skyMs: r < 3 ? k.skyMs : r < 5 ? Math.max(k.skyMs, 15000) : 60000,       // the sun moves a quarter of a degree a minute: a still sky need not be drawn more often than that on the slow rungs
+      weather: r < 1, ambient: r < 2,
+      seconds: r < 3 ? 'morph' : r < 4 ? 'tick' : 'off',
+      cadence: r < 5 ? 'live' : 'minute',
+      glass: r < 6, landscape: r < 7, sky: r < 8,
       outScale: r >= 10 ? Math.min(k.outScale, 0.25) : r >= 9 ? Math.min(k.outScale, 0.5) : k.outScale,       // (the last resort: a smaller picture, enlarged by the screen)
       rung: r, name: RUNGS[r],
     };
@@ -104,9 +109,11 @@ export class Capability {
     // the lowest resolution: is this rung affordable?
     const b = BUDGET[this.rung];
     let over;
-    if (!b) over = this.gov.cost != null && this.gov.cost > this.gov.budgetMs && this.gov.samples >= 4;
-    else over = (kind === 'glass' && costMs > b.glass) || (kind === 'scene' && costMs > b.scene);
-    this.over = over ? this.over + 1 : 0;
+    if (!b) { over = this.gov.cost != null && this.gov.cost > this.gov.budgetMs && this.gov.samples >= 4; this.over = over ? this.over + 1 : 0; }
+    else {                                                          // glass redraws and sky redraws are counted apart (one kind fitting must not hide the other missing)
+      if (kind === 'glass') this.overGlass = costMs > b.glass ? this.overGlass + 1 : 0; else this.overScene = costMs > b.scene ? this.overScene + 1 : 0;
+      this.over = Math.max(this.overGlass, this.overScene);
+    }
     if (this.over >= (b ? 2 : 1) && this.rung < RUNGS.length - 1) {
       // a rung that missed by a little may do better another time; one that missed by more than a quarter (a 7 s redraw for a 2.5 s budget) will not, and a try would show the wrong time while it fails
       const worst = b ? Math.max(this.worst('glass') / b.glass, this.worst('scene') / b.scene) : (this.gov.cost || 0) / this.gov.budgetMs;
@@ -116,7 +123,7 @@ export class Capability {
   }
 
   _move(rung) {
-    this.rung = rung; this.changes++; this.over = 0;
+    this.rung = rung; this.changes++; this.over = 0; this.overGlass = 0; this.overScene = 0;
     if (rung === 0) this.retryAt = Infinity;
     this.glass = []; this.scene = [];
     this.gov.cost = null; this.gov.samples = 0; this.gov.stableSince = 0;
