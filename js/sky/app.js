@@ -43,9 +43,12 @@ function init() {
   }
   performance.mark('sky:engine-created');
   { const d = parseFloat(new URLSearchParams(location.search).get('dpr')); if (d > 0) engine.set({ forceDpr: Math.min(d, 6) }); }     // ?dpr=3: draw at more than twice the screen's pixels (to see what a bigger screen would cost)
+  { const ps = document.getElementById('perfStatus'); if (ps && !engine.gov) ps.textContent = 'This browser draws everything at the quality set above.'; }
   engine.noScissor = new URLSearchParams(location.search).has('noscissor');          // (to compare the pictures with and without limiting the glass passes to the digits)
   engine.onTick = (ms) => { vars.tick = ms; if (engine.gov) cap.lead = engine.gov.leadMs; };           // the clock ticks as fast as the governor says the frames allow
   engine.onKnobs = (k) => {                                  // the capability ladder moved: what the hardware can handle outranks the settings
+    const ps = document.getElementById('perfStatus');
+    if (ps) ps.textContent = k.rung > 0 ? 'Right now: ' + engine.gov.name + ' (' + engine.gov.why + '). The settings below cannot change this: the clock must show the right time.' : 'Right now: everything this device can show.';
     const changed = cap.seconds !== k.seconds || cap.cadence !== k.cadence;
     cap.seconds = k.seconds; cap.cadence = k.cadence; cap.lead = engine.gov ? engine.gov.leadMs : 0;
     if (changed) { adjustTimeSize(); window.dispatchEvent(new Event('capchange')); window.dispatchEvent(new Event('clocklayout')); }

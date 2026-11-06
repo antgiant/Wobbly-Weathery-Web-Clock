@@ -9,6 +9,8 @@
 //   5 slow clock    one picture a minute, drawn ahead of time and shown on the minute
 //   6 no landscape  no terrain, plants or tree
 //   7 no sky        a flat colour behind the digits
+//   8 smaller       the whole picture at half the size (the screen enlarges it): only when even that much is too slow for one picture a minute
+//   9 smallest      a quarter of the size
 //
 // The quality governor (governor.js) moves along its resolution levels first; only when it is on its lowest level and frames still cost too much does a rung go.
 // A rung comes back after a good while, when there may be room again (something else stopped using the CPU); if it was not, it goes again within a few frames.
@@ -16,7 +18,7 @@
 // Pure maths like the governor: the caller passes costs and the time, so it is tested in node.
 import { Governor, LADDER, SHARP_LADDER } from './governor.js';
 
-export const RUNGS = ['full', 'weather', 'ambient', 'tick', 'seconds off', 'slow clock', 'no landscape', 'no sky'];
+export const RUNGS = ['full', 'weather', 'ambient', 'tick', 'seconds off', 'slow clock', 'no landscape', 'no sky', 'smaller picture', 'smallest picture'];
 export const WHY = [
   'everything on',
   'rain and snow stand still (the frames cost too much)',
@@ -26,15 +28,19 @@ export const WHY = [
   'one picture a minute (a redraw takes too long to keep pace)',
   'no landscape (the picture takes too long even once a minute)',
   'no sky (the picture takes too long even once a minute)',
+  'a smaller picture (it takes too long even without landscape or sky)',
+  'the smallest picture (it takes too long even at half the size)',
 ];
 /** The most a single redraw of the digits (glass) and of the sky (scene) may take on each rung, ms: more than that and the clock could not keep up with what the rung promises. */
 export const BUDGET = [
   null, null, null,                       // the live rungs: the quality governor's frame budget
   { glass: 600, scene: 900 },             // tick: a redraw must end inside its second
   { glass: 2500, scene: 6000 },           // seconds off: the light timer only
-  { glass: 12000, scene: 25000 },         // slow clock: a minute to draw the next one
-  { glass: 12000, scene: 25000 },
-  { glass: 12000, scene: 25000 },
+  { glass: 40000, scene: 40000 },         // slow clock: a minute to draw the next one (the lead is 1.4 x the redraw: 40 s leaves the minute's last seconds)
+  { glass: 40000, scene: 40000 },
+  { glass: 40000, scene: 40000 },
+  { glass: 40000, scene: 40000 },
+  { glass: 40000, scene: 40000 },
 ];
 
 export class Capability {
@@ -53,6 +59,7 @@ export class Capability {
   }
 
   get name() { return RUNGS[this.rung]; }
+  get rungIndex() { return this.rung; }
   get why() { return WHY[this.rung]; }
   get cost() { return this.gov.cost; }
   get tickMs() { return this.gov.tickMs; }
@@ -68,6 +75,7 @@ export class Capability {
       seconds: r < 3 ? 'morph' : r < 4 ? 'tick' : 'off',
       cadence: r < 5 ? 'live' : 'minute',
       landscape: r < 6, sky: r < 7,
+      outScale: r >= 9 ? Math.min(k.outScale, 0.25) : r >= 8 ? Math.min(k.outScale, 0.5) : k.outScale,       // (the last resort: a smaller picture, enlarged by the screen)
       rung: r, name: RUNGS[r],
     };
   }

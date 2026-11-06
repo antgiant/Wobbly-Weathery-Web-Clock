@@ -42,6 +42,9 @@ function run(cost, { profile = 'smooth', minutes = 90, rung = 0, pin = false, le
   // limiting the glass passes to the digits (about a sixth of the screen) lets it keep a live clock with the seconds hidden
   const r2 = run(machine({ fixed: 45, perPx: 0.0075 / 6, px, sceneBase: 3300 * px / 113000 }), { profile: 'sharp', minutes: 60 });
   check('with the passes limited to the digits the same Zero holds the seconds-off rung', r2.c.rung === 4, `rung ${r2.c.rung}`); }
+// a Zero on 1080p: the digits' passes take 17 s: a minute is enough to draw the next picture ahead, so the slow clock holds without shrinking anything
+{ const px = 1920 * 1080, r = run(machine({ fixed: 45, perPx: 0.0075 * 0.68, px, sceneBase: 3300 * px / 113000 }), { profile: 'sharp', minutes: 90 });
+  check('the Zero on 1080p holds the slow clock at full size (a 14 s redraw is drawn ahead of the minute)', r.c.rung === 5 && r.c.knobs.outScale === 1, `rung ${r.c.rung}, outScale ${r.c.knobs.outScale}`); }
 // the Zero on its 160 x 90 test picture holds a live clock (about 15 fps)
 { const r = run(machine({ fixed: 45, perPx: 0.0065, px: 160 * 90, sceneBase: 300 }), { minutes: 20 });
   check('the Zero at 160 x 90 stays on a live rung', r.c.rung <= 2, `rung ${r.c.rung}`); }
@@ -49,12 +52,13 @@ function run(cost, { profile = 'smooth', minutes = 90, rung = 0, pin = false, le
 // a hopeless machine ends on the last rung and the clock still ticks (the knobs say what to draw)
 { const r = run(() => ({ glass: 60000, scene: 600000 }), { minutes: 120 });
   check('a hopeless machine ends on the last rung', r.c.rung === RUNGS.length - 1, `rung ${r.c.rung}`);
+  check('... with the smallest picture', r.c.knobs.outScale <= 0.25, `outScale ${r.c.knobs.outScale}`);
   const k = r.c.knobs;
   check('... with no landscape, no sky, no seconds, one picture a minute, nothing moving', !k.landscape && !k.sky && k.seconds === 'off' && k.cadence === 'minute' && !k.weather && !k.ambient); }
 
 // each rung leaves exactly what it says
 { const c = new Capability({ rung: 0 }), seq = [];
-  for (let i = 0; i < RUNGS.length; i++) { c.rung = i; const k = c.knobs; seq.push([k.weather, k.ambient, k.seconds, k.cadence, k.landscape, k.sky].join()); }
+  for (let i = 0; i < 8; i++) { c.rung = i; const k = c.knobs; seq.push([k.weather, k.ambient, k.seconds, k.cadence, k.landscape, k.sky].join()); }
   check('the rungs take away weather, then ambient motion, then seconds (tick, off), then the cadence, landscape, sky',
     seq[0] === 'true,true,morph,live,true,true' && seq[1] === 'false,true,morph,live,true,true' && seq[2] === 'false,false,morph,live,true,true' && seq[3] === 'false,false,tick,live,true,true'
     && seq[4] === 'false,false,off,live,true,true' && seq[5] === 'false,false,off,minute,true,true' && seq[6] === 'false,false,off,minute,false,true' && seq[7] === 'false,false,off,minute,false,false', seq.join(' | ')); }
