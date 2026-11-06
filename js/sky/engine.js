@@ -248,10 +248,14 @@ export class SkyEngine {
     // the tables: half floats, or (OpenGL ES 2) 8-bit textures with the colour packed in (portable.js), read texel by texel, so never filtered by the hardware
     const es2 = this.es2, F = es2 ? gl.RGBA8 : gl.RGBA16F, RGBA = gl.RGBA, HF = es2 ? gl.UNSIGNED_BYTE : gl.HALF_FLOAT, LF = es2 ? gl.NEAREST : gl.LINEAR;
     const ls = this.lutScale, sc = (v, min) => Math.max(min, Math.round(v * ls));
-    this.tTrans = this._target(sc(TRANS_W, 64), sc(TRANS_H, 16), F, RGBA, HF, LF);
-    this.tMS = this._target(sc(MS_SIZE, 8), sc(MS_SIZE, 8), F, RGBA, HF, LF);
-    this.tSkySun = this._target(sc(SKY_W, 64), sc(SKY_H, 48), F, RGBA, HF, LF);
-    this.tSkyMoon = this._target(sc(SKY_W, 64), sc(SKY_H, 48), F, RGBA, HF, LF);
+    // The brightness tables (transmittance, multiple scattering, sky view): full floats where the GPU can draw into them (a half float has nothing between 0 and 6e-5 on some GPUs, and the
+    // twilight sky lives there), and always read texel by texel (portable.js hdrTex), never filtered by the hardware.
+    const f32 = !es2 && !!gl.getExtension('EXT_color_buffer_float');
+    const TF = es2 ? F : f32 ? gl.RGBA32F : gl.RGBA16F, TT = es2 ? HF : f32 ? gl.FLOAT : gl.HALF_FLOAT, TL = gl.NEAREST;
+    this.tTrans = this._target(sc(TRANS_W, 64), sc(TRANS_H, 16), TF, RGBA, TT, TL);
+    this.tMS = this._target(sc(MS_SIZE, 8), sc(MS_SIZE, 8), TF, RGBA, TT, TL);
+    this.tSkySun = this._target(sc(SKY_W, 64), sc(SKY_H, 48), TF, RGBA, TT, TL);
+    this.tSkyMoon = this._target(sc(SKY_W, 64), sc(SKY_H, 48), TF, RGBA, TT, TL);
     this.tConsts = this._target(CONSTS_N + HAZE_N, 1, F, RGBA, HF, gl.NEAREST);         // the values that are the same for every pixel (glsl-scene.js: FRAG_CONSTS)
     this.tAdapt = [this._target(1, 1, F, RGBA, HF, gl.NEAREST), this._target(1, 1, F, RGBA, HF, gl.NEAREST)];
     this.adaptIdx = 0;
