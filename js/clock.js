@@ -22,6 +22,7 @@ function setCurve(id, val, nums, from) {
     e.__c = nums; e.__ck = from;                  // the same curve as numbers (8 from `from`), so the glass need not read it back out of the string
     e.setAttribute("d", val);
     clockChanged = true;
+    if (window.__why) window.__why('a digit path changed: ' + id);
   }
 }
 
@@ -223,10 +224,12 @@ function loop() {
   if (tp) tp('page loop: clock() (the digits, the date, the seconds)', t0);
   if (document.hidden) return;                 // the visibilitychange below restarts it
   var sim = getSim();
+  if (window.__why) window.__why('clock loop ran, short wait because: ' + (morphing ? 'a digit is about to change' : sway.flutter ? 'sway flutter' : sim && sim.scale > 1 ? 'time travel' : 'none (waits for the next second)'));
   var delay = morphing || sway.flutter || (sim && sim.scale > 1) ? (vars.tick || vars.step) : 1005 - simNow().getMilliseconds();     // vars.tick: the quality governor's pace (js/sky/governor.js), when there is one
   clockTimer = setTimeout(loop, delay);
 }
 function kickClock() {
+  if (window.__why) window.__why('clock kicked (an event asked for an immediate tick)');
   clearTimeout(clockTimer);
   loop();
 }

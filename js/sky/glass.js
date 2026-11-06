@@ -284,7 +284,7 @@ export function initGlass(engine, getBasis) {
     inkStroke = L.strokePx * L.scale; inkStale = true;               // the digits changed: the drops look at the new glass at the next step
     engine.setGlassMask(mask, L.rect, L.strokePx);
   }
-  const schedule = () => { if (!raf) raf = requestAnimationFrame(draw); };
+  const schedule = (why) => { if (window.__why) window.__why('glass redraw asked for by: ' + (typeof why === 'string' ? why : why && why.type ? 'event ' + why.type : '?')); if (!raf) raf = requestAnimationFrame(draw); };
 
   // ---- light: where the sun (or moon) is on screen decides where the glass glints ----
   const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -351,7 +351,7 @@ export function initGlass(engine, getBasis) {
       contrast: { off: 0, auto: 0.85, high: 1 }[conf.legibility] ?? 0.85,
       glowCol: glowColor(),
     });
-    if (on) { schedule(); updateLight(); }
+    if (on) { schedule('apply (settings)'); updateLight(); }
   }
 
   /** Digit colour for the LED panel, from the same choice that colours the solid ink. */
@@ -369,7 +369,7 @@ export function initGlass(engine, getBasis) {
   document.addEventListener('visibilitychange', () => { if (!document.hidden) schedule(); });
   let lastStyle = style();
   every('glass-style', () => { if (style() !== lastStyle) { lastStyle = style(); apply(); } }, () => (getSim() ? 4000 : 60000));   // the season (or time travel) changed the automatic style
-  every('glass-light', () => { updateLight(); if (active()) schedule(); }, () => (active() ? 1000 : Infinity));   // the light moves with the sun; also re-measures the digits
+  every('glass-light', () => { updateLight(); if (active()) schedule('the once-a-second light timer'); }, () => (active() ? 1000 : Infinity));   // the light moves with the sun; also re-measures the digits
   engine.onFrame(() => { if (active() && !engine._lightInit) { engine._lightInit = true; updateLight(); } });
   engine.onFrame(stepDrops);
   apply();

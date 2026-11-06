@@ -26,7 +26,8 @@ export class Governor {
    * @param {{floorFps?:number, ceilFps?:number, level?:number, ladder?:object[], headroom?:number}} o
    *   headroom: the share of the floor's frame time a frame may use (0.8 leaves a fifth for everything the measurement misses)
    */
-  constructor({ floorFps = 15, ceilFps = 60, level, ladder = LADDER, headroom = 0.8 } = {}) {
+  constructor({ floorFps = 15, ceilFps = 60, level, ladder = LADDER, headroom = 0.8, pin = false } = {}) {
+    this.pin = !!pin;                       // never move from the starting level (to measure one level, or to compare two runs)
     this.ladder = ladder; this.floorFps = floorFps; this.ceilFps = ceilFps; this.headroom = headroom;
     this.level = level == null ? Math.floor(ladder.length / 2) : Math.max(0, Math.min(ladder.length - 1, level));
     this.cost = null;                     // smoothed cost of one frame at the current level, ms
@@ -57,6 +58,7 @@ export class Governor {
     const sample = this.cost == null ? costMs : Math.min(costMs, Math.max(this.cost * 2.5, 8));
     this.cost = this.cost == null ? sample : this.cost + (sample - this.cost) * 0.25;
     this.samples++;
+    if (this.pin) return false;
     if (this.samples < 4) return false;                       // let the first frames (compiles, caches) pass
     const budget = this.budgetMs;
     // down: the frames are too slow now. By how much decides how far: twice too slow, two steps.
