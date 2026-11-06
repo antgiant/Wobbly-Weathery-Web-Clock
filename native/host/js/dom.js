@@ -36,9 +36,9 @@ export class Style {
   constructor(el) { Object.defineProperty(this, '_el', { value: el, enumerable: false }); Object.defineProperty(this, '_m', { value: new Map(), enumerable: false }); }
   get cssText() { return [...this._m].map(([k, v]) => `${k}: ${v};`).join(' '); }
   set cssText(t) { this._m.clear(); String(t).split(';').forEach((d) => { const i = d.indexOf(':'); if (i > 0) this._m.set(d.slice(0, i).trim().toLowerCase().startsWith('--') ? d.slice(0, i).trim() : d.slice(0, i).trim().toLowerCase(), d.slice(i + 1).trim().replace(/\s*!important$/, '')); }); this._sync(); }
-  _sync() { VER++; if (globalThis.__bumpLog) globalThis.__bumpLog('style', this._el); if (this._el) this._el._attrs.set('style', this.cssText); }
+  _sync() { const t = this.cssText; if (this._el && this._el._attrs.get('style') === t) return; VER++; if (globalThis.__bumpLog) globalThis.__bumpLog('style', this._el); if (this._el) this._el._attrs.set('style', t); }          // (a write that changes nothing is no change: the page's layout and boxes stay as they were)
   getPropertyValue(k) { return this._m.get(k.startsWith('--') ? k : k.toLowerCase()) || ''; }
-  setProperty(k, v) { v = v == null ? '' : String(v); if (!v) return this.removeProperty(k); this._m.set(k.startsWith('--') ? k : k.toLowerCase(), v.replace(/\s*!important$/, '')); this._sync(); }
+  setProperty(k, v) { v = v == null ? '' : String(v); if (!v) return this.removeProperty(k); if (this._m.get(k.startsWith('--') ? k : k.toLowerCase()) === v.replace(/\s*!important$/, '')) return; this._m.set(k.startsWith('--') ? k : k.toLowerCase(), v.replace(/\s*!important$/, '')); this._sync(); }
   removeProperty(k) { const o = this.getPropertyValue(k); this._m.delete(k.startsWith('--') ? k : k.toLowerCase()); this._sync(); return o; }
   get length() { return this._m.size; }
 }
@@ -91,8 +91,8 @@ export class Element extends Node_ {
     this.dataset = new Proxy({}, { get: (_, k) => (typeof k === 'string' && el._attrs.has('data-' + dash(k)) ? el._attrs.get('data-' + dash(k)) : undefined), set: (_, k, v) => { el.setAttribute('data-' + dash(k), String(v)); return true; }, deleteProperty: (_, k) => { el.removeAttribute('data-' + dash(k)); return true; }, has: (_, k) => el._attrs.has('data-' + dash(k)), ownKeys: () => [...el._attrs.keys()].filter((k) => k.startsWith('data-')).map((k) => camel(k.slice(5))), getOwnPropertyDescriptor: (_, k) => (el._attrs.has('data-' + dash(String(k))) ? { enumerable: true, configurable: true, value: el._attrs.get('data-' + dash(String(k))) } : undefined) });
   }
   getAttribute(k) { return this._attrs.has(k) ? this._attrs.get(k) : null; }
-  setAttribute(k, v) { v = String(v); this._attrs.set(k, v); if (k !== 'd') { VER++; if (globalThis.__bumpLog) globalThis.__bumpLog(k, this); } if (k === 'style' && this.style.cssText !== v) { this.style._m.clear(); String(v).split(';').forEach((d) => { const i = d.indexOf(':'); if (i > 0) this.style._m.set(d.slice(0, i).trim(), d.slice(i + 1).trim()); }); } }
-  removeAttribute(k) { VER++; this._attrs.delete(k); if (k === 'style') this.style._m.clear(); }
+  setAttribute(k, v) { v = String(v); const was = this._attrs.get(k); this._attrs.set(k, v); if (k !== 'd' && was !== v && !k.startsWith('aria-')) { VER++; if (globalThis.__bumpLog) globalThis.__bumpLog(k, this); } if (k === 'style' && this.style.cssText !== v) { this.style._m.clear(); String(v).split(';').forEach((d) => { const i = d.indexOf(':'); if (i > 0) this.style._m.set(d.slice(0, i).trim(), d.slice(i + 1).trim()); }); } }
+  removeAttribute(k) { if (this._attrs.has(k) && !k.startsWith('aria-')) VER++; this._attrs.delete(k); if (k === 'style') this.style._m.clear(); }
   hasAttribute(k) { return this._attrs.has(k); }
   toggleAttribute(k, force) { const want = force === undefined ? !this.hasAttribute(k) : !!force; if (want) this.setAttribute(k, ''); else this.removeAttribute(k); return want; }
   get attributes() { return [...this._attrs].map(([name, value]) => ({ name, value })); }

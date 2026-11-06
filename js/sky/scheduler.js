@@ -37,8 +37,10 @@ function run() {
     const p = periodOf(j);
     if (!active(p) || t - j.last < p - 5) continue;
     j.last = t;
+    const tp = window.__tp, tj = tp && performance.now();             // (the native host's --profile adds up each job's time)
     try {
       const r = j.fn();
+      if (tp) tp('job ' + j.name, tj);
       if (r && typeof r.catch === 'function') r.catch((e) => console.warn('[sky] job', j.name, e));
     } catch (e) { console.warn('[sky] job', j.name, e); }
   }
