@@ -11,14 +11,15 @@
 // one (drifting clouds, water, twinkle) ~15 fps, and look-around modes run at
 // the display rate with the render scale adapting to hold the frame rate.
 
-import { Governor } from './governor.js';
+import { Capability } from './capability.js';
 import { VERT_STROKE, FRAG_STROKE, VERT_LIGHT, FRAG_LIGHT, VERT_DROP, FRAG_DROP, VERT_TRAIL, FRAG_TRAIL } from './glsl-mask.js';
 import {
   VERT_FULLSCREEN, FRAG_TRANSMITTANCE, FRAG_MULTISCATTER, FRAG_SKYVIEW,
 } from './glsl-atmosphere.js';
 import {
-  FRAG_NOISE, FRAG_NOISE_DOWN, FRAG_ATLAS_PLACE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, fragBlit, FRAG_LED, FRAG_LED_PEAK, FRAG_LED_AVG, FRAG_SCENE_SKY, FRAG_SCENE_CLOUD, FRAG_SCENE_FOG, FRAG_SCENE_TERRAIN, fragTerrain, FRAG_CONSTS, CONSTS_N, HAZE_N,
+  FRAG_NOISE, FRAG_NOISE_DOWN, FRAG_ATLAS_PLACE, FRAG_ADAPT, VERT_STARS, FRAG_STARS, fragBlit, FRAG_LED, FRAG_LED_PEAK, FRAG_LED_AVG, FRAG_SCENE_SKY, FRAG_SCENE_CLOUD, FRAG_SCENE_FOG, FRAG_SCENE_TERRAIN, fragTerrain, FRAG_CONSTS, CONSTS_N, HAZE_N, FRAG_FLAT,
 } from './glsl-scene.js';
+import { flatPalette } from './flatsky.js';
 import { toES1, packSkyline, NOISE_ATLAS } from './portable.js';
 import { VERT_PLANTS, FRAG_PLANTS } from './glsl-plants.js';
 import { computeSky, DEG } from './astro.js';
@@ -45,7 +46,7 @@ export class SkyEngine {
     this.baseUrl = baseUrl;
     // The quality governor (governor.js), when asked for: keeps frames between a floor and a ceiling by moving along a ladder of quality levels.
     // Off by default (the page then behaves as it always did); the Pi's program switches it on.
-    this.gov = governor ? new Governor(typeof governor === 'object' ? governor : {}) : null;
+    this.gov = governor ? new Capability(typeof governor === 'object' ? governor : {}) : null;
     this.onTick = null;                                   // (ms) => void: how long the clock should wait between frames while something moves
     if (this.gov) lutScale = this.gov.knobs.lut;
     this.lutScale = Math.min(1, Math.max(0.1, lutScale));       // the sky tables' size: 1 is full; a slow machine (a CPU doing the drawing) asks for less, at the cost of finer detail in the sky's colour gradients
@@ -246,7 +247,7 @@ export class SkyEngine {
     this.pPlants = this._program(VERT_PLANTS, FRAG_PLANTS, { aInst: 0, aSeed: 1 });
 
     // the tables: half floats, or (OpenGL ES 2) 8-bit textures with the colour packed in (portable.js), read texel by texel, so never filtered by the hardware
-    const es2 = this.es2, F = es2 ? gl.RGBA8 : gl.RGBA16F, RGBA = gl.RGBA, HF = es2 ? gl.UNSIGNED_BYTE : gl.HALF_FLOAT, LF = es2 ? gl.NEAREST : gl.LINEAR;
+    const es2 = this.es2, F = es2 ? gl.RGBA8 : gl.RGBA16F, RGBA = gl.RGBA, HF = es2 ? gl.UNSIGNED_BYTE : gl.HALF_FLOAT;
     const ls = this.lutScale, sc = (v, min) => Math.max(min, Math.round(v * ls));
     // The brightness tables (transmittance, multiple scattering, sky view): full floats where the GPU can draw into them (a half float has nothing between 0 and 6e-5 on some GPUs, and the
     // twilight sky lives there), and always read texel by texel (portable.js hdrTex), never filtered by the hardware.
@@ -474,7 +475,7 @@ export class SkyEngine {
    */
   reportFrame(costMs, kind = 'glass') {
     const g = this.gov; if (!g) return;
-    if (g.report(kind === 'scene' ? costMs * 0.25 : costMs, performance.now())) this.applyKnobs();
+    if (g.report(costMs, kind, performance.now())) this.applyKnobs();
     if (this.onTick) this.onTick(g.tickMs);
   }
   /** Puts the governor's current level into effect. */
@@ -484,7 +485,9 @@ export class SkyEngine {
     this.s.scale = k.scale;
     this.s.outScale = this.glass.led.on ? 1 : k.outScale;          // an LED panel needs its cells at the size they are read back
     this.starFrac = k.stars;
+    if (this.knobs && this.knobs.glass === false && k.glass !== false) this._mipsStale = true;            // the glass is back: its tables are rebuilt
     this.knobs = k;
+    if (this.onKnobs) this.onKnobs(k);                // the page: seconds, the clock's rhythm, the light timer
     this.dirty = true;
   }
   onFrame(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
@@ -595,12 +598,13 @@ export class SkyEngine {
   _animated() {
     const s = this.s, w = s.weather;
     if (s.reducedMotion) return false;
-    const clouds = s.cloudMotion > 0 && (w.cover[0] > 0.02 || w.cover[1] > 0.02 || w.cover[2] > 0.02);
-    const water = s.landscape.ocean;
-    const rain = w.precip > 0.01;
-    const night = this.sky && this.sky.sun.alt < -6 && s.twinkle;
-    const wind = s.plants.on && s.plants.count > 0 && s.cloudMotion > 0;      // plants sway
-    const lights = this.s.tree.on;                    // the tree's bulbs twinkle
+    const K = this.knobs, weatherOn = !K || K.weather, ambientOn = !K || K.ambient;      // (the capability ladder: what the hardware can handle outranks the settings)
+    const clouds = ambientOn && s.cloudMotion > 0 && (w.cover[0] > 0.02 || w.cover[1] > 0.02 || w.cover[2] > 0.02);
+    const water = ambientOn && s.landscape.ocean;
+    const rain = weatherOn && w.precip > 0.01;
+    const night = ambientOn && this.sky && this.sky.sun.alt < -6 && s.twinkle;
+    const wind = ambientOn && s.plants.on && s.plants.count > 0 && s.cloudMotion > 0;      // plants sway
+    const lights = ambientOn && this.s.tree.on;                    // the tree's bulbs twinkle
     return clouds || water || rain || night || wind || lights;
   }
 
@@ -682,6 +686,8 @@ export class SkyEngine {
 
     const jumped = this._updateAstro(perfNow, this.dirty && this.lastAstro < 0);
     const sky = this.sky;
+    const K = this.knobs;                                         // what the capability ladder leaves (undefined without a governor: everything)
+    if (K && !K.sky) return this._renderFlat(rw, rh, sky, firstRender, perfNow);
     this._updateLuts();
 
     // ---- derived lighting ----
@@ -771,8 +777,8 @@ export class SkyEngine {
     this._2f('uWind', w.wind[0], w.wind[1]);
     this._1f('uVisKm', w.visKm);
     this._1f('uFog', w.fog);
-    this._1f('uPrecip', w.precip);
-    this._1f('uSnow', w.snowfall);
+    this._1f('uPrecip', !K || K.weather ? w.precip : 0);
+    this._1f('uSnow', !K || K.weather ? w.snowfall : 0);
     this._1f('uDpr', T.h / Math.max(1, this.canvas.clientHeight));
     this._3f('uGround', ground);
     this._3f('uGround2', ground2);
@@ -802,6 +808,7 @@ export class SkyEngine {
     this._1f('uDither', this.ditherScale);
     };
     gl.disable(gl.BLEND);
+    if (K && !K.landscape) this._drawFlat(cam, sky, 0);       // no landscape: the ground is a colour fading towards the horizon (the sky program leaves it alone where the ridges are)
     this._use(this.pSceneSky); setScene();                    // every pixel that is not wholly terrain
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.enable(gl.BLEND);                                      // everything after the sky goes over it by its own coverage; the fourth channel (the stars' sky-visibility) shrinks by the same share
@@ -813,12 +820,14 @@ export class SkyEngine {
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
     if (w.fog > 0.005) { this._use(this.pSceneFog); setScene(); gl.drawArrays(gl.TRIANGLES, 0, 3); }
+    if (!K || K.landscape) {
     this._use(this.pSceneTerrain); setScene();
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     if (this.es2 && land.ocean) {
       this.pSceneOcean = this.pSceneOcean || this._program(VERT_FULLSCREEN, fragTerrain('ocean'));
       this._use(this.pSceneOcean); setScene();
       gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
     }
     gl.disable(gl.BLEND);
 
@@ -843,6 +852,36 @@ export class SkyEngine {
     this._presented('scene');
   }
 
+  /** One cheap pass of the flat sky and ground (flatsky.js): mode 0 the ground colour everywhere, 1 the whole picture. The scene's target must be bound. */
+  _drawFlat(cam, sky, mode) {
+    const gl = this.gl, s = this.s, w = s.weather;
+    if (!this.pFlat) this.pFlat = this._program(VERT_FULLSCREEN, FRAG_FLAT);
+    const pal = flatPalette(sky.sun.alt, Math.max(w.cover[0], w.cover[1], w.cover[2]), w.precip || 0, s.landscape.albedo);
+    gl.disable(gl.BLEND);
+    this._use(this.pFlat);
+    this._m3('uCam', cam.mat); this._2f('uTan', cam.tan[0], cam.tan[1]);
+    this._3f('uZen', pal.zenith); this._3f('uHor', pal.horizon); this._3f('uGN', pal.groundNear); this._3f('uGF', pal.groundFar);
+    this._1f('uMode', mode);
+    gl.bindVertexArray(this.vaoEmpty);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  /**
+   * A rung of the capability ladder: no sky. The scene is a gradient sky over a fading ground (flatsky.js), from the sun's height and the weather's cover, and the digits go over it
+   * as always. No tables, no shaders of the sky: the cost is the flat pass and the final passes.
+   */
+  _renderFlat(rw, rh, sky, firstRender, perfNow) {
+    const gl = this.gl, T = this.sceneTarget;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, T.fbo); gl.viewport(0, 0, T.w, T.h);
+    this._drawFlat(this._camera(rw, rh), sky, 1);
+    this._blit(true);
+    this._mipsValid = this.glass.mode > 0 && this.glass.hasMask;
+    this.dirty = false;
+    if (firstRender) { this._rendered = true; performance.mark('sky:first-render-end'); }
+    for (const fn of this.listeners) fn(this);
+    this._presented('scene');
+  }
+
   /** Scene -> canvas, with the glass clock. `scene` is true right after the scene was redrawn. */
   _blit(scene) {
     const gl = this.gl, T = this.sceneTarget, g = this.glass;
@@ -855,21 +894,41 @@ export class SkyEngine {
       if (scene) gl.generateMipmap(gl.TEXTURE_2D);          // frosting blurs through the mip chain
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
     } else gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    if (glassOn && this.es2 && (scene || !(this.mipState && this.mipState.scene) || this.mipState.scene.src !== T)) { this._mipAtlas('scene', T.tex, T.w, T.h); this.mipState.scene.src = T; }
+    if (glassOn && this.es2 && !(this.knobs && this.knobs.glass === false) && (scene || this._mipsStale || !(this.mipState && this.mipState.scene) || this.mipState.scene.src !== T)) { this._mipAtlas('scene', T.tex, T.w, T.h); this.mipState.scene.src = T; this._mipsStale = false; }
     const led = g.led.on;
     if (led) this._ensureComp(cw, ch);
     {                                                                  // snow and rain on the digits: from the weather being drawn
-      const w = this.s.weather, on = this.s.digitWeather !== false && !this.s.reducedMotion;
+      const w = this.s.weather, on = this.s.digitWeather !== false && !this.s.reducedMotion && (!this.knobs || this.knobs.weather);
       const snowRate = (w.precip || 0) * (w.snowfall || 0), rainRate = (w.precip || 0) * (1 - (w.snowfall || 0));
       this.wx = { snow: on ? Math.min(1, snowRate * 1.4) : 0, rain: on ? Math.min(1, rainRate * 1.3) : 0 };       // (read by the tests)
     }
     // An ES 2 GPU gets the glass as small programs, each reading what the ones before made (a Pi Zero's driver could not fit the whole glass in one: it drew nothing): the height field and
     // slope (ggeo), the shadow and halo (gaura), for stained glass the tube's colours (gemit, ghalo), the body (gbody), snow and rain when there are any (gwx), the outline (gout).
-    const kind = !glassOn ? 'off' : g.mode > 2.5 ? 'ink' : 'glass';
+    const solid = glassOn && this.knobs && this.knobs.glass === false;       // the capability ladder: solid digits, one cheap pass (no glass: no tables of the scene or the mask)
+    const kind = !glassOn ? 'off' : solid || g.mode > 2.5 ? 'ink' : 'glass';
     const stained = g.mode > 1.5 && g.mode <= 2.5;
     const passes = this.es2 && kind === 'glass' ? ['ggeo', 'gaura', ...(stained ? ['gemit', 'ghalo'] : []), 'gbody', ...(this.wx.snow > 0.01 || this.wx.rain > 0.01 ? ['gwx'] : []), 'gout'] : [kind];
     if (passes.length > 1) { this._ensurePing(cw, ch); this._ensureGlassT(cw, ch); }
     const dpr = cw / Math.max(1, this.canvas.clientWidth);
+    // The digits are a sixth of the picture: with a governor the glass passes (the expensive ones) run only over their rectangle (and a margin for the halo and the frosting), after one
+    // cheap copy of the scene over everything. On a large display of a slow GPU that is the difference between seconds and a fraction of a second.
+    let sc = null;
+    const b = g.bounds;
+    if (this.knobs && glassOn && !led && b && kind !== 'off' && !this.noScissor) {
+      const m = Math.ceil(Math.max(12, g.stroke * dpr * 2.5));
+      const x0 = Math.max(0, Math.floor(b[0] * cw) - m), x1 = Math.min(cw, Math.ceil(b[2] * cw) + m), y0 = Math.max(0, Math.floor(b[1] * ch) - m), y1 = Math.min(ch, Math.ceil(b[3] * ch) + m);
+      if (x1 > x0 && y1 > y0 && (x1 - x0) * (y1 - y0) < 0.8 * cw * ch) {
+        sc = [x0, ch - y1, x1 - x0, y1 - y0];
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, cw, ch);
+        this._use(this._blitProgram('off'));
+        this._blitUniforms(T, false, led, cw, ch, dpr, null, true);
+        gl.bindVertexArray(this.vaoEmpty);
+        gl.drawArrays(gl.TRIANGLES, 0, 3);
+        gl.enable(gl.SCISSOR_TEST); gl.scissor(sc[0], sc[1], sc[2], sc[3]);
+      }
+    }
+    this.scissored = sc;                                                    // (for the tests and the profile)
     let prev = null, n = 0;
     for (const pass of passes) {
       const last = pass === passes[passes.length - 1];
@@ -884,6 +943,7 @@ export class SkyEngine {
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       if (!own) prev = out;
     }
+    if (sc) gl.disable(gl.SCISSOR_TEST);
     if (led) this._ledPass(cw, ch);
   }
 
@@ -1121,8 +1181,9 @@ export class SkyEngine {
    * `strokes`: 6 vertices per segment, 7 floats each (x, y, ax, ay, bx, by, r); `lights`: 6 vertices per light, 8 floats each (x, y, cx, cy, radius, r, g, b);
    * all in mask pixels. `black` strokes (the coloured tube) are black, the glass styles white. Same arguments as setGlassMask otherwise.
    */
-  setGlassGeometry({ w, h, rect, strokeCssPx, strokes, lights, black }) {
+  setGlassGeometry({ w, h, rect, strokeCssPx, strokes, lights, black, bounds }) {
     this.markWork();
+    this.glass.bounds = bounds || null;                                  // where the digits are (canvas uv, y down: x0, y0, x1, y1): the final passes can be limited to it
     const gl = this.gl, g = this.glass;
     if (!this.pStroke) {                                                    // compiled the first time it is needed (a slow machine need not wait for it at start-up)
       this.pStroke = this._program(VERT_STROKE, FRAG_STROKE, { aPos: 0, aSeg: 1, aR: 2 });
@@ -1163,7 +1224,7 @@ export class SkyEngine {
     }
     gl.bindVertexArray(null);
     gl.blendEquation(gl.FUNC_ADD); gl.disable(gl.BLEND);
-    if (this.es2) this._mipAtlas('mask', T.tex, w, h, this._maskLevels(w, rect, strokeCssPx));
+    if (this.es2 && !(this.knobs && this.knobs.glass === false)) this._mipAtlas('mask', T.tex, w, h, this._maskLevels(w, rect, strokeCssPx));
     else { gl.bindTexture(gl.TEXTURE_2D, T.tex); gl.generateMipmap(gl.TEXTURE_2D); }
     g.rect = rect; g.maskW = w; g.maskH = h; g.stroke = strokeCssPx; g.hasMask = true;
     this.redrawGlass();
@@ -1257,7 +1318,7 @@ export class SkyEngine {
       gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
-    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const c = this._snapCanvas || (this._snapCanvas = document.createElement('canvas')); c.width = w; c.height = h;       // (used again: see updateFavicon)
     const img = new ImageData(w, h);
     for (let y = 0; y < h; y++) img.data.set(px.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);   // GL rows run bottom to top
     c.getContext('2d').putImageData(img, 0, 0);
@@ -1372,7 +1433,7 @@ export class SkyEngine {
 
   _drawPlants(sky, sunAz, sunAlt, sunLux, moonAz, moonAlt, moonLux, natural, lp, camH, cam, perfNow, w, eyeKm) {
     const gl = this.gl, s = this.s, p = s.plants;
-    const plantsOn = p.on && p.count && p.palette && !s.landscape.ocean, treeOn = s.tree.on;
+    const K = this.knobs, plantsOn = (!K || K.landscape) && p.on && p.count && p.palette && !s.landscape.ocean, treeOn = (!K || K.landscape) && s.tree.on;
     if (!plantsOn && !treeOn) return;
     const pal = p.palette || { leaf: [0.06, 0.14, 0.04], conifer: [0.03, 0.09, 0.05], grass: [0.1, 0.2, 0.06], dry: [0.3, 0.26, 0.12], rock: [0.28, 0.26, 0.24], snow: 0 };
     gl.enable(gl.BLEND);

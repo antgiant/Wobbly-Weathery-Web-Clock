@@ -239,6 +239,16 @@ export function initGlass(engine, getBasis) {
     return { strokes: sbuf.subarray(0, n), lights: new Float32Array(lights), polys };
   }
 
+  /** Where the strokes are, in canvas uv (y down: x0, y0, x1, y1), with their widths: the glass passes need run only there. Null when there are none. */
+  function boundsOf(geo, L) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    const scan = (a, stride, rIdx) => { if (!a) return; for (let i = 0; i + 1 < a.length; i += stride) { const r = rIdx >= 0 ? a[i + rIdx] || 0 : 0; x0 = Math.min(x0, a[i] - r); x1 = Math.max(x1, a[i] + r); y0 = Math.min(y0, a[i + 1] - r); y1 = Math.max(y1, a[i + 1] + r); } };
+    scan(geo.strokes, 7, 6); scan(geo.lights, 8, -1);
+    if (!(x1 > x0 && y1 > y0)) return null;
+    const u = (x) => L.rect[0] + (x / L.mw) * L.rect[2], v = (y) => L.rect[1] + (y / L.mh) * L.rect[3];
+    return [Math.max(0, u(x0)), Math.max(0, v(y0)), Math.min(1, u(x1)), Math.min(1, v(y1))];
+  }
+
   function draw() {
     raf = 0;
     if (!active()) return;
@@ -256,7 +266,7 @@ export function initGlass(engine, getBasis) {
       if (tp) tp('page glass.draw: geometry (the strokes as lists)', tg);
       lastPolys = geo.polys;
       inkStroke = L.strokePx * L.scale; inkStale = true;
-      engine.setGlassGeometry({ w: L.mw, h: L.mh, rect: L.rect, strokeCssPx: L.strokePx, strokes: geo.strokes, lights: geo.lights, black: stained });
+      engine.setGlassGeometry({ w: L.mw, h: L.mh, rect: L.rect, strokeCssPx: L.strokePx, strokes: geo.strokes, lights: geo.lights, black: stained, bounds: boundsOf(geo, L) });
       return;
     }
     lastPolys = null;
@@ -369,7 +379,7 @@ export function initGlass(engine, getBasis) {
   document.addEventListener('visibilitychange', () => { if (!document.hidden) schedule(); });
   let lastStyle = style();
   every('glass-style', () => { if (style() !== lastStyle) { lastStyle = style(); apply(); } }, () => (getSim() ? 4000 : 60000));   // the season (or time travel) changed the automatic style
-  every('glass-light', () => { updateLight(); if (active()) schedule('the once-a-second light timer'); }, () => (active() ? 1000 : Infinity));   // the light moves with the sun; also re-measures the digits
+  every('glass-light', () => { updateLight(); if (active()) schedule('the light timer'); }, () => (active() ? (engine.knobs && engine.knobs.cadence === 'minute' ? 60000 : engine.knobs && engine.knobs.seconds === 'off' ? 10000 : 1000) : Infinity));       // (the ladder slows it on the slow rungs)   // the light moves with the sun; also re-measures the digits
   engine.onFrame(() => { if (active() && !engine._lightInit) { engine._lightInit = true; updateLight(); } });
   engine.onFrame(stepDrops);
   apply();

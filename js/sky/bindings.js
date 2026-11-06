@@ -34,6 +34,7 @@ export function bindSettings() {
   };
 
   bindSelect('quality', 'quality', applyQuality);
+  bindSelect('detail', 'detail', () => {});                 // read by the Raspberry Pi program when it starts
   bindRange('brightnessDay', 'brightnessDay', () => { updateDim(); poke('dim'); }, 'brightnessDayOut', (v) => `${Math.round(v * 100)}%`);
   bindRange('brightnessNight', 'brightnessNight', () => { updateDim(); poke('dim'); }, 'brightnessNightOut', (v) => `${Math.round(v * 100)}%`);
   bindSelect('brightnessTransition', 'brightnessTransition', () => { updateDim(); poke('dim'); }, parseFloat);

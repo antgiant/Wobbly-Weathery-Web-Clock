@@ -6,7 +6,7 @@
 //   bindings.js    settings controls                 presets.js     presets, reset to defaults
 //   dim.js         night dimming                     scheduler.js   the single timer
 
-import { conf, clockStyleNow, lowPower, vars } from '../config.js';
+import { conf, clockStyleNow, lowPower, vars, cap, adjustTimeSize } from '../config.js';
 import { getSim } from '../simtime.js';
 import { SkyEngine } from './engine.js';
 import { Controls } from './controls.js';
@@ -33,8 +33,9 @@ function init() {
   try {
     {
       const qs = new URLSearchParams(location.search), n = (k, d) => (Number.isFinite(parseFloat(qs.get(k))) ? parseFloat(qs.get(k)) : d);
-      // ?gov=1 (the Pi's program sets it): the quality governor keeps frames between ?minfps (15) and ?maxfps (60); ?level= starts it somewhere
-      setEngine(new SkyEngine(canvas, { baseUrl: '.', lutScale: n('lut', 1), es2: qs.has('es2'), governor: qs.has('gov') ? { floorFps: n('minfps', 15), ceilFps: n('maxfps', 60), level: qs.has('level') ? n('level', 5) : undefined, pin: qs.has('pin') } : false }));
+      // ?gov=1 (the Pi's program sets it): the quality governor keeps frames between ?minfps (15) and ?maxfps (60); ?level= starts it somewhere, ?rung= on a rung of the capability ladder
+      // (js/sky/capability.js), ?pin holds both, ?detail=sharp keeps the output size (a display: only the sky is drawn smaller)
+      setEngine(new SkyEngine(canvas, { baseUrl: '.', lutScale: n('lut', 1), es2: qs.has('es2'), governor: qs.has('gov') ? { floorFps: n('minfps', 15), ceilFps: n('maxfps', 60), level: qs.has('level') ? n('level', 5) : undefined, pin: qs.has('pin'), rung: n('rung', 0), profile: qs.get('detail') === 'sharp' ? 'sharp' : 'smooth' } : false }));
     }
   } catch (e) {
     startFallback(e.message);
@@ -42,7 +43,17 @@ function init() {
   }
   performance.mark('sky:engine-created');
   { const d = parseFloat(new URLSearchParams(location.search).get('dpr')); if (d > 0) engine.set({ forceDpr: Math.min(d, 6) }); }     // ?dpr=3: draw at more than twice the screen's pixels (to see what a bigger screen would cost)
-  engine.onTick = (ms) => { vars.tick = ms; };           // the clock ticks as fast as the governor says the frames allow
+  { const ps = document.getElementById('perfStatus'); if (ps && !engine.gov) ps.textContent = 'This browser draws everything at the quality set above.'; }
+  engine.noScissor = new URLSearchParams(location.search).has('noscissor');          // (to compare the pictures with and without limiting the glass passes to the digits)
+  engine.onTick = (ms) => { vars.tick = ms; if (engine.gov) cap.lead = engine.gov.leadMs; };           // the clock ticks as fast as the governor says the frames allow
+  engine.onKnobs = (k) => {                                  // the capability ladder moved: what the hardware can handle outranks the settings
+    const ps = document.getElementById('perfStatus');
+    if (ps) ps.textContent = k.rung > 0 ? 'Right now: ' + engine.gov.name + ' (' + engine.gov.why + '). The settings below cannot change this: the clock must show the right time.' : 'Right now: everything this device can show.';
+    const changed = cap.seconds !== k.seconds || cap.cadence !== k.cadence;
+    cap.seconds = k.seconds; cap.cadence = k.cadence; cap.lead = engine.gov ? engine.gov.leadMs : 0;
+    if (changed) { adjustTimeSize(); window.dispatchEvent(new Event('capchange')); window.dispatchEvent(new Event('clocklayout')); }
+  };
+  if (engine.knobs && engine.knobs.rung > 0) engine.onKnobs(engine.knobs);
   window.__sky = engine;                         // handy for debugging / tests
   {                                                            // ?stats: frames a second and the picture's size, tap to copy (?stats=0 turns it off; once asked for, it comes back on this device's next visits)
     let want = false;

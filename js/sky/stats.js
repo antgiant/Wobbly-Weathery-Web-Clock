@@ -21,7 +21,7 @@ export function initStats(engine, canvas, mode) {
       'fps ' + f(fps) + '  (gaps ms: median ' + f(med) + ', 95% ' + f(p95) + ', 99% ' + f(p99) + ', worst ' + f(worst) + ')',
       (gpuWait ? 'frame including the GPU: median ' : 'page time handing a frame to the GPU: median ') + f(q(drawMs, 0.5)) + ' ms, 95% ' + f(q(drawMs, 0.95)) + ' ms',
       'canvas ' + canvas.width + 'x' + canvas.height + ' (' + f(canvas.width * canvas.height / 1e6) + ' MP), screen ' + innerWidth + 'x' + innerHeight + ' at ' + devicePixelRatio + 'x',
-      'quality ' + engine.s.quality + ', scene scale ' + engine.s.scale + ', output scale ' + (engine.s.outScale == null ? 1 : engine.s.outScale) + (engine.gov ? ', governor level ' + engine.gov.level : ''),
+      'quality ' + engine.s.quality + ', scene scale ' + engine.s.scale + ', output scale ' + (engine.s.outScale == null ? 1 : engine.s.outScale) + (engine.gov ? ', governor level ' + engine.gov.level + ', rung ' + engine.gov.rung + ' (' + engine.gov.name + ')' : ''),
       'GPU ' + gpu + (window.__sky && window.__sky.es2 ? ' (ES 2)' : ''),
       'tap to copy',
     ].join('\n');

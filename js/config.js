@@ -4,8 +4,17 @@ import { now as simNow } from './simtime.js'
 import { fromSearch } from './share.js'
 import { SETTING_DEFAULTS } from '../schema/settings.js'
 
+/**
+ * What the capability ladder (js/sky/capability.js) has decided the hardware can handle, which outranks the settings: a clock that cannot show the right time is worth nothing.
+ * seconds: 'morph' (the digit slides over the second), 'tick' (it changes on the second), 'off' (not shown); cadence: 'live' or 'minute' (one picture a minute, drawn ahead and shown
+ * on the minute); lead: how many ms before the minute to start drawing the next picture.
+ */
+export const cap = { seconds: 'morph', cadence: 'live', lead: 0 };
+/** Whether the seconds are hidden: by the setting, or because the hardware cannot keep pace with them. */
+export const hideSec = () => !!conf.hideSeconds || cap.seconds === 'off';
+
 export function adjustTimeSize() {
-  if (conf.hideSeconds) {
+  if (hideSec()) {
     document.querySelector("#firstSeperator").style.marginRight = "-25%";
     document.querySelectorAll('.seconds').forEach(element => {
       element.style.display = 'none';
@@ -14,7 +23,7 @@ export function adjustTimeSize() {
     document.querySelectorAll('.seconds').forEach(element => {
       element.style.display = '';
     });
-    document.querySelector("#firstSeperator").style.marginRight = (conf.hideSeconds ? "-25%" : "-15%");
+    document.querySelector("#firstSeperator").style.marginRight = (hideSec() ? "-25%" : "-15%");
   }
 }
 

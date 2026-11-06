@@ -53,6 +53,9 @@ Plants that suit this place. Values: on | off. Default: on. grass, trees, cacti 
 .B quality
 Quality (advanced). Values: auto | low | medium | high. Default: auto. auto | low | medium | high. Needs an OpenGL ES 2 or 3 GPU (any Pi) and two or more cores.
 .TP
+.B detail
+When the device is slow, keep (advanced). Values: auto | sharp | smooth. Default: auto. auto | sharp | smooth: what a device that cannot keep up gives up first. sharp keeps the picture at the display's size (sharp digits) and draws the sky and landscape smaller; smooth shrinks the whole picture (a small LED panel). Automatic: sharp on a display, smooth on an LED panel. Either way the clock always shows the right time: below that the program gives up rain and snow in motion, cloud and water motion, seconds, then draws one picture a minute, then drops the landscape and the sky (the Raspberry Pi program; a browser always draws everything).
+.TP
 .B bodySize
 Sun & moon size (advanced). Values: 1 | 2 | 3. Default: 2. sun & moon size multiplier.
 .TP

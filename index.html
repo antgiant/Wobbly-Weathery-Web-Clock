@@ -46,6 +46,8 @@
   <link rel="modulepreload" href="js/sky/controls.js">
   <link rel="modulepreload" href="js/sky/engine.js">
   <link rel="modulepreload" href="js/sky/governor.js">
+  <link rel="modulepreload" href="js/sky/capability.js">
+  <link rel="modulepreload" href="js/sky/flatsky.js">
   <link rel="modulepreload" href="js/sky/glsl-mask.js">
   <link rel="modulepreload" href="js/sky/portable.js">
   <link rel="modulepreload" href="js/sky/glass.js">
@@ -423,6 +425,16 @@
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
               </select>
+              <p class="hint" id="perfStatus"></p>
+            </div>
+            <div class="field">
+              <label class="field__label" for="detail">When the device is slow, keep</label>
+              <select id="detail">
+                <option value="auto">Automatic (sharp on a display, smooth on an LED panel)</option>
+                <option value="sharp">Sharp digits (draw the sky and landscape smaller first)</option>
+                <option value="smooth">Smooth motion (shrink the whole picture first)</option>
+              </select>
+              <p class="hint">Used by the Raspberry Pi program, which always keeps the clock right: when the device cannot keep up it gives things up in a fixed order (rain and snow in motion, cloud and water motion, seconds, then one picture a minute, then the landscape and the sky), whatever is set here or elsewhere.</p>
             </div>
             <div class="field">
               <label class="field__label" for="bodySize">Sun &amp; moon size</label>
