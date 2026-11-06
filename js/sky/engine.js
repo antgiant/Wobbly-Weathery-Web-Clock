@@ -11,7 +11,7 @@
 // one (drifting clouds, water, twinkle) ~15 fps, and look-around modes run at
 // the display rate with the render scale adapting to hold the frame rate.
 
-import { Capability, RUNG_OF } from './capability.js';
+import { Capability, RUNG_OF, quietFor } from './capability.js';
 import { VERT_STROKE, FRAG_STROKE, VERT_LIGHT, FRAG_LIGHT, VERT_DROP, FRAG_DROP, VERT_TRAIL, FRAG_TRAIL } from './glsl-mask.js';
 import {
   VERT_FULLSCREEN, FRAG_TRANSMITTANCE, FRAG_MULTISCATTER, FRAG_SKYVIEW,
@@ -632,6 +632,9 @@ export class SkyEngine {
     this.sceneTarget = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);
   }
 
+  /** The biggest texture (and so picture) this GPU makes, px. */
+  get maxTexture() { if (!this._maxTex) { let m = 0; try { m = this.gl.getParameter(this.gl.MAX_TEXTURE_SIZE) | 0; } catch (_) { /* unknown: a safe size */ } this._maxTex = m >= 256 ? m : 4096; } return this._maxTex; }
+
   _animated() {
     const s = this.s, w = s.weather;
     if (s.reducedMotion) return false;
@@ -665,6 +668,7 @@ export class SkyEngine {
   /** Draws if a frame is due. */
   tick(t) {
     if (this.dirty || t - this.lastRender >= this.interval()) {
+      if (!this.dirty && this._quietFor()) return;       // a sky redraw that could still be running when the minute turns waits until after it
       this.lastRender = t;
       this.render(t);
     }
@@ -677,9 +681,20 @@ export class SkyEngine {
     this._schedule();
   };
 
+  /**
+   * The time must be right when the minute turns, whatever the hardware: on the rungs that show no seconds, a sky redraw (seconds long on a Pi Zero, and it cannot be interrupted)
+   * is not started where it could still be running at the minute, with room for the digits' own redraw after it. Returns how long to wait (ms; 0: no need).
+   */
+  _quietFor() {
+    const K = this.knobs, g = this.gov;
+    if (!K || !K.ahead || !g || !g.worst || !this.sceneTarget || getSim()) return 0;
+    return quietFor(60000 - (this.now.getTime() % 60000), g.worst('scene'), g.leadMs);
+  }
+
   _schedule() {
     if (!this._running || this._raf || this._to || document.hidden) return;   // hidden: visibilitychange wakes us
     let wait = this._dirty || this._fast ? 0 : Math.max(0, this.interval() - (performance.now() - this.lastRender));
+    if (!this._dirty && !this._fast) { const q = this._quietFor(); if (q) wait = Math.max(wait, q); }
     if (wait > 0 && this.s.lowPower && this._animated()) wait = Math.max(wait, 1000 - (this.now.getTime() % 1000) + 25);   // ... and just after the second turns, when the digits change too
     if (wait <= 4) this._raf = requestAnimationFrame(this._frame);
     else this._to = setTimeout(() => { this._to = 0; this._raf = requestAnimationFrame(this._frame); }, wait);
@@ -714,7 +729,8 @@ export class SkyEngine {
 
     // canvas / scene size
     const dpr = s.forceDpr || Math.min(window.devicePixelRatio || 1, s.maxDpr);       // (forceDpr: ?dpr=n, a test of what a bigger screen would cost)
-    const out = this.glass.led.on || this.s.outScale == null ? 1 : this.s.outScale;       // the output's own size, below 1 when the governor saves work (the screen enlarges it)
+    let out = this.glass.led.on || this.s.outScale == null ? 1 : this.s.outScale;       // the output's own size, below 1 when the governor saves work (the screen enlarges it)
+    { const big = Math.max(this.canvas.clientWidth, this.canvas.clientHeight) * dpr * out; if (big > this.maxTexture) out *= this.maxTexture / big; }       // (no picture larger than the GPU's biggest texture: a Pi Zero's is 2048; the screen enlarges it)
     const cw = Math.max(2, Math.floor(this.canvas.clientWidth * dpr * out));
     const ch = Math.max(2, Math.floor(this.canvas.clientHeight * dpr * out));
     if (this.canvas.width !== cw || this.canvas.height !== ch) { this.canvas.width = cw; this.canvas.height = ch; }

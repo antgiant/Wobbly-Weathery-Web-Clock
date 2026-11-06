@@ -71,6 +71,15 @@ export function givenUp(k) {
   return out;
 }
 
+/**
+ * How long a sky redraw must wait (ms; 0: it may start now) so that it cannot still be running when the minute turns, with room for the digits' own redraw after it.
+ * toMin: ms to the next minute; sceneMs: the slowest recent sky redraw; leadMs: the digits' lead.
+ */
+export function quietFor(toMin, sceneMs, leadMs) {
+  const need = Math.min(45000, sceneMs * 1.3 + leadMs + 1000);
+  return toMin < need ? toMin + 60 : 0;
+}
+
 export class Capability {
   /**
    * @param {{profile?:'sharp'|'smooth', rung?:number, pin?:boolean, floorFps?:number, ceilFps?:number, level?:number, retryMs?:number}} o
@@ -98,10 +107,11 @@ export class Capability {
     const k = this.gov.knobs, r = this.rung;
     return {
       ...k,
-      skyMs: r < 3 ? k.skyMs : r < 5 ? Math.max(k.skyMs, 15000) : 60000,       // the sun moves a quarter of a degree a minute: a still sky need not be drawn more often than that on the slow rungs
+      skyMs: r < 3 ? k.skyMs : r < 4 ? Math.max(k.skyMs, 15000) : 60000,       // the sun moves a quarter of a degree a minute: a still sky need not be drawn more often than that on the slow rungs
       weather: r < 1, ambient: r < 2,
       seconds: r < 3 ? 'morph' : r < 4 ? 'tick' : 'off',
       cadence: r < 5 ? 'live' : 'minute',
+      ahead: r >= 4,       // the minute's digits are drawn a little before it and shown on it (a host that can hold a frame), and no sky redraw is started where it could cross the minute
       glass: r < 6, landscape: r < 7, sky: r < 8,
       outScale: r >= 10 ? Math.min(k.outScale, 0.25) : r >= 9 ? Math.min(k.outScale, 0.5) : k.outScale,       // (the last resort: a smaller picture, enlarged by the screen)
       rung: r, name: RUNGS[r],
@@ -110,7 +120,7 @@ export class Capability {
   /** The slowest recent redraw of each kind. */
   worst(kind) { const a = kind === 'scene' ? this.scene : this.glass; return a.length ? Math.max(...a) : 0; }
   /** The lead the page should give a redraw of the digits on the slow rungs, ms: how long before the minute to start drawing it. */
-  get leadMs() { return Math.ceil(this.worst('glass') * 1.4 + 500); }
+  get leadMs() { return Math.ceil(this.worst('glass') * 1.6 + 700); }
 
   /**
    * One redraw took `costMs`; `kind` is 'glass' (the digits and the final passes) or 'scene' (the sky was drawn too). now = a monotonic time, ms.

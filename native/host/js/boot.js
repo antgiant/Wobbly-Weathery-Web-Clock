@@ -36,6 +36,7 @@ G.navigator = { onLine: true, language: 'en-US', languages: ['en-US'], userAgent
 let searchText = A.search || '';
 if (A.at) { const q = new URLSearchParams(searchText); q.set('t', new Date(A.at).toISOString()); q.set('speed', '1'); searchText = q.toString(); }     // --at: pretend it is this moment (and let time run on)
 // a CPU doing the drawing (no usable GPU): smaller sky tables (js/sky/engine.js lutScale), unless --lut says otherwise
+G.__holdsFrames = !!A.present;       // this host can hold a finished picture until the minute (the slow clock and the seconds-off rungs draw it ahead)
 if (A.present) {
   // a clock that runs for years: every hour say how it is (uptime, memory, canvases, pictures), and restart if memory grows past a limit (systemd starts it again)
   const maxRss = A.maxrss || 0; let hourly = 0;
