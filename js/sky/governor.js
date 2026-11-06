@@ -21,6 +21,12 @@ export const LADDER = [
   { outScale: 1.00, scale: 1.00, skyMs: 1000, stars: 1.00, drops: 160, lut: 1.00 },
 ];
 
+/**
+ * The ladder for a display whose size is fixed (HDMI): the picture is always drawn at the display's size (outScale 1, so the digits stay sharp) and only the sky and landscape
+ * are drawn smaller, then stretched (they are smooth, and it is where the cost is). `w` is the work of a level for predicting what another would cost.
+ */
+export const SHARP_LADDER = [0.25, 0.35, 0.5, 0.75, 1.0].map((scale) => ({ outScale: 1, scale, skyMs: Math.round(6000 - 5000 * (scale - 0.25) / 0.75), stars: 0.3 + 0.7 * (scale - 0.25) / 0.75, drops: Math.round(24 + 136 * (scale - 0.25) / 0.75), lut: scale < 0.5 ? 0.25 : scale < 1 ? 0.5 : 1, w: 0.35 + 0.65 * scale * scale }));
+
 export class Governor {
   /**
    * @param {{floorFps?:number, ceilFps?:number, level?:number, ladder?:object[], headroom?:number}} o
@@ -40,7 +46,7 @@ export class Governor {
   get knobs() { return this.ladder[this.level]; }
   get budgetMs() { return (1000 / this.floorFps) * this.headroom; }
   /** The pixel-work of a level, for predicting what another level would cost. */
-  work(l) { const k = this.ladder[l]; return k.outScale * k.outScale * 0.8 + k.scale * k.scale * 0.2; }
+  work(l) { const k = this.ladder[l]; return k.w != null ? k.w : k.outScale * k.outScale * 0.8 + k.scale * k.scale * 0.2; }       // (a ladder may say its own: the sharp one keeps the output size, so only the sky's share moves)
   /** How long to wait between frames while something moves: as fast as the frames allow, between the ceiling and the floor. */
   get tickMs() {
     const lo = 1000 / this.ceilFps, hi = 1000 / this.floorFps;
@@ -77,6 +83,14 @@ export class Governor {
       } else this.stableSince = 0;
     }
     return false;
+  }
+
+  /** A frame's cost, only to know it: no step either way (the capability ladder holds the resolution while a rung is given up). */
+  observe(costMs) {
+    if (!(costMs >= 0)) return;
+    const sample = this.cost == null ? costMs : Math.min(costMs, Math.max(this.cost * 2.5, 8));
+    this.cost = this.cost == null ? sample : this.cost + (sample - this.cost) * 0.25;
+    this.samples++;
   }
 
   _move(level, now, block) {

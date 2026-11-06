@@ -1,0 +1,116 @@
+// What the hardware can handle: a ladder of rungs below the quality governor's resolution levels. The clock must always show the right time, so when even the cheapest
+// picture costs too much the engine gives things up in a fixed order until the time is right, whatever the user chose (a clock that shows the wrong time is worth nothing):
+//
+//   0 full          everything the quality governor allows
+//   1 weather       no rain or snow in motion (streaks, drops on the digits): the weather stays as light and cloud, standing still
+//   2 ambient       no cloud or water drift, plant sway or twinkle: the sky is redrawn only when the sun has moved
+//   3 tick          seconds shown but not morphing: each second is drawn once, on the second
+//   4 seconds off   no seconds; the glass is redrawn when it must be (a new minute, the light)
+//   5 slow clock    one picture a minute, drawn ahead of time and shown on the minute
+//   6 no landscape  no terrain, plants or tree
+//   7 no sky        a flat colour behind the digits
+//
+// The quality governor (governor.js) moves along its resolution levels first; only when it is on its lowest level and frames still cost too much does a rung go.
+// A rung comes back after a good while, when there may be room again (something else stopped using the CPU); if it was not, it goes again within a few frames.
+//
+// Pure maths like the governor: the caller passes costs and the time, so it is tested in node.
+import { Governor, LADDER, SHARP_LADDER } from './governor.js';
+
+export const RUNGS = ['full', 'weather', 'ambient', 'tick', 'seconds off', 'slow clock', 'no landscape', 'no sky'];
+export const WHY = [
+  'everything on',
+  'rain and snow stand still (the frames cost too much)',
+  'clouds, water and plants stand still (the frames cost too much)',
+  'seconds tick instead of morphing (the frames cost too much)',
+  'seconds are hidden (a second could be missed)',
+  'one picture a minute (a redraw takes too long to keep pace)',
+  'no landscape (the picture takes too long even once a minute)',
+  'no sky (the picture takes too long even once a minute)',
+];
+/** The most a single redraw of the digits (glass) and of the sky (scene) may take on each rung, ms: more than that and the clock could not keep up with what the rung promises. */
+export const BUDGET = [
+  null, null, null,                       // the live rungs: the quality governor's frame budget
+  { glass: 600, scene: 900 },             // tick: a redraw must end inside its second
+  { glass: 2500, scene: 6000 },           // seconds off: the light timer only
+  { glass: 12000, scene: 25000 },         // slow clock: a minute to draw the next one
+  { glass: 12000, scene: 25000 },
+  { glass: 12000, scene: 25000 },
+];
+
+export class Capability {
+  /**
+   * @param {{profile?:'sharp'|'smooth', rung?:number, pin?:boolean, floorFps?:number, ceilFps?:number, level?:number, retryMs?:number}} o
+   *   profile: 'sharp' keeps the output size (a display) and only the sky shrinks; 'smooth' lets the whole picture shrink (a small LED panel).
+   */
+  constructor({ profile = 'smooth', rung = 0, pin = false, retryMs = 30 * 60000, ...gov } = {}) {
+    this.profile = profile;
+    this.rung = Math.max(0, Math.min(RUNGS.length - 1, rung));
+    this.gov = new Governor({ ladder: profile === 'sharp' ? SHARP_LADDER : LADDER, pin, ...gov, ...(this.rung > 0 ? { level: 0 } : {}) });      // (a rung given up means the picture is already the cheapest)
+    this.pin = !!pin; this.retryMs = retryMs;
+    this.glass = []; this.scene = [];       // the last redraw costs of each kind, ms
+    this.over = 0;                          // reports in a row that were too costly for this rung
+    this.retryAt = this.rung > 0 ? this.retryMs : Infinity; this.changes = 0;
+  }
+
+  get name() { return RUNGS[this.rung]; }
+  get why() { return WHY[this.rung]; }
+  get cost() { return this.gov.cost; }
+  get tickMs() { return this.gov.tickMs; }
+  get level() { return this.gov.level; }
+  get budgetMs() { return this.gov.budgetMs; }
+  /** Everything the engine and page read: the governor's resolution knobs and what the rung leaves on. */
+  get knobs() {
+    const k = this.gov.knobs, r = this.rung;
+    return {
+      ...k,
+      skyMs: r < 3 ? k.skyMs : r < 5 ? Math.max(k.skyMs, 15000) : 60000,       // the sun moves a quarter of a degree a minute: a still sky need not be drawn more often than that on the slow rungs
+      weather: r < 1, ambient: r < 2,
+      seconds: r < 3 ? 'morph' : r < 4 ? 'tick' : 'off',
+      cadence: r < 5 ? 'live' : 'minute',
+      landscape: r < 6, sky: r < 7,
+      rung: r, name: RUNGS[r],
+    };
+  }
+  /** The slowest recent redraw of each kind. */
+  worst(kind) { const a = kind === 'scene' ? this.scene : this.glass; return a.length ? Math.max(...a) : 0; }
+  /** The lead the page should give a redraw of the digits on the slow rungs, ms: how long before the minute to start drawing it. */
+  get leadMs() { return Math.ceil(this.worst('glass') * 1.4 + 500); }
+
+  /**
+   * One redraw took `costMs`; `kind` is 'glass' (the digits and the final passes) or 'scene' (the sky was drawn too). now = a monotonic time, ms.
+   * Returns true when something changed (the caller applies `knobs`).
+   */
+  report(costMs, kind = 'glass', now = 0) {
+    if (!(costMs >= 0)) return false;
+    const a = kind === 'scene' ? this.scene : this.glass;
+    a.push(costMs); if (a.length > 6) a.shift();
+    if (this.pin) return false;
+    let changed = false;
+    if (this.rung === 0) changed = this.gov.report(kind === 'scene' ? costMs * 0.25 : costMs, now);   // resolution first: a scene frame is rare among the digits' frames
+    else {
+      if (now >= this.retryAt) { this._move(this.rung - 1); this.retryAt = now + this.retryMs; return true; }       // try the richer rung again
+      this.gov.observe(kind === 'scene' ? costMs * 0.25 : costMs);
+    }
+    if (changed) return true;
+    if (this.gov.level > 0 && this.rung === 0) return false;       // not on the cheapest picture yet
+    // the lowest resolution: is this rung affordable?
+    const b = BUDGET[this.rung];
+    let over;
+    if (!b) over = this.gov.cost != null && this.gov.cost > this.gov.budgetMs && this.gov.samples >= 4;
+    else over = (kind === 'glass' && costMs > b.glass) || (kind === 'scene' && costMs > b.scene);
+    this.over = over ? this.over + 1 : 0;
+    if (this.over >= (b ? 2 : 1) && this.rung < RUNGS.length - 1) {
+      // a rung that missed by a little may do better another time; one that missed by a lot (a 7 s redraw for a 2.5 s budget) will not, and a try would show the wrong time while it fails
+      const worst = b ? Math.max(this.worst('glass') / b.glass, this.worst('scene') / b.scene) : (this.gov.cost || 0) / this.gov.budgetMs;
+      this._move(this.rung + 1); this.retryAt = now + (worst > 2 ? 12 * 3600000 : this.retryMs); return true;
+    }
+    return false;
+  }
+
+  _move(rung) {
+    this.rung = rung; this.changes++; this.over = 0;
+    if (rung === 0) this.retryAt = Infinity;
+    this.glass = []; this.scene = [];
+    this.gov.cost = null; this.gov.samples = 0; this.gov.stableSince = 0;
+  }
+}
