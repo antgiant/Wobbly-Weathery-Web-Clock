@@ -43,6 +43,7 @@ function init() {
   performance.mark('sky:engine-created');
   engine.onTick = (ms) => { vars.tick = ms; };           // the clock ticks as fast as the governor says the frames allow
   window.__sky = engine;                         // handy for debugging / tests
+  if (new URLSearchParams(location.search).has('stats')) import('./stats.js').then((m) => m.initStats(engine, canvas));       // ?stats: frames a second and the picture's size, tap to copy
   setControls(new Controls(engine, { onToast: toast, onChange: () => { glassRef?.updateLight(); }, onUserMove: () => updateHomeButton(), onReset: () => returnToDefaultView() }));
   window.__controls = controls;
   const glassRef = initGlass(engine, () => engine._basis());

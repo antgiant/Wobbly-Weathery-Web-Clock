@@ -29,7 +29,7 @@ const missing = files.filter((f) => !listed.has(f));
 check('service worker precaches every script and data file', missing.length === 0, missing.join(', '));
 const stale = [...listed].filter((f) => /^(js|data|icons)\//.test(f) && !fs.existsSync(path.join(root, f)));
 check('service worker lists no file that does not exist', stale.length === 0, stale.join(', '));
-check('index.html preloads every sky module', walk('js/sky').filter((f) => f.endsWith('.js')).every((f) => html.includes(`href="${f}"`)));
+check('index.html preloads every sky module (but the ?stats read-out, fetched only when asked for)', walk('js/sky').filter((f) => f.endsWith('.js') && f !== 'js/sky/stats.js').every((f) => html.includes(`href="${f}"`)));
 // every relative import resolves
 let bad = [];
 for (const f of walk('js').filter((f) => f.endsWith('.js') && !f.includes('vendor'))) {
