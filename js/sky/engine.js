@@ -131,8 +131,9 @@ export class SkyEngine {
     P.shaders = null;
   }
   _u(P, name) {
-    if (!(name in P.locs)) P.locs[name] = this.gl.getUniformLocation(P.prog, name);
-    return P.locs[name];
+    const l = P.locs[name];
+    if (l !== undefined) return l;
+    return (P.locs[name] = this.gl.getUniformLocation(P.prog, name));
   }
   /** The final pass in its form for what is on the screen: 'off' (no clock glass), 'ink' (the LED panel's flat ink) or 'glass'; each made the first time it is needed. */
   _blitProgram(kind) { return this.pBlits[kind] || (this.pBlits[kind] = this._program(VERT_FULLSCREEN, fragBlit(kind))); }
@@ -146,16 +147,18 @@ export class SkyEngine {
   }
   // Uniform setters. A program keeps its uniforms between draws, so a value that has not changed is not sent again: most of the hundreds of values set for a
   // frame are the same as the last frame's, and on a slow machine each call across to the driver costs. (`vals` holds what each program was last given.)
+  // (They allocate nothing: the last values live in an array per name that is changed in place. On a Pi Zero a frame sets some three hundred uniforms, and a temporary array each was a third of
+  // the time they took.) `_same` stays for a caller with its own array.
   _same(n, a) {
     const P = this._cur, c = P.vals || (P.vals = {}), o = c[n];
     if (o !== undefined) { let eq = o.length === a.length; for (let i = 0; eq && i < a.length; i++) if (o[i] !== a[i]) eq = false; if (eq) return true; }
     c[n] = a; return false;
   }
-  _1f(n, v) { if (!this._same(n, [v])) this.gl.uniform1f(this._u(this._cur, n), v); }
-  _1i(n, v) { if (!this._same(n, [v])) this.gl.uniform1i(this._u(this._cur, n), v); }
-  _2f(n, a, b) { if (!this._same(n, [a, b])) this.gl.uniform2f(this._u(this._cur, n), a, b); }
-  _3f(n, v) { if (!this._same(n, [v[0], v[1], v[2]])) this.gl.uniform3f(this._u(this._cur, n), v[0], v[1], v[2]); }
-  _4f(n, a, b, c, d) { if (!this._same(n, [a, b, c, d])) this.gl.uniform4f(this._u(this._cur, n), a, b, c, d); }
+  _1f(n, v) { const P = this._cur, c = P.vals || (P.vals = {}), o = c[n]; if (o !== undefined) { if (o[0] === v) return; o[0] = v; } else c[n] = [v]; this.gl.uniform1f(this._u(P, n), v); }
+  _1i(n, v) { const P = this._cur, c = P.vals || (P.vals = {}), o = c[n]; if (o !== undefined) { if (o[0] === v) return; o[0] = v; } else c[n] = [v]; this.gl.uniform1i(this._u(P, n), v); }
+  _2f(n, a, b) { const P = this._cur, c = P.vals || (P.vals = {}), o = c[n]; if (o !== undefined) { if (o[0] === a && o[1] === b) return; o[0] = a; o[1] = b; } else c[n] = [a, b]; this.gl.uniform2f(this._u(P, n), a, b); }
+  _3f(n, v) { const P = this._cur, c = P.vals || (P.vals = {}), o = c[n]; if (o !== undefined) { if (o[0] === v[0] && o[1] === v[1] && o[2] === v[2]) return; o[0] = v[0]; o[1] = v[1]; o[2] = v[2]; } else c[n] = [v[0], v[1], v[2]]; this.gl.uniform3f(this._u(P, n), v[0], v[1], v[2]); }
+  _4f(n, a, b, d, e) { const P = this._cur, c = P.vals || (P.vals = {}), o = c[n]; if (o !== undefined) { if (o[0] === a && o[1] === b && o[2] === d && o[3] === e) return; o[0] = a; o[1] = b; o[2] = d; o[3] = e; } else c[n] = [a, b, d, e]; this.gl.uniform4f(this._u(P, n), a, b, d, e); }
   _m3(n, m) { if (!this._same(n, Array.from(m))) this.gl.uniformMatrix3fv(this._u(this._cur, n), false, m); }
 
   /**
@@ -482,7 +485,9 @@ export class SkyEngine {
   onFrame(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
   /** Called after anything changed what is on the canvas: a full render, or only the glass pass (a digit moved). A host that has to copy frames somewhere (the Pi) listens to this. */
   onPresent(fn) { this.presenters.add(fn); return () => this.presenters.delete(fn); }
-  _presented(kind) { for (const fn of this.presenters) fn(this, kind); }
+  /** Called at the start of any work that ends in a picture (the page's glass drawing, a full render): the first call since the last picture is when this frame's cost starts. */
+  markWork() { if (this._work0 == null) this._work0 = performance.now(); }
+  _presented(kind) { const since = this._work0; this._work0 = null; for (const fn of this.presenters) fn(this, kind, since); }
 
   // ----------------------------------------------------------- astronomy ---
   _updateAstro(perfNow, force) {
@@ -655,6 +660,7 @@ export class SkyEngine {
   }
 
   render(t) {
+    this.markWork();
     const gl = this.gl, s = this.s;
     const firstRender = !this._rendered;
     if (firstRender) performance.mark('sky:first-render-start');
@@ -892,7 +898,7 @@ export class SkyEngine {
 
   /** The uniforms and textures of a final pass (the program is already in use); `prev` is the picture the pass before it made. */
   _blitUniforms(T, glassOn, led, cw, ch, dpr, prev, last, prevUnit = 7) {
-    const gl = this.gl, g = this.glass;
+    const g = this.glass;
     this._1i('uTex', 0); this._bind(0, T.tex);
     this._1f('uTexW', T.w);
     if (glassOn && this.es2) this._bindMipAtlas('scene', 5);
@@ -958,10 +964,13 @@ export class SkyEngine {
   _bindMipAtlas(kind, unit) {
     const st = this.mipState && this.mipState[kind];
     if (!st) return;
-    const N = kind[0].toUpperCase() + kind.slice(1);
-    this._1i('u' + N + 'Mips', unit); this._bind(unit, st.atlas.tex);
-    this._2f('u' + N + 'MipsPx', st.atlas.w, st.atlas.h);
-    st.levels.forEach((m, i) => this._4f('u' + N + 'Lv' + (i + 1), m.w, m.h, m.y, 0));
+    if (!st.names) {                                                    // (the uniforms' names, made once: a string put together per level and per pass was a good part of a frame on a slow machine)
+      const N = kind[0].toUpperCase() + kind.slice(1);
+      st.names = { mips: 'u' + N + 'Mips', px: 'u' + N + 'MipsPx', lv: st.levels.map((_, i) => 'u' + N + 'Lv' + (i + 1)) };
+    }
+    this._1i(st.names.mips, unit); this._bind(unit, st.atlas.tex);
+    this._2f(st.names.px, st.atlas.w, st.atlas.h);
+    for (let i = 0; i < st.levels.length; i++) { const m = st.levels[i]; this._4f(st.names.lv[i], m.w, m.h, m.y, 0); }
   }
 
   /**
@@ -1085,6 +1094,7 @@ export class SkyEngine {
 
   /** Clock glyph mask (alpha channel) covering rect = [x, y, w, h] in canvas uv, y down. */
   setGlassMask(canvas, rect, strokeCssPx) {
+    this.markWork();
     const gl = this.gl, g = this.glass;
     this.maskTex = this.maskTexCanvas;                  // (setGlassGeometry draws into a texture of its own)
     gl.bindTexture(gl.TEXTURE_2D, this.maskTex);
@@ -1106,6 +1116,7 @@ export class SkyEngine {
    * all in mask pixels. `black` strokes (the coloured tube) are black, the glass styles white. Same arguments as setGlassMask otherwise.
    */
   setGlassGeometry({ w, h, rect, strokeCssPx, strokes, lights, black }) {
+    this.markWork();
     const gl = this.gl, g = this.glass;
     if (!this.pStroke) {                                                    // compiled the first time it is needed (a slow machine need not wait for it at start-up)
       this.pStroke = this._program(VERT_STROKE, FRAG_STROKE, { aPos: 0, aSeg: 1, aR: 2 });
@@ -1157,6 +1168,7 @@ export class SkyEngine {
    * like setGlassDrops (which does the same from a canvas).
    */
   setGlassDropsGeometry({ w, h, drops, trails }) {
+    this.markWork();
     const gl = this.gl;
     if (!this.pDrop) {
       this.pDrop = this._program(VERT_DROP, FRAG_DROP, { aPos: 0, aD: 1, aL: 2 });
@@ -1203,6 +1215,7 @@ export class SkyEngine {
 
   /** Updates glass settings ({mode, frost, light, lightCol}) and redraws without re-rendering the sky. */
   setGlass(patch) {
+    this.markWork();
     Object.assign(this.glass, patch);
     this.redrawGlass();
   }
@@ -1305,6 +1318,7 @@ export class SkyEngine {
 
   /** Cheap repaint: only the final pass, reusing the last scene. */
   redrawGlass() {
+    this.markWork();
     if (!this.sceneTarget) { this.dirty = true; return; }
     this._blit(!this._mipsValid && this.glass.mode > 0);
     if (this.glass.mode > 0) this._mipsValid = true;

@@ -161,7 +161,8 @@ if (A.present) {
   if (G.__sky) {                                      // every change to the picture, including a digit that only moved; several changes in one turn are one frame
     let pending = false;
     let t0 = 0, kind = 'glass';
-    G.__sky.onPresent((e, k) => { if (k === 'scene') kind = 'scene'; if (!pending) { pending = true; t0 = performance.now(); setTimeout(() => { pending = false; send(); G.__sky.reportFrame(performance.now() - t0, kind); kind = 'glass'; if (A.timing && G.__sky.gov) { const g = G.__sky.gov; if (++G.__govN % 20 === 0) __print('governor: level ' + g.level + ', frame cost ' + Math.round(g.cost || 0) + ' ms, tick ' + Math.round(g.tickMs) + ' ms, outScale ' + G.__sky.s.outScale.toFixed(2)); } }, 0); } });
+    G.__sky.onPresent((e, k, since) => { if (k === 'scene') kind = 'scene'; if (!pending) { pending = true; t0 = performance.now(); if (since != null && t0 - since < 1500) t0 = since;     // (the frame's cost starts when its work did, not when the picture was ready)
+ setTimeout(() => { pending = false; send(); G.__sky.reportFrame(performance.now() - t0, kind); kind = 'glass'; if (A.timing && G.__sky.gov) { const g = G.__sky.gov; if (++G.__govN % 20 === 0) __print('governor: level ' + g.level + ', frame cost ' + Math.round(g.cost || 0) + ' ms, tick ' + Math.round(g.tickMs) + ' ms, outScale ' + G.__sky.s.outScale.toFixed(2)); } }, 0); } });
   }
 }
 if (A.present) {

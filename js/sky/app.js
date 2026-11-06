@@ -43,7 +43,16 @@ function init() {
   performance.mark('sky:engine-created');
   engine.onTick = (ms) => { vars.tick = ms; };           // the clock ticks as fast as the governor says the frames allow
   window.__sky = engine;                         // handy for debugging / tests
-  if (new URLSearchParams(location.search).has('stats')) import('./stats.js').then((m) => m.initStats(engine, canvas));       // ?stats: frames a second and the picture's size, tap to copy
+  {                                                            // ?stats: frames a second and the picture's size, tap to copy (?stats=0 turns it off; once asked for, it comes back on this device's next visits)
+    let want = false;
+    try { const v = new URLSearchParams(location.search).get('stats'); if (v === '0') localStorage.removeItem('stats'); else if (v !== null) localStorage.setItem('stats', '1'); want = localStorage.getItem('stats') === '1'; } catch (_) { want = new URLSearchParams(location.search).has('stats'); }
+    if (want) {
+      const note = document.createElement('div');                // (shown at once, so a missing read-out says whether this code ran at all)
+      note.style.cssText = 'position:fixed;left:6px;top:6px;z-index:99999;padding:4px 8px;border-radius:6px;background:rgba(0,0,0,.7);color:#9f9;font:11px ui-monospace,Menlo,monospace';
+      note.textContent = 'stats: loading...'; document.body.appendChild(note);
+      import('./stats.js').then((m) => { note.remove(); m.initStats(engine, canvas); }).catch((e) => { note.style.color = '#f99'; note.textContent = 'stats failed: ' + (e && e.message || e); });
+    }
+  }
   setControls(new Controls(engine, { onToast: toast, onChange: () => { glassRef?.updateLight(); }, onUserMove: () => updateHomeButton(), onReset: () => returnToDefaultView() }));
   window.__controls = controls;
   const glassRef = initGlass(engine, () => engine._basis());

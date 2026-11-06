@@ -242,6 +242,7 @@ export function initGlass(engine, getBasis) {
   function draw() {
     raf = 0;
     if (!active()) return;
+    if (engine.markWork) engine.markWork();                                                // (a frame's cost starts here: the quality governor adds up the whole of it)
     const tp = window.__tp, tt = tp && performance.now();             // (the native host's --profile adds up the phases)
     const L = measure();
     if (tp) tp('page glass.draw: measure', tt);
