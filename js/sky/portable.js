@@ -127,7 +127,12 @@ vec4 texel0(sampler2D s, vec2 ij, vec2 size, float rho) { return texture(s, (flo
 #define SKYLUT_SCALE 2048.0
 vec4 hdrPack(vec3 c) { return vec4(c, 1.0); }
 vec3 hdrFetch(sampler2D s, vec2 uv) { return texture(s, uv).rgb; }
-vec3 hdrTex(sampler2D s, vec2 uv, vec2 px) { return texture(s, uv).rgb; }
+// The tables are read texel by texel and blended here, in full float precision: a phone's GPU blends with 8-bit weights, which turns a small table stretched over the whole sky into steps.
+vec3 hdrTex(sampler2D s, vec2 uv, vec2 px) {
+  vec2 p = uv * px - 0.5, i = floor(p), f = p - i;
+  ivec2 a = ivec2(clamp(i, vec2(0.0), px - 1.0)), b = ivec2(clamp(i + 1.0, vec2(0.0), px - 1.0));
+  return mix(mix(texelFetch(s, a, 0).rgb, texelFetch(s, ivec2(b.x, a.y), 0).rgb, f.x), mix(texelFetch(s, ivec2(a.x, b.y), 0).rgb, texelFetch(s, b, 0).rgb, f.x), f.y);
+}
 vec4 adaptPack(float a, float target) { return vec4(a, target, 0.0, 1.0); }
 float adaptLog(sampler2D s) { return texelFetch(s, ivec2(0), 0).r; }
 vec4 noiseLod(sampler2D s, vec2 uv, float lod) { return textureLod(s, uv, lod); }
