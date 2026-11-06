@@ -32,28 +32,35 @@ const inOrder = (log) => log.every(([, k], i) => k === (i ? log[i - 1][1] + 1 : 
 
 // the order, and what each rung leaves
 { const c = new Capability({ rung: 0 }), seq = [];
-  for (let i = 0; i < RUNGS.length; i++) { c.rung = i; const k = c.knobs; seq.push([k.weather, k.ambient, k.glass, k.landscape, k.sky, k.seconds, k.cadence].join()); }
-  check('the rungs go in the order: weather, ambient motion, glass, landscape, sky, seconds (tick, off), the cadence', JSON.stringify(RUNGS) === JSON.stringify(['full', 'weather', 'ambient', 'solid digits', 'flat ground', 'gradient sky', 'tick', 'seconds off', 'slow clock', 'smaller picture', 'smallest picture']));
+  for (let i = 0; i < RUNGS.length; i++) { c.rung = i; const k = c.knobs; seq.push([k.weather, k.ambient, k.seconds, k.cadence, k.glass, k.landscape, k.sky].join()); }
+  check('the rungs go in the order: weather, ambient motion, seconds (tick, off), the cadence, then glass, landscape, sky', JSON.stringify(RUNGS) === JSON.stringify(['full', 'weather', 'ambient', 'tick', 'seconds off', 'slow clock', 'solid digits', 'flat ground', 'gradient sky', 'smaller picture', 'smallest picture']));
+  check('the seconds go before the glass and the real sky and ground do', R('tick') < R('solid digits') && R('seconds off') < R('solid digits') && R('slow clock') < R('solid digits') && R('seconds off') < R('flat ground') && R('seconds off') < R('gradient sky'));
   check('each rung takes exactly one more thing away (the last two shrink the picture)',
-    seq[0] === 'true,true,true,true,true,morph,live' && seq[1] === 'false,true,true,true,true,morph,live' && seq[2] === 'false,false,true,true,true,morph,live' && seq[3] === 'false,false,false,true,true,morph,live'
-    && seq[4] === 'false,false,false,false,true,morph,live' && seq[5] === 'false,false,false,false,false,morph,live' && seq[6] === 'false,false,false,false,false,tick,live'
-    && seq[7] === 'false,false,false,false,false,off,live' && seq[8] === 'false,false,false,false,false,off,minute', seq.join(' | ')); }
+    seq[0] === 'true,true,morph,live,true,true,true' && seq[1] === 'false,true,morph,live,true,true,true' && seq[2] === 'false,false,morph,live,true,true,true' && seq[3] === 'false,false,tick,live,true,true,true'
+    && seq[4] === 'false,false,off,live,true,true,true' && seq[5] === 'false,false,off,minute,true,true,true' && seq[6] === 'false,false,off,minute,false,true,true' && seq[7] === 'false,false,off,minute,false,false,true'
+    && seq[8] === 'false,false,off,minute,false,false,false', seq.join(' | ')); }
 
 // a fast desktop stays on rung 0 and reaches the top resolution
 { const r = run(machine({ fixed: 3, perPx: 0.0003, sceneBase: 8 }), { minutes: 10 });
   check('a fast machine stays on the full rung', r.c.rung === 0, `rung ${r.c.rung}`);
   check('... at the top resolution level', r.c.level === LADDER.length - 1, `level ${r.c.level}`); }
 
-// a Zero on a 720p display (the digits' passes over the screen: 7 s; the sky at a quarter of the size: 1.7 s): the cheap looks come first, so the seconds-off clock stays live and is the end of it
+// a Zero on a 720p display (the digits' passes over the screen: 7 s; the sky at a quarter of the size: 1.7 s): the seconds go first and the clock settles on the slow clock with the glass and the real sky kept
 { const px = 1280 * 720, zero = machine({ fixed: 45, perPx: 0.0075, px, sceneBase: 3300 * px / 113000 });
   const r = run(zero, { profile: 'sharp', minutes: 60 });
-  check('the Zero on 720p gives up the looks before the seconds and settles on seconds off (a live clock of solid digits on a gradient)', r.c.rung === R('seconds off'), `rung ${r.c.rung} (${r.c.name})`);
-  check('the rungs were given up in order, none skipped, and a rung that missed by a lot was not tried again within the hour', inOrder(r.log), JSON.stringify(r.log));
-  check('the output size was never lowered on the way', r.c.knobs.outScale === 1); }
-
+  check('the Zero on 720p gives up the seconds and settles on the slow clock, keeping its glass, ground and sky', r.c.rung === R('slow clock'), `rung ${r.c.rung} (${r.c.name})`);
+  const k = r.c.knobs;
+  check('... the picture is as rich as the full one (glass, landscape, sky) and not smaller', k.glass && k.landscape && k.sky && k.outScale === 1);
+  check('the rungs were given up in order, none skipped, and a rung that missed by a lot was not tried again within the hour', inOrder(r.log), JSON.stringify(r.log)); }
+// a Zero on 1080p: the digits' passes take 17 s: a minute is enough to draw the next picture ahead, so the slow clock holds at full size
+{ const px = 1920 * 1080, r = run(machine({ fixed: 45, perPx: 0.0075 * 0.68, px, sceneBase: 3300 * px / 113000 }), { profile: 'sharp', minutes: 90 });
+  check('the Zero on 1080p holds the slow clock at full size (a 14 s redraw is drawn ahead of the minute)', r.c.rung === R('slow clock') && r.c.knobs.outScale === 1 && r.c.knobs.glass, `rung ${r.c.rung}, outScale ${r.c.knobs.outScale}`); }
+// a machine whose picture takes more than a minute even on the slow clock loses the glass, then the landscape, then the sky, before the picture shrinks
+{ const r = run((c) => ({ glass: c.rung >= R('solid digits') ? 30000 : 90000, scene: c.rung >= R('gradient sky') ? 1000 : c.rung >= R('flat ground') ? 30000 : 90000 }), { minutes: 300 });
+  check('a picture that takes 90 s goes solid, then flat ground (the sky then takes 30 s, which fits), in that order and no further', inOrder(r.log) && r.c.rung === R('flat ground'), JSON.stringify(r.log) + ' rung ' + r.c.rung); }
 // the Zero on its 160 x 90 test picture holds a live clock (about 15 fps) with at most the cheap looks given up
 { const r = run(machine({ fixed: 45, perPx: 0.0065, px: 160 * 90, sceneBase: 300 }), { minutes: 20 });
-  check('the Zero at 160 x 90 stays on a live rung before the seconds', r.c.rung <= R('gradient sky'), `rung ${r.c.rung}`); }
+  check('the Zero at 160 x 90 stays on a live rung before the seconds', r.c.rung <= R('tick'), `rung ${r.c.rung}`); }
 
 // a hopeless machine ends on the last rung and the clock still ticks (the knobs say what to draw)
 { const r = run(() => ({ glass: 60000, scene: 600000 }), { minutes: 120 });
