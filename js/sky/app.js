@@ -53,7 +53,7 @@ function init() {
     cap.seconds = k.seconds; cap.cadence = k.cadence; cap.lead = engine.gov ? engine.gov.leadMs : 0;
     if (changed) { adjustTimeSize(); window.dispatchEvent(new Event('capchange')); window.dispatchEvent(new Event('clocklayout')); }
   };
-  if (engine.knobs && engine.knobs.rung > 0) engine.onKnobs(engine.knobs);
+  if (engine.gov) engine.onKnobs(engine.knobs);                  // (says where it stands from the start)
   window.__sky = engine;                         // handy for debugging / tests
   {                                                            // ?stats: frames a second and the picture's size, tap to copy (?stats=0 turns it off; once asked for, it comes back on this device's next visits)
     let want = false;
