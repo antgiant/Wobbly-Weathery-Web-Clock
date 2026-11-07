@@ -41,9 +41,10 @@ Built: ten rungs (weather, ambient, tick, seconds off, slow clock, solid digits,
 
 ## CI performance breakdown: what is left
 
-Done 2026-11-04: the recording (per-suite table on every run), each suite's `covers` line, `docs/TESTS.md` generated from a run, the three shares dealt by measured cost (about 6 minutes a run).
-Still to do: use the table: fewer page opens (reuse a page for several checks), shorter settles, lower quality where the picture does not matter, and decide what belongs in the fast local tier
-(`tests/impact.mjs`). Browser tests flake on slow runners: some already poll instead of waiting a fixed time (`wind`, `ladder`); `digitweather` once failed the same way.
+Done: the recording (per-suite table on every run), each suite's covers line, docs/TESTS.md generated from a CI run (refreshed 2026-11-07 from run 207), and the three shares dealt by measured cost (FULL_COST in
+tests/run.mjs, refreshed from the same run: the shares now come out at about 270, 272 and 275 s of suites; they were 191, 350 and 276 s, so CI's browser wall time should fall from 5:52 to about 4:40).
+Still to do: cut page opens (46% of the browser time is opening pages: 182 pages at about 2.1 s) by reusing a page for several checks; shorter settles (37% is deliberate waiting: perf 75 s, idle 32 s, alerts 37 s);
+decide what belongs in the fast local tier (`tests/impact.mjs`). Browser tests flake on slow runners: some poll instead of waiting a fixed time (wind, ladder); digitweather once failed the same way.
 
 ## CI hygiene: never merge on a red CI
 
