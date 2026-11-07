@@ -38,7 +38,7 @@ const WORKERS = Math.max(1, Number(process.env.WORKERS) || 1);
 // rough seconds each suite takes in its tier: the longest start first, so the workers finish together
 const COST = { options: 30, alerts: 20, led: 18, startup: 14, sky: 14, clock: 12, wind: 12, settings: 12, offline: 13, digitweather: 10, smoke: 6 };
 // seconds each suite takes in the full run on a CI machine (docs/TESTS.md, GitHub Actions run 63; share and place re-measured after they grew)
-const FULL_COST = { digitweather: 118, perf: 87, options: 75, led: 71, alerts: 70, clocklayout: 43, share: 39, idle: 35, visual: 34, christmas: 30, countdown: 30, ladder: 30, wind: 29, clock: 25, settings: 21, place: 18, offline: 18, startup: 17, sky: 13, maskgpu: 6, smoke: 5, dropsgpu: 3 };       // seconds on a CI runner (docs/TESTS.md, CI run 207, 2026-11-07): the shares come out at about 270, 272 and 275 s
+const FULL_COST = { digitweather: 93, perf: 88, alerts: 81, options: 65, led: 56, clock: 39, idle: 36, clocklayout: 33, share: 33, visual: 31, countdown: 30, christmas: 28, wind: 26, ladder: 24, startup: 22, place: 18, settings: 16, offline: 15, sky: 13, maskgpu: 6, smoke: 5, dropsgpu: 4 };       // seconds on a CI runner, the average of runs 207 and 217 (docs/TESTS.md): the shares come out at about 256, 255 and 251 s (runner speed varies by up to 40% from run to run, so one run's numbers mislead)       // seconds on a CI runner (docs/TESTS.md, CI run 207, 2026-11-07): the shares come out at about 270, 272 and 275 s
 let failed = 0, passed = 0;
 const timings = { when: new Date().toISOString(), node: process.version, kind: '', unit: [], browser: [] };       // where the time goes (written to test-results/timings.json, summarised at the end)
 const started = Date.now();
