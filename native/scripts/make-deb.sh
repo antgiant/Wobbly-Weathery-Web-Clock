@@ -12,7 +12,7 @@ install -m 755 "$here/scripts/wobbly-clock-update" "$pkg/usr/bin/wobbly-clock-up
 install -m 644 "$here/scripts/wobbly-clock-update.service" "$here/scripts/wobbly-clock-update.timer" "$pkg/lib/systemd/system/"
 gzip -9n -c "$here/man/wobbly-clock.1" > "$pkg/usr/share/man/man1/wobbly-clock.1.gz"
 gzip -9n -c "$here/man/wobbly-clock.conf.5" > "$pkg/usr/share/man/man5/wobbly-clock.conf.5.gz"
-node "$root/native/cli/main.mjs" install-service --print 2>/dev/null | sed 's|^ExecStart=.*|ExecStart=/usr/bin/wobbly-clock-run --config /etc/wobbly-clock/wobbly-clock.conf|' > "$pkg/lib/systemd/system/wobbly-clock.service" || true
+node "$root/native/cli/main.mjs" install-service --print 2>/dev/null | sed 's|^ExecStart=.*|ExecStart=/usr/bin/wobbly-clock-run --config /etc/wobbly-clock/wobbly-clock.conf --maxrss 350|' > "$pkg/lib/systemd/system/wobbly-clock.service" || true
 if [ ! -s "$pkg/lib/systemd/system/wobbly-clock.service" ]; then
   cat > "$pkg/lib/systemd/system/wobbly-clock.service" <<UNIT
 [Unit]
@@ -20,7 +20,7 @@ Description=Wobbly Weathery Web Clock
 After=time-sync.target
 
 [Service]
-ExecStart=/usr/bin/wobbly-clock-run --config /etc/wobbly-clock/wobbly-clock.conf
+ExecStart=/usr/bin/wobbly-clock-run --config /etc/wobbly-clock/wobbly-clock.conf --maxrss 350
 Restart=on-failure
 RestartSec=5
 SupplementaryGroups=video render
