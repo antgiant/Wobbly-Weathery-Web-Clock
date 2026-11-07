@@ -95,4 +95,17 @@ check('the timer runs in the quiet hours (3 at night, spread over an hour) and c
   srv.kill();
   check('a release behind a redirect (GitHub\'s latest-release address) is found, checked and installed', r.status === 0 && mc.version() === 'wobbly-clock-run 0.2.0', r.stdout + r.stderr);
 }
+// 9. an OpenSSL 1.1.1 (the Pi Zero's, Raspberry Pi OS bullseye) does not know pkeyutl -rawin: a stand-in "openssl" refuses the option the way 1.1.1 does and, without it, verifies like 1.1.1 (the file is the whole message)
+{
+  const bin = path.join(dir, 'oldssl'); fs.mkdirSync(bin, { recursive: true });
+  const real = execFileSync('sh', ['-c', 'command -v openssl'], { encoding: 'utf8' }).trim();
+  fs.writeFileSync(path.join(bin, 'openssl'), sh(`if [ "$1" = pkeyutl ]; then for a in "$@"; do [ "$a" = -rawin ] && { echo "pkeyutl: Unknown option: -rawin" >&2; exit 1; }; done; exec ${real} "$@" -rawin; fi\nexec ${real} "$@"`));
+  fs.chmodSync(path.join(bin, 'openssl'), 0o755);
+  mc = machine('0.1.0'); r = run(mc, release('oldssl-good', '0.2.0'), { PATH: `${bin}:${process.env.PATH}` });
+  check('with an OpenSSL that has no -rawin (1.1.1) a correctly signed release still verifies and installs', r.status === 0 && /signature ok/.test(r.stdout) && mc.version() === 'wobbly-clock-run 0.2.0', r.stdout + r.stderr);
+  mc = machine('0.1.0'); r = run(mc, release('oldssl-forged', '0.2.0', { forged: true }), { PATH: `${bin}:${process.env.PATH}` });
+  check('and with that OpenSSL a forged signature is still refused', r.status !== 0 && /signature does not match/.test(r.stdout + r.stderr) && mc.version() === 'wobbly-clock-run 0.1.0', r.stdout + r.stderr);
+}
+const wf = fs.readFileSync(path.join(root, '.github/workflows/native-release.yml'), 'utf8');
+check('the release workflow puts the release number into the programs (their --version must equal LATEST, or the updater reinstalls every night)', /sed -i -E .*native\/host\/Cargo\.toml native\/core\/Cargo\.toml/.test(wf));
 done();

@@ -53,7 +53,10 @@ if [ -f "$PUB" ]; then
   "$CURL" -sSL --fail -m 120 -o "$TMP/$ASSET.sig" "$BASE/$ASSET.sig" 2>/dev/null || true
   [ -s "$TMP/$ASSET.sig" ] || die "the release has no signature for $ASSET and a release key is installed: nothing was changed"
   openssl base64 -d -A -in "$TMP/$ASSET.sig" -out "$TMP/sig.bin" 2>/dev/null || die "the signature is not valid base64: nothing was changed"
-  openssl pkeyutl -verify -rawin -pubin -inkey "$PUB" -sigfile "$TMP/sig.bin" -in "$TMP/$ASSET" >/dev/null 2>&1 || die "the signature does not match the release key: nothing was changed"
+  # OpenSSL 3 wants -rawin for Ed25519; OpenSSL 1.1.1 (Raspberry Pi OS bullseye, the Pi Zero's) does not know the option and takes the file as the whole message without it: try both
+  openssl pkeyutl -verify -rawin -pubin -inkey "$PUB" -sigfile "$TMP/sig.bin" -in "$TMP/$ASSET" >/dev/null 2>&1 \
+    || openssl pkeyutl -verify -pubin -inkey "$PUB" -sigfile "$TMP/sig.bin" -in "$TMP/$ASSET" >/dev/null 2>&1 \
+    || die "the signature does not match the release key: nothing was changed"
   say "signature ok"
 else
   say "no release key installed ($PUB): only the checksum was checked"
