@@ -61,8 +61,12 @@ jobs:
             printf '%s\n' "$KEY" > "$RUNNER_TEMP/key.pem"
             for f in dist/wobbly-clock-run-armv6 dist/wobbly-clock-run-aarch64 dist/*.deb; do openssl pkeyutl -sign -rawin -inkey "$RUNNER_TEMP/key.pem" -in "$f" | base64 -w0 > "$f.sig"; done
             rm -f "$RUNNER_TEMP/key.pem"
+          elif [ -f native/release-key.pem ]; then
+            # the programs carry the public key (the .deb installs it) and the update script then refuses anything unsigned: an unsigned release would strand every clock that installed it
+            echo "::error::native/release-key.pem is in the repository but the NATIVE_SIGNING_KEY secret is empty here. Save the private key as a REPOSITORY secret named NATIVE_SIGNING_KEY (Settings > Secrets and variables > Actions > Repository secrets; not an environment or Dependabot secret), then run this again."
+            exit 1
           else
-            echo "No NATIVE_SIGNING_KEY secret: publishing checksums only."
+            echo "No NATIVE_SIGNING_KEY secret and no release key: publishing checksums only."
           fi
       - name: Publish
         env:
