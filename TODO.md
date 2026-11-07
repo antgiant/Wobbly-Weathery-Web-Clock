@@ -33,6 +33,8 @@ Built: ten rungs (weather, ambient, tick, seconds off, slow clock, solid digits,
 
 ## Raspberry Pi: what is left
 
+- **Make a branch of the `stellarium_clock` repo (`antgiant/stellarium_clock`) that sets up and installs the web clock (the Pi program, `wobbly-clock`) instead of the current Stellarium clock** (asked 2026-11-07). Today that repo's `setup.sh` and `clock.ssc` put a full-screen clock on Stellarium. On the branch: have `setup.sh` install the signed `.deb` from the release page (see the release item above) and enable the `wobbly-clock` service and update timer, keep or map the old `location.js` settings (latitude, longitude, altitude, place name, countdown, bounce speed) onto the web clock's settings (`wobbly-clock set` / settings file), remove the Stellarium install and autostart, and rewrite its README. Check it on a clean Pi, and on one that still runs the old Stellarium clock (see also `docs/TRY-ON-A-PI.md` on removing an old kiosk).
+
 - **Digits centred (2026-11-07).** The clock row sat 1 to 4% of the screen's width left of centre (web and Pi alike): a 93%-wide box laid out from the left edge plus a fixed 6% nudge for a hidden leading digit. `centreMargin` (js/clocklayout.js) now works the margin out from where the digits are; every layout is within 0.8% of centre. Left: a row that starts with a 1 still sits about 0.6% right of one that starts with a 2 (ink differs); countdown mode (hundreds digit) and phone-size screens were checked only by the layout function, not by eye.
 
 - **First tests on a Pi 4 (ES 3.1), a Pi 3 and an LED panel.** Only the Zero W has run on real hardware.
