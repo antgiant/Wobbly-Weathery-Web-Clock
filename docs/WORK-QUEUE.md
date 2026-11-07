@@ -42,6 +42,7 @@ Official warnings and watches for the clock's place, treated like the umbrella n
 
 - **A better city skyline** (`js/sky/landscape.js`, the terrain shader in `js/sky/glsl-scene.js`).
 - **Plant life by location**: the existing trees suit some places and look wrong in others; choose species and palette from the place (latitude, climate, coast, desert...) in `js/sky/biome.js` and the plants shaders; the user's own choice still wins.
+- **Seasonal trees and foliage (asked 2026-11-07)**: tree colours and foliage should be right for the time of year, ideally matching real life at the clock's location: leaves greening in spring, full in summer, turning (yellow, orange, red) and falling in autumn, bare in winter for deciduous trees; evergreens, palms and desert plants stay as they are; the southern hemisphere is flipped; the tropics and dry seasons follow rainfall, not the calendar. Start from what exists (`seasonOf` and `seasonFromClimate` in `js/sky/biome.js`, which already use the date, hemisphere and the last month's temperature, and `species(b, season)` in `js/sky/plants.js`, which today only uses season for flowers). Make it a gradual change through the season (a leaf-colour fraction from the date, latitude and recent temperature) rather than four jumps, check it with the simulated time (`js/simtime.js`) at several places and dates, and add a test.
 
 ## 3b. README screenshots (asked 2026-11-07)
 
