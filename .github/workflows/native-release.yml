@@ -30,6 +30,8 @@ jobs:
           [ -n "$V" ] || V="$(echo "${GITHUB_REF_NAME:-native-v0.0.0}" | sed 's/^native-v//')"
           case "$V" in [0-9]*.[0-9]*.[0-9]*) ;; *) echo "not a version: $V"; exit 1 ;; esac
           echo "VERSION=$V" >> "$GITHUB_ENV"
+          # the programs report this number (wobbly-clock-run --version) and the update script compares it with LATEST: it was left at 0.1.0, so a clock on 0.2.1 thought it was out of date for ever
+          sed -i -E "0,/^version = \".*\"/s//version = \"$V\"/" native/host/Cargo.toml native/core/Cargo.toml
       - name: Tests
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq gcc-arm-linux-gnueabihf gcc-aarch64-linux-gnu
