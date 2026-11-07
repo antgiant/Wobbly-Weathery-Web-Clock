@@ -1,0 +1,66 @@
+# Work queue
+
+Recorded 2026-11-07, for a later session (the owner was out of time that day). Newest decisions first. `TODO.md` holds the older, longer notes; this file is what to do next, in the order asked.
+Nothing below is built unless it says so. Each item says what was asked, what it can be based on, and what to check.
+
+## How to work on this repository (what the last sessions did)
+
+- Branch `claude/wobbly-clock-sky-simulator-njbc4r`; merge to `main` with `git merge --no-ff` and push only when both CI (lint, unit, three browser shares) and Native (host against Chromium, ES2/ES3 compare, soak, pills, LED 32x64, packages) are green. No pull requests unless asked. Commit footers: `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>` and the session link.
+- GitHub is reached through the MCP tools (load them with ToolSearch: `mcp__github__actions_list`, `actions_get`, `actions_run_trigger`, `get_job_logs`, `list_releases`, `get_latest_release`). The Native "Cross tools" jobs sometimes hang and are cancelled: `rerun_failed_jobs`.
+- **A tag cannot be pushed from the working session (HTTP 403).** Releases are made by starting the workflow `native-release.yml` by hand with a version (`run_workflow`, ref `main`, input `version`); it creates the tag itself. Publishing a release is a public act: do it only when the owner has said to.
+- Releases are signed with the private key in the repository **secret** `NATIVE_SIGNING_KEY` (a variable does not work). The public half is `native/release-key.pem` and is installed by the `.deb`. `native/scripts/sign-release.sh` repairs a pasted key (no BEGIN/END lines, lost line breaks) and checks each signature against the public key. `native-v0.2.0` went out unsigned: never install it.
+- After editing `native/host/js/*.js` run `touch native/host/src/main.rs` before `cargo build` (the JavaScript is compiled into the program). `npm run stamp` after changing page files (the version stamp test).
+- Test the Pi program here with the CPU renderer: `cargo run --release -- --config FILE --software --sink ppm:DIR --size 1280x720 --frames N --at EPOCH_MS` (add `--timing 1`), view the frames as PNG.
+- The owner's Pi: a Pi Zero W (ARMv6, VC4 GPU, OpenGL ES 2), hostname clock-bedroom, user `clock`, HDMI screen that gives no EDID (so the mode is forced on the kernel command line), the clock runs as the systemd service `wobbly-clock` (user `wobbly`). Logs: `journalctl -u wobbly-clock`.
+
+## 1. Weather (asked 2026-11-07; the foundation comes first)
+
+All of these are part of the "weather" rung of the capability ladder: they must switch off on weak hardware like rain does (the Zero drops weather first). Tornado graphics are **not** wanted (removed on request); tornado *notices* are (item 2).
+
+1. **Foundation: extend the weather model** (`js/sky/weather.js` PRESETS and `mapOpenMeteo`): sleet, freezing rain/drizzle, hail, lightning, dust, rime, gusts; live mapping from Open-Meteo (WMO codes 48, 56, 57, 66, 67, 96, 99; wind gusts; air-quality `dust`; check whether CAPE or lightning potential is offered); manual `weatherMode` choices (`schema/settings.js`, the frozen share-link table in `js/share.js` gets a new version, `schema/settings.json` and the man page are regenerated); the rain alert text (`js/sky/rain.js`); unit tests.
+2. **Wind tilts the rain and blows the snow** (scene and the glass-digit drops in `js/sky/drops.js`; blowing snow near the ground in strong wind).
+3. **Freezing rain and freezing drizzle** (and sleet, ice pellets): drops freeze on the glass digits into beads and sheets, glaze on the ground and plants (shine, bend, icicles); also the **sleet** item (rain and snow mixed, today the larger of the two wins).
+4. **Hail**: stones that bounce off the glass digits (drops physics) and the ground, litter on the ground.
+5. **Lightning**: random strikes (ideally rate from reality: thunderstorm codes 95 to 99, plus lightning data if the forecast service has it), flash of sky and cloud, also on the digits.
+6. **Freezing fog and rime** (code 48 and fog below freezing): rime on plants, ground and the digits' edges.
+7. **Dust and sand storms**: orange-brown haze, low visibility, drifting sand; live from air-quality dust and wind; landscape-aware (desert).
+8. **Rainbows, based on reality**: sun up to about 42 degrees, rain falling or just ending on the other side of the sky, sun not hidden; a 42 degree ring round the antisolar point, faint outer bow at 51 degrees.
+9. **Aurora, based on reality**: at night, clear enough sky, the place's geomagnetic latitude against the current Kp index (NOAA SWPC planetary K; check it can be fetched from a web page and from the Pi); curtains toward the pole; manual choice too.
+
+What the clock draws today and what it cannot (checked 2026-11-07, `js/sky/weather.js`): cloud cover in three layers, rain, snow (and snow on the ground), fog, smoky haze, thunderstorm as a dark sky with heavy rain, wind (clouds and plants only).
+
+## 2. Severe weather notices (asked 2026-11-07)
+
+Official warnings and watches for the clock's place, treated like the umbrella notice: a pill on HDMI (watch: amber, outline icon; warning: red, solid icon; the headline text, wrapping), an icon card on LED panels (`js/sky/ledcard.js`, 5x7 font, whole LEDs; upright 32 x 64: icon above, mark below), taking priority over the umbrella. Time sensitive: poll about once a minute, show at once, remove when expired or cancelled; several alerts: the most urgent with a count.
+
+- Sources: **US National Weather Service alerts by point** (event, severity, urgency, headline, area, expiry; asks for a User-Agent; **browser access (CORS) not yet confirmed: test first**); Environment Canada (`api.weather.gc.ca` weather-alerts collection, CAP); MeteoAlarm for Europe (CAP; access terms unconfirmed); later the UK Met Office, DWD, BoM, JMA.
+- Types to map to an icon each: **Tornado (Watch/Warning/Emergency: wanted, as a notice, not a funnel)**, severe thunderstorm, flash flood and flood and coastal flood, hurricane/tropical storm/storm surge, winter storm/blizzard/ice storm/freezing rain/winter weather advisory, high wind and wind advisory, excessive heat and heat advisory, extreme cold/wind chill/freeze/frost, red flag and fire weather, dust storm/smoke/air quality, dense fog, tsunami and marine, avalanche.
+- Settings: which levels show (Watch and Warning on, Advisory off); non-weather emergencies (civil emergency, evacuation, child abduction) off by default.
+- Pills and LED: the Pi program must not paint pills on an LED panel's picture (guarded by `__pillSet` in `native/host/js/boot.js` and a Native CI step); LED cards come from the page.
+
+## 3. Look and landscape (asked 2026-11-07)
+
+- **A better city skyline** (`js/sky/landscape.js`, the terrain shader in `js/sky/glsl-scene.js`).
+- **Plant life by location**: the existing trees suit some places and look wrong in others; choose species and palette from the place (latitude, climate, coast, desert...) in `js/sky/biome.js` and the plants shaders; the user's own choice still wins.
+
+## 4. The Pi, still to verify on the real Zero
+
+- **Time exact at the minute** (built 2026-11-06, tested only on a CPU-drawn host): from the seconds-off rung the minute is drawn ahead and shown on the minute; no sky redraw is started where it could cross the minute; sky once a minute there. Watch the minute turn on the screen; read `journalctl -u wobbly-clock | grep ladder`.
+- **Pills** (built 2026-11-07, `native/host/js/pills.js`): sun countdown, umbrella alert, countdown name on the HDMI picture. Seen only on the CPU renderer.
+- **HDMI mode**: the screen gives no EDID; the kernel command line forces `video=HDMI-A-1:...@60D`. Settle on 1280x720 or 1920x1080 and write it into `docs/TRY-ON-A-PI.md`.
+- **A long run**: a week or two, then `journalctl -u wobbly-clock | grep health` (rss and canvases flat) and `vcgencmd get_throttled` (0x0).
+- **Where the Zero settles on the ladder** (measured 2026-11-06): 640x480 on rung 3 (tick); 720p and 1080p on rung 4 (seconds off); rungs 5 to 8 never run on hardware. 4k never started (the log stopped at the first shader; the picture is now kept within the GPU's largest texture, 2048 on VC4, but this is untested).
+- **Update path**: install the signed `.deb`, `sudo systemctl enable --now wobbly-clock-update.timer`, `sudo WOBBLY_DRY_RUN=1 wobbly-clock-update`.
+- **2038**: 32-bit Pis need Debian 13 (trixie) and a 64-bit-time build; whether trixie still runs the ARMv6 Zero is unconfirmed (try a spare SD card: `date -d @2147483648`). The aarch64 build is not affected.
+- First tests on a Pi 4, a Pi 3, and an LED panel on the Zero (the panel library's busy loop against one core is unmeasured).
+- `docs/TRY-ON-A-PI.md` is behind: add removing an old kiosk (`startx` in `.bash_profile`, `.xinitrc`, browser and X packages), the `video=` option, the service's wait for the GPU, the update timer, the ladder log.
+
+## 5. The capability ladder, still to improve
+
+- Sky redraws take 5 to 10 s of wall time for about 2 s of CPU on the Zero (the GPU is the limit): find which passes, cache or draw smaller. Astronomy costs 250 to 580 ms of JavaScript per redraw (`_updateAstro`). Start-up is 35 to 45 s (shader link about 10 s; check Mesa's shader cache makes the second boot faster). Coalesce the several glass redraw triggers a second.
+- The gradient sky and flat ground are the author's design (`js/sky/flatsky.js`); "like the Zeus repo" was asked for but that repository has no gradients: ask what was meant.
+- `wobbly-clock status` could print the rung.
+
+## 6. CI
+
+Shares are dealt by `FULL_COST` in `tests/run.mjs` (the average of runs 207 and 217; runner speed varies up to 40% between runs, so read several runs and adjust). Still to do: cut page opens (about half of browser time), shorter settles, protect `main` with required checks (a repository setting only the owner can change), the impact map. See `docs/TESTS.md` and `TODO.md`.

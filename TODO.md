@@ -1,5 +1,7 @@
 # To do
 
+**The ordered work queue is `docs/WORK-QUEUE.md` (recorded 2026-11-07): weather, severe weather notices, skyline and plants, what to verify on the Pi, and how to work on this repository.** The notes below are the older, longer ones.
+
 Things we know we want, not yet done. Newest first. Updated 2026-11-07. (The long Raspberry Pi planning notes of 2026-11-02 to 11-04 are in the git history: `git log -p TODO.md`; what they asked for is built, see "Built" at the end.)
 
 ## In flight (2026-11-07)
