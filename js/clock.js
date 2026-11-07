@@ -1,5 +1,6 @@
 import { conf, vars, dd, adjustTimeSize, use24h, cap, hideSec } from './config.js';
 import { easing } from './easing.js'
+import { centreMargin } from './clocklayout.js'
 import { now as simNow, getSim } from './simtime.js'
 import { sway, topOffset, bend } from './wind.js'
 import { wallTime } from './timezone.js'
@@ -262,16 +263,17 @@ function updateSvgWidths() {
 
   if (count > 0) {
     let temp = "1%";
-    if (leadingHidden) {                                // 12-hour time before 10 o'clock: no leading zero
-      temp = "3%";
-      document.querySelector("#clock").style.marginLeft = "6%";
-    } else {
-      document.querySelector("#clock").style.marginLeft = "";
-    }
+    if (leadingHidden) temp = "3%";                     // 12-hour time before 10 o'clock: no leading zero
     const width = `calc(((100% + (7% * 3)) / ${count}) - ${temp})`;
     visibleSvgs.forEach(svg => {
       svg.style.width = width;
     });
+    const clockBox = document.querySelector("#clock");
+    if (conf.screenMode === 'led') clockBox.style.marginLeft = leadingHidden ? "6%" : "";       // (an LED panel lays itself out: clocklayout.js)
+    else {                                              // the row is put in the middle of the screen from where its digits really are (it was a fixed 6% or nothing, and sat left of centre)
+      const items = [...svgs].map((el) => ({ hidden: getComputedStyle(el).display === 'none', width: el.style.width, marginRight: el.style.marginRight, hundreds: el.id === 'hundredsDigit', colon: !el.querySelector('path[id]') }));
+      clockBox.style.marginLeft = `${centreMargin(items).toFixed(2)}%`;
+    }
   }
   // for the LED panel layout (styles.css): how many digit-boxes wide the row is (a digit takes 0.76 of its box, a colon 0.3), and how many rows when it stacks
   const colons = visibleSvgs.filter(svg => !svg.querySelector('path[id]')).length;

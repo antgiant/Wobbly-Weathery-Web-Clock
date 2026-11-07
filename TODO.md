@@ -31,6 +31,8 @@ Built: ten rungs (weather, ambient, tick, seconds off, slow clock, solid digits,
 
 ## Raspberry Pi: what is left
 
+- **Digits centred (2026-11-07).** The clock row sat 1 to 4% of the screen's width left of centre (web and Pi alike): a 93%-wide box laid out from the left edge plus a fixed 6% nudge for a hidden leading digit. `centreMargin` (js/clocklayout.js) now works the margin out from where the digits are; every layout is within 0.8% of centre. Left: a row that starts with a 1 still sits about 0.6% right of one that starts with a 2 (ink differs); countdown mode (hundreds digit) and phone-size screens were checked only by the layout function, not by eye.
+
 - **First tests on a Pi 4 (ES 3.1), a Pi 3 and an LED panel.** Only the Zero W has run on real hardware.
 - **An LED panel on the Zero**: the panel library's busy loop against a one-core Zero is unmeasured.
 - **2038**: the 32-bit builds use a 32-bit time counter (glibc 2.31, bullseye). Fix: Raspberry Pi OS built on Debian 13 (trixie) plus a build with 64-bit time. Whether trixie still runs the ARMv6 Zero is

@@ -48,4 +48,14 @@ export async function run(t) {
   // seven digit slots (the hundreds-of-days digit of countdown mode, then hours, minutes, seconds), four curves each; the hundreds digit stays hidden while the clock shows the time
   t.check('each digit is drawn with four curves (7 digit slots x 4), and the countdown-only hundreds digit is hidden', await h.page.evaluate(() => document.querySelectorAll('#clock svg path[id]').length === 28 && document.getElementById('hundredsDigit').classList.contains('hidden') && getComputedStyle(document.getElementById('hundredsDigit')).display === 'none'));
   await h.close();
+
+  // the digits are in the middle of the screen: the ink of the row (the paths' own boxes) is within 1.2% of the width of the middle, with the leading digit hidden or shown, seconds or not (it sat 1 to 4% left)
+  for (const [label, qq, conf] of [['2:33, no seconds', 't=2026-11-07T07:33:30Z&speed=0', { hideSeconds: true }], ['2:33, seconds', 't=2026-11-07T07:33:30Z&speed=0', {}], ['12:33, no seconds', 't=2026-11-07T17:33:30Z&speed=0', { hideSeconds: true }], ['12:33, seconds', 't=2026-11-07T17:33:30Z&speed=0', {}], ['02:33 (24-hour), no seconds', 't=2026-11-07T07:33:30Z&speed=0', { hideSeconds: true, twentyFourHourClock: true }]]) {
+    if (t.quick && !/^2:33, no/.test(label) && !/^12:33, no/.test(label)) continue;
+    const hh = await t.open({ fast: true, query: qq, width: 1280, height: 720, conf });
+    await hh.settle(500);
+    const r = await hh.page.evaluate(() => { let l = Infinity, rr = -Infinity; document.querySelectorAll('#clock svg').forEach((el) => { if (getComputedStyle(el).display === 'none') return; el.querySelectorAll('path').forEach((p) => { const b = p.getBoundingClientRect(); if (b.width) { l = Math.min(l, b.left); rr = Math.max(rr, b.right); } }); }); return { c: (l + rr) / 2, vw: innerWidth }; });
+    t.check(`the digits are in the middle of the screen (${label})`, Math.abs(r.c - r.vw / 2) / r.vw < 0.012, `centre ${Math.round(r.c)} of ${r.vw}`);
+    await hh.close();
+  }
 }

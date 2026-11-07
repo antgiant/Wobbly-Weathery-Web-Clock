@@ -8,6 +8,9 @@
 // Boxes are the digits' svg boxes in viewport pixels, as getBoundingClientRect() reports them.
 
 const ASPECT = 1.16;                    // an svg's height over its width (viewBox "0 -8 100 116")
+// Where a digit's ink sits in its svg box, as fractions of the box's width (measured on the page's own digits: a 0, 2 or 3 starts at about 0.21 and ends at about 0.70; a 1 starts later, so a row that
+// starts with a 1 sits a little left of its nominal centre). centreMargin uses these to put the ink of the row, not its boxes, in the middle of the screen.
+const INK_L = 0.23, INK_R = 0.695;
 
 /** Evaluates a CSS length: 12px, 40%, or calc(...) with + - * / and parentheses; a percentage is of `pct`. */
 export function evalLength(s, pct) {
@@ -33,7 +36,7 @@ export function evalLength(s, pct) {
  *   vw, vh         the viewport (the canvas) in px
  *   pillRoom       px the pills at the bottom take (--pill-room)
  *   burn           [x, y] the anti burn-in step in px
- *   marginLeft     #clock's inline margin-left ('' or '6%')
+ *   marginLeft     #clock's inline margin-left ('' or centreMargin()'s percentage)
  *   led            null, or { mode: 'row' | 'stack' | 'fit', aspect, top, units, rows } (body[data-led] and the custom properties)
  *   items          the svgs in document order: { colon, hidden, width, marginRight, margin... }
  *                  width: the inline width ('' when none); marginRight: the inline margin-right ('' when none);
@@ -108,4 +111,16 @@ export function layoutClock(o) {
     });
   }
   return { box, rects };
+}
+
+/**
+ * The margin-left (a percentage of the screen's width) that puts the row of digits in the middle of the screen. The row is a box 93% of the width wide laid out from the left edge, and its digits
+ * overlap by negative margins and start and end with different padding, so it is not centred by itself; this works out how far to move it from where the digits really are (items: as for layoutClock).
+ * It depends only on how many digits there are and which are hidden, not on the screen's size, so the page sets it once per layout (clock.js updateSvgWidths) and the program with no CSS reads it back.
+ */
+export function centreMargin(items) {
+  const { rects } = layoutClock({ vw: 100, vh: 100, items, marginLeft: '' });
+  let l = Infinity, r = -Infinity;
+  items.forEach((it, i) => { const b = rects[i]; if (!b || it.colon) return; l = Math.min(l, b[0] + INK_L * b[2]); r = Math.max(r, b[0] + INK_R * b[2]); });
+  return Number.isFinite(l) ? 50 - (l + r) / 2 : 0;
 }
