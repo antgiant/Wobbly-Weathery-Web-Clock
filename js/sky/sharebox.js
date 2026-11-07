@@ -21,8 +21,9 @@ export function refreshShare() {
   $('shareNote').textContent = setup.place ? '' : 'No place is set, so a screen that opens this link estimates it from its own time zone. To send an exact place, turn on Place → Set the place myself.';
   // the QR code of the chosen form
   const which = $('shareQrForm').value === 'readable' ? b : a, box = $('shareQr');
-  box.innerHTML = qr(which, 'M') ? toSvg(which, 'M', 1) : '';
-  $('shareQrNote').textContent = box.innerHTML ? `Scan it with the sign's camera or a phone. ${which.length} characters.` : `That link is ${which.length} characters, too long for a QR code (the most is about 210). Use the short link.`;
+  const code = qr(which, 'M'), dense = code && code.length > 57;       // (more than version 10: a long link makes a dense code, and a small or far camera struggles with it)
+  box.innerHTML = code ? toSvg(which, 'M', 1) : '';
+  $('shareQrNote').textContent = box.innerHTML ? `Scan it with the sign's camera or a phone. ${which.length} characters.${dense ? ' That is a dense code: the short link makes one that is easier to scan.' : ''}` : `That link is ${which.length} characters, too long for a QR code (the most is about 2300). Use the short link.`;
   // the length limit
   const limit = Math.max(0, Number($('shareLimit').value) || 0), note = $('shareLimitNote');
   note.textContent = !limit ? '' : a.length <= limit && b.length <= limit ? `Both links fit in ${limit} characters.` : a.length <= limit ? `The readable link is ${b.length - limit} characters too long; the short link fits (${a.length}).` : `Even the short link is ${a.length - limit} characters too long. Fewer changes from a preset, no place or no time zone make it shorter.`;

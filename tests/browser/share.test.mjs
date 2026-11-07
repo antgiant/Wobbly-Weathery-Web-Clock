@@ -122,7 +122,7 @@ export async function run(t) {
   await setv('shareQrForm', 'readable', 'change');
   await h.page.waitForTimeout(300);
   const readableLen = await h.page.evaluate(() => document.getElementById('shareReadable').value.length);
-  t.check('choosing the readable link redraws it, or says it is too long for a code', await h.page.evaluate(() => document.getElementById('shareQr').innerHTML !== '') === (readableLen <= 213) && (readableLen <= 213 || /too long for a QR code/.test(await h.page.evaluate(() => document.getElementById('shareQrNote').textContent))), String(readableLen));
+  t.check('choosing the readable link redraws it (a link over 210 characters gets a denser code and says so; only over 2331 is it too long for one)', await h.page.evaluate(() => document.getElementById('shareQr').innerHTML !== '') === (readableLen <= 2331) && (readableLen <= 213 || /dense code/.test(await h.page.evaluate(() => document.getElementById('shareQrNote').textContent))), String(readableLen));
   await setv('shareLimit', '30'); await h.page.waitForTimeout(300);
   t.check('a length limit is checked against both links, saying what fits', /too long/.test(await h.page.evaluate(() => document.getElementById('shareLimitNote').textContent)), await h.page.evaluate(() => document.getElementById('shareLimitNote').textContent));
   await setv('shareLimit', '2000'); await h.page.waitForTimeout(300);

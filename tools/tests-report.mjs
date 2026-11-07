@@ -14,11 +14,11 @@ let browser = [], unit = [], when = '', node = '';
 for (const f of files) { const j = JSON.parse(fs.readFileSync(f, 'utf8')); browser.push(...j.browser); if (j.unit?.length) unit = j.unit; when = j.when || when; node = j.node || node; }
 for (const f of logs) {
   const text = fs.readFileSync(f, 'utf8');
-  for (const m of text.matchAll(/^(?:\S+\s+)?  ([a-z]+)\s+(\d+)\s+([\d.]+)\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*$/gm)) {
+  for (const m of text.matchAll(/^(?:\S+\s+)?  ([a-z][a-z-]*)\s+(\d+)\s+([\d.]+)\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*$/gm)) {
     if (m[1] === 'all' || m[1] === 'suite') continue;
     browser.push({ name: m[1], checks: +m[2], ms: +m[3] * 1000, opens: +m[4], openMs: +m[5] * 1000, waitMs: +m[6] * 1000, otherMs: +m[7] * 1000 });
   }
-  const u = [...text.matchAll(/^(?:\S+\s+)?  ok\s{4}([a-z]+)\s+(\d+) checks\s+(\d+) ms\s*$/gm)]; if (u.length) unit = u.map((m) => ({ name: m[1], checks: +m[2], ms: +m[3] }));
+  const u = [...text.matchAll(/^(?:\S+\s+)?  ok\s{4}([a-z][a-z-]*)\s+(\d+) checks\s+(\d+) ms\s*$/gm)]; if (u.length) unit = u.map((m) => ({ name: m[1], checks: +m[2], ms: +m[3] }));
 }
 if (!browser.length) { console.error('no timings: give a timings.json or --log'); process.exit(1); }
 
@@ -57,7 +57,7 @@ md += `## Where it could be faster
 
 - **Fewer page opens.** Every page costs about the same to get ready, so the suites with the most pages cost the most; checks that only need a different time or setting could reuse one page.
 - **Shorter waits.** Waits are fixed pauses; waiting for the event (the next frame, a message) is shorter and steadier.
-- **Balance the shares.** CI's wall time is its slowest share; the suites are dealt to the shares by file order, not by cost.
+- **Keep the shares balanced.** CI's wall time is its slowest share. The suites are dealt to the three shares by cost (FULL_COST in tests/run.mjs, longest first to the lightest share): when a suite's time changes or a suite is added, copy its total from the table above into FULL_COST.
 `;
 fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
 fs.writeFileSync(path.join(root, 'docs/TESTS.md'), md);

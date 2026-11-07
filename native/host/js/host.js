@@ -65,6 +65,8 @@ class Gradient { constructor(o) { Object.assign(this, o); this.stops = []; } add
 G.Path2D = class { constructor(d) { this.d = typeof d === 'string' ? d : null; this.cmds = []; } };
 const isCanvas = (o) => !!o && typeof o._ensure === 'function';
 const srcPixels = (im) => isCanvas(im) ? (im._ensure(), { w: im.width, h: im.height, data: __c2d_read(im._id, 0, 0, im.width, im.height) }) : { w: im.width, h: im.height, data: im._rgba };
+let scratch = null;       // one canvas for every glyph run (a canvas per piece of text would pile up natively)
+const textScratch = (w, h) => { if (!scratch) scratch = new Canvas(); if (scratch.width < w || scratch.height < h) { scratch.width = Math.max(scratch.width, w, 64); scratch.height = Math.max(scratch.height, h, 16); } return scratch; };
 class Ctx2D {
   constructor(canvas) {
     this.canvas = canvas; this.fillStyle = '#000'; this.strokeStyle = '#000'; this.lineWidth = 1; this.lineCap = 'butt'; this.lineJoin = 'miter'; this.miterLimit = 10;
@@ -110,8 +112,22 @@ class Ctx2D {
   getImageData(x, y, w, h) { this.canvas._ensure(); const id = new ImageData(w, h); id.data.set(new Uint8Array(__c2d_read(this.canvas._id, x, y, w, h))); return id; }
   createImageData(w, h) { return new ImageData(w, h); }
   putImageData(img, x, y) { this._c('putImageData', { w: img.width, h: img.height, x, y }, img.data.buffer.slice(img.data.byteOffset, img.data.byteOffset + img.data.byteLength)); }
-  measureText(t) { const m = /(\d+(?:\.\d+)?)px/.exec(this.font); return { width: String(t).length * (m ? +m[1] : 10) * 0.56 }; }   // no text engine yet: an estimate
-  fillText() {} strokeText() {} clip() {} setLineDash() {}
+  // text: Inter Medium (a small subset inside the program) laid out and rasterised natively (__textwidth, __textbitmap); the weight and the family in `font` are ignored, the size is used
+  measureText(t) { const m = /(\d+(?:\.\d+)?)px/.exec(this.font); return { width: __textwidth(String(t), m ? +m[1] : 10) }; }
+  fillText(t, x, y) {
+    t = String(t); if (!t) return;
+    const m = /(\d+(?:\.\d+)?)px/.exec(this.font), px = m ? +m[1] : 10, b = __textbitmap(t, px); if (!b || !b.w) return;
+    const w = __textwidth(t, px), al = this.textAlign, bl = this.textBaseline;
+    const left = al === 'center' ? x - w / 2 : al === 'right' || al === 'end' ? x - w : x;
+    const top = bl === 'top' || bl === 'hanging' ? y : bl === 'middle' ? y - (b.h - 4) / 2 : bl === 'bottom' || bl === 'ideographic' ? y - (b.h - 4) : y - (b.ascent - 2);
+    const col = this.fillStyle instanceof Gradient ? [255, 255, 255, 1] : parseColor(this.fillStyle), cov = new Uint8Array(b.data), rgba = new Uint8ClampedArray(b.w * b.h * 4);
+    for (let i = 0; i < cov.length; i++) { rgba[i * 4] = col[0]; rgba[i * 4 + 1] = col[1]; rgba[i * 4 + 2] = col[2]; rgba[i * 4 + 3] = cov[i] * col[3]; }
+    const sc = textScratch(b.w, b.h), sx = sc.getContext('2d');
+    sx.clearRect(0, 0, sc.width, sc.height);
+    const id = new ImageData(b.w, b.h); id.data.set(rgba); sx.putImageData(id, 0, 0);
+    this.drawImage(sc, 0, 0, b.w, b.h, Math.round(left - 2), Math.round(top), b.w, b.h);
+  }
+  strokeText() {} clip() {} setLineDash() {}
 }
 
 // ---- --profile: where the CPU time goes besides drawing (the 2D canvas natives are timed here; the engine's calls in boot.js) ----

@@ -50,7 +50,7 @@ fn start_watchdog() {
 const EMBED: &[(&str, &str)] = &[
     ("host/host.js", include_str!("../js/host.js")), ("host/dom.js", include_str!("../js/dom.js")),
     ("host/polyfills.js", include_str!("../js/polyfills.js")), ("host/boot.js", include_str!("../js/boot.js")),
-    ("host/gputest.js", include_str!("../js/gputest.js")),
+    ("host/gputest.js", include_str!("../js/gputest.js")), ("host/pills.js", include_str!("../js/pills.js")),
 ];
 fn embedded(name: &str) -> Option<String> {
     let (n, _) = EMBED.iter().find(|(k, _)| *k == name)?.clone();
@@ -98,6 +98,84 @@ fn n_writeppm<'js>(ctx: Ctx<'js>, p: String, w: u32, h: u32, ab: ArrayBuffer<'js
     let mut o = format!("P6\n{w} {h}\n255\n").into_bytes();
     for y in (0..h as usize).rev() { for x in 0..w as usize { let i = (y * w as usize + x) * 4; o.extend_from_slice(&px[i..i + 3]); } }   // GL rows run bottom to top
     std::fs::write(&p, o).map_err(|e| throw(&ctx, e.to_string()))
+}
+
+// ---- text for the 2D canvas (the pills): Inter Medium, a small subset embedded in the program; there is no font on a Raspberry Pi OS Lite ----
+static FONT_BYTES: &[u8] = include_bytes!("../assets/Inter-Medium-subset.otf");
+fn font() -> &'static ab_glyph::FontRef<'static> {
+    static F: std::sync::OnceLock<ab_glyph::FontRef<'static>> = std::sync::OnceLock::new();
+    F.get_or_init(|| ab_glyph::FontRef::try_from_slice(FONT_BYTES).expect("the embedded font"))
+}
+/// One line of text laid out at `px` (a CSS font-size: the em): the glyphs with their x positions, the total width, the ascent and the descent (both in px).
+fn lay_out(text: &str, px: f64) -> (Vec<ab_glyph::Glyph>, f32, f32, f32) {
+    use ab_glyph::{Font, ScaleFont};
+    let f = font();
+    let upm = f.units_per_em().unwrap_or(1000.0);
+    let scale = ab_glyph::PxScale::from((px as f32) * f.height_unscaled() / upm);      // (ab_glyph's scale is the height of ascent + descent, CSS's is the em)
+    let sf = f.as_scaled(scale);
+    let (asc, desc) = (sf.ascent(), -sf.descent());
+    let (mut x, mut prev, mut gl) = (0.0f32, None::<ab_glyph::GlyphId>, Vec::new());
+    for ch in text.chars() {
+        let id = f.glyph_id(ch);
+        if let Some(p) = prev { x += sf.kern(p, id); }
+        gl.push(id.with_scale_and_position(scale, ab_glyph::point(x, asc)));
+        x += sf.h_advance(id); prev = Some(id);
+    }
+    (gl, x, asc, desc)
+}
+fn n_textwidth(text: String, px: f64) -> f64 { lay_out(&text, px).1 as f64 }
+/// The text as a coverage bitmap (one byte a pixel): { w, h, ascent, data }. The baseline is `ascent` rows down.
+fn n_textbitmap<'js>(ctx: Ctx<'js>, text: String, px: f64) -> Result<Object<'js>> {
+    use ab_glyph::Font;
+    let (glyphs, width, asc, desc) = lay_out(&text, px);
+    let (w, h) = ((width.ceil() as usize) + 4, ((asc + desc).ceil() as usize) + 4);
+    let mut data = vec![0u8; w * h];
+    for g in glyphs {
+        if let Some(o) = font().outline_glyph(g) {
+            let b = o.px_bounds();
+            o.draw(|gx, gy, c| {
+                let (x, y) = (b.min.x as i32 + gx as i32 + 2, b.min.y as i32 + gy as i32 + 2);
+                if x >= 0 && y >= 0 && (x as usize) < w && (y as usize) < h { let i = y as usize * w + x as usize; data[i] = data[i].saturating_add((c * 255.0) as u8); }
+            });
+        }
+    }
+    let o = Object::new(ctx.clone())?;
+    o.set("w", w as u32)?; o.set("h", h as u32)?; o.set("ascent", asc.ceil() as u32 + 2)?;
+    o.set("data", ArrayBuffer::new_copy(ctx.clone(), data)?)?;
+    Ok(o)
+}
+/// Blends a picture (RGBA, straight alpha, top row first, `ow` x `oh`) onto a frame read back from the GPU (rows run bottom to top) at (ox, oy) from the top left.
+fn n_blend<'js>(ctx: Ctx<'js>, dst: ArrayBuffer<'js>, src: ArrayBuffer<'js>, dims: String) -> Result<()> {
+    let v: Vec<i32> = dims.split(',').filter_map(|x| x.trim().parse().ok()).collect();      // "w,h,ox,oy,ow,oh"
+    if v.len() != 6 { return Err(throw(&ctx, "blend: w,h,ox,oy,ow,oh".into())); }
+    let (w, h, ox, oy, ow, oh) = (v[0].max(0) as usize, v[1].max(0) as usize, v[2], v[3], v[4].max(0) as usize, v[5].max(0) as usize);
+    let s = src.as_bytes().ok_or_else(|| throw(&ctx, "no source bytes".into()))?;
+    let raw = dst.as_raw().ok_or_else(|| throw(&ctx, "no destination".into()))?;
+    let d = unsafe { std::slice::from_raw_parts_mut(raw.ptr.as_ptr(), raw.len) };
+    if s.len() < ow * oh * 4 || d.len() < w * h * 4 { return Err(throw(&ctx, "blend: buffers too small".into())); }
+    for y in 0..oh {
+        let dy = oy + y as i32; if dy < 0 || dy as usize >= h { continue; }
+        let row = (h - 1 - dy as usize) * w;
+        for x in 0..ow {
+            let dx = ox + x as i32; if dx < 0 || dx as usize >= w { continue; }
+            let si = (y * ow + x) * 4; let a = s[si + 3] as u32; if a == 0 { continue; }
+            let di = (row + dx as usize) * 4;
+            for c in 0..3 { d[di + c] = ((s[si + c] as u32 * a + d[di + c] as u32 * (255 - a) + 127) / 255) as u8; }
+        }
+    }
+    Ok(())
+}
+#[cfg(test)]
+mod text_tests {
+    use super::*;
+    #[test]
+    fn text_has_width_and_ink() {
+        let (g, w, asc, desc) = lay_out("Umbrella", 20.0);
+        assert_eq!(g.len(), 8); assert!(w > 60.0 && w < 120.0, "width {w}"); assert!(asc > 10.0 && desc > 2.0, "{asc} {desc}");
+        let (_, w2, _, _) = lay_out("Umbrella Umbrella", 20.0); assert!(w2 > 2.0 * w);
+        let (_, w3, _, _) = lay_out("Umbrella", 40.0); assert!((w3 / w - 2.0).abs() < 0.05, "scales with the size: {w} {w3}");
+        let (_, e, _, _) = lay_out("", 20.0); assert_eq!(e, 0.0);
+    }
 }
 
 // ---- time zones (the engine's Intl is not in QuickJS): offsets from the embedded tz database --------------------------------------
@@ -393,6 +471,9 @@ fn main() {
         g.set("__tzoffset", Function::new(ctx.clone(), n_tzoffset)).unwrap();
         g.set("__tzlist", Function::new(ctx.clone(), n_tzlist)).unwrap();
         g.set("__syszone", Function::new(ctx.clone(), n_syszone)).unwrap();
+        g.set("__textwidth", Function::new(ctx.clone(), n_textwidth)).unwrap();
+        g.set("__textbitmap", Function::new(ctx.clone(), n_textbitmap)).unwrap();
+        g.set("__blend", Function::new(ctx.clone(), n_blend)).unwrap();
         g.set("__store_read", Function::new(ctx.clone(), n_store_read)).unwrap();
         g.set("__store_write", Function::new(ctx.clone(), n_store_write)).unwrap();
         g.set("__http_start", Function::new(ctx.clone(), n_http_start)).unwrap();

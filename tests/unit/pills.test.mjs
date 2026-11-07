@@ -1,0 +1,60 @@
+// The pills on the Raspberry Pi program (native/host/js/pills.js): where they go and how big they are, with a stand-in 2D canvas (the real one is native).
+// Run: node tests/unit/pills.test.mjs
+import { check, done } from '../lib/check.mjs';
+
+const mkCtx = () => {
+  const ctx = { fillStyle: '', strokeStyle: '', lineWidth: 1, lineCap: '', lineJoin: '', globalAlpha: 1, textAlign: 'left', _font: '', texts: [] };
+  Object.defineProperty(ctx, 'font', { get() { return ctx._font; }, set(v) { ctx._font = v; } });
+  ctx.measureText = (t) => ({ width: (+/(\d+(?:\.\d+)?)px/.exec(ctx._font)[1]) * 0.55 * String(t).length });
+  ctx.fillText = (t) => { ctx.texts.push(t); };
+  for (const m of ['beginPath', 'moveTo', 'lineTo', 'arc', 'closePath', 'fill', 'stroke', 'roundRect', 'clearRect']) ctx[m] = () => {};
+  return ctx;
+};
+let canvasCount = 0;
+globalThis.document = { createElement: () => { canvasCount++; const c = { width: 300, height: 150, _id: 1, _ensure() {} }; const x = mkCtx(); c.getContext = () => x; c.ctx = x; return c; } };
+globalThis.__c2d_read = (id, x, y, w, h) => new ArrayBuffer(w * h * 4);
+
+const P = await import('../../native/host/js/pills.js');
+const none = () => { for (const k of ['sun', 'rain', 'timer']) P.setPill(k, null); };
+
+none();
+check('no pill shows: nothing is painted', P.paintPills(1280, 720) === null && !P.pillsVisible());
+check('setting a pill reports a change, the same again does not, hiding does', P.setPill('rain', { level: 'umbrella', text: 'Umbrella: rain now' }) && !P.setPill('rain', { level: 'umbrella', text: 'Umbrella: rain now' }) && P.setPill('rain', null) && !P.pillsVisible());
+check('an unknown pill is ignored', P.setPill('nonsense', { a: 1 }) === false);
+
+// one rain pill on a landscape screen: inside the picture, centred, near the bottom
+P.setPill('rain', { level: 'umbrella', text: 'Umbrella: rain now' });
+let r = P.paintPills(1280, 720);
+check('a pill is painted inside the picture', r && r.x >= 0 && r.y >= 0 && r.x + r.w <= 1280 && r.y + r.h <= 720, JSON.stringify(r && [r.x, r.y, r.w, r.h]));
+check('on a landscape screen it sits low and about in the middle', r.y + r.h > 720 * 0.8 && Math.abs(r.x + r.w / 2 - 640) < 120, `${r.x + r.w / 2}`);
+check('its picture has w x h x 4 bytes', r.rgba.byteLength === r.w * r.h * 4);
+check('the same state is not painted twice (the cached picture comes back)', P.paintPills(1280, 720) === r);
+
+// the sun countdown: with the time left it is wider than without; the digits keep their widths (a pill that does not shake every second)
+none(); P.setPill('sun', { kind: 'sunset', body: 'sun', name: 'Sunset', left: '09:12' });
+const a = P.paintPills(1280, 720); P.setPill('sun', { kind: 'sunset', body: 'sun', name: 'Sunset', left: '10:00' }); const b = P.paintPills(1280, 720);
+P.setPill('sun', { kind: 'sunset', body: 'sun', name: 'Sunset', left: null }); const c = P.paintPills(1280, 720);
+check('the countdown pill keeps its size as the seconds change', a.w === b.w && a.h === b.h, `${a.w} vs ${b.w}`);
+check('the pill is smaller once the time has come (no time left to show)', c.w < a.w, `${c.w} < ${a.w}`);
+check('the moon pill (a moonrise or moonset) is painted too', (P.setPill('sun', { kind: 'sunrise', body: 'moon', name: 'Moonrise', left: '03:00' }), P.paintPills(1280, 720) !== null));
+
+// all three: landscape puts them in a row (wrapping when the row is full), upright stacks them
+none();
+P.setPill('sun', { kind: 'sunset', body: 'sun', name: 'Sunset', left: '09:12' }); P.setPill('rain', { level: 'slicker', text: 'Slicker weather: rain now' }); P.setPill('timer', 'New Year’s Eve party at the lake house · days:hours');
+const land = P.paintPills(1280, 720), up = P.paintPills(720, 1280);
+check('upright, three pills take more height than landscape (a column, not a row)', up.h > land.h, `${up.h} vs ${land.h}`);
+check('upright stays inside the screen', up.x >= 0 && up.x + up.w <= 720 && up.y >= 0 && up.y + up.h <= 1280, JSON.stringify([up.x, up.y, up.w, up.h]));
+check('landscape stays between the corner buttons (not under the settings button on the right)', land.x + land.w <= 1280 - (0.05 * 1280 + 64 + 12), `${land.x + land.w}`);
+
+// a long name wraps instead of running off the screen
+none(); P.setPill('timer', 'x'.repeat(10) + ' ' + 'word '.repeat(60));
+const long = P.paintPills(640, 480); P.setPill('timer', 'short');
+const short = P.paintPills(640, 480);
+check('a long timer name wraps onto lines inside the screen', long.w <= 640 && long.h > short.h * 2 && long.x >= 0, `${long.w}x${long.h} vs ${short.w}x${short.h}`);
+
+// a bigger screen scales the pills (a 4K screen would use a device pixel ratio of 2)
+none(); P.setPill('rain', { level: 'umbrella', text: 'Umbrella: rain now' });
+const small = P.paintPills(1920, 1080), big = P.paintPills(3840, 2160);
+check('on a 4K screen the pills are about twice as big as on 1080p', big.w > small.w * 1.7 && big.w < small.w * 2.3, `${big.w} vs ${small.w}`);
+check('painting reuses one canvas', canvasCount === 1, `${canvasCount} canvases`);
+done();
