@@ -43,6 +43,11 @@ Official warnings and watches for the clock's place, treated like the umbrella n
 - **A better city skyline** (`js/sky/landscape.js`, the terrain shader in `js/sky/glsl-scene.js`).
 - **Plant life by location**: the existing trees suit some places and look wrong in others; choose species and palette from the place (latitude, climate, coast, desert...) in `js/sky/biome.js` and the plants shaders; the user's own choice still wins.
 
+## 3b. README screenshots (asked 2026-11-07)
+
+Add screenshots to `README.md`: a small gallery near the top. Suggested set: the glass clock by day, at dusk and at night; rain and snow; the other clock styles; an LED panel picture (64x32 and the upright 32x64, with the sun card and the umbrella); the settings panel; and, when someone takes one, a photo of the Pi on a real screen.
+How: the browser tests already take pictures (`tests/visual/baseline/*.png`, `h.shot` in `tests/lib/harness.mjs`) and the Pi program writes frames (`--sink ppm:DIR`, convert to PNG); write one script (for example `tools/screenshots.mjs`) that makes them all at fixed times and places so they can be refreshed, keep each picture small (a few hundred KB at most), put them in `docs/images/`, and refer to them from the README with alt text.
+
 ## 4. The Pi, still to verify on the real Zero
 
 - **Time exact at the minute** (built 2026-11-06, tested only on a CPU-drawn host): from the seconds-off rung the minute is drawn ahead and shown on the minute; no sky redraw is started where it could cross the minute; sky once a minute there. Watch the minute turn on the screen; read `journalctl -u wobbly-clock | grep ladder`.
@@ -50,6 +55,7 @@ Official warnings and watches for the clock's place, treated like the umbrella n
 - **HDMI mode**: the screen gives no EDID; the kernel command line forces `video=HDMI-A-1:...@60D`. Settle on 1280x720 or 1920x1080 and write it into `docs/TRY-ON-A-PI.md`.
 - **A long run**: a week or two, then `journalctl -u wobbly-clock | grep health` (rss and canvases flat) and `vcgencmd get_throttled` (0x0).
 - **Where the Zero settles on the ladder** (measured 2026-11-06): 640x480 on rung 3 (tick); 720p and 1080p on rung 4 (seconds off); rungs 5 to 8 never run on hardware. 4k never started (the log stopped at the first shader; the picture is now kept within the GPU's largest texture, 2048 on VC4, but this is untested).
+- **Updater bug found on the real Pi (2026-11-07)**: the installed 0.2.1 `wobbly-clock-update` said "the release has an empty LATEST" because its curl did not follow GitHub's redirect from `releases/latest/download/...`. Fixed in the repository (curl -L, and a unit test with an HTTP redirect), **not yet released**: needs a release (0.2.2, started by hand: owner's go first) and one manual `.deb` install on the Pi, because the updater replaces only the program, not its own script. Meanwhile on the Pi: `sudo sed -i 's/-sS --fail/-sSL --fail/' /usr/bin/wobbly-clock-update`.
 - **Update path**: install the signed `.deb`, `sudo systemctl enable --now wobbly-clock-update.timer`, `sudo WOBBLY_DRY_RUN=1 wobbly-clock-update`.
 - **2038**: 32-bit Pis need Debian 13 (trixie) and a 64-bit-time build; whether trixie still runs the ARMv6 Zero is unconfirmed (try a spare SD card: `date -d @2147483648`). The aarch64 build is not affected.
 - First tests on a Pi 4, a Pi 3, and an LED panel on the Zero (the panel library's busy loop against one core is unmeasured).

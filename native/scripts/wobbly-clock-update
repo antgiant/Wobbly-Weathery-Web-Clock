@@ -29,7 +29,7 @@ case "${WOBBLY_ARCH:-$(uname -m)}" in
 esac
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-fetch() { "$CURL" -sS --fail -m 120 -o "$2" "$BASE/$1" || die "could not download $1 from $BASE"; }
+fetch() { "$CURL" -sSL --fail -m 120 -o "$2" "$BASE/$1" || die "could not download $1 from $BASE"; }
 
 fetch LATEST "$TMP/LATEST"
 LATEST="$(tr -d ' \r\n' < "$TMP/LATEST")"
@@ -50,7 +50,7 @@ GOT="$(sha256sum "$TMP/$ASSET" | awk '{print $1}')"
 [ "$GOT" = "$WANT" ] || die "the download is corrupt or has been tampered with (checksum $GOT, expected $WANT): nothing was changed"
 
 if [ -f "$PUB" ]; then
-  "$CURL" -sS --fail -m 120 -o "$TMP/$ASSET.sig" "$BASE/$ASSET.sig" 2>/dev/null || true
+  "$CURL" -sSL --fail -m 120 -o "$TMP/$ASSET.sig" "$BASE/$ASSET.sig" 2>/dev/null || true
   [ -s "$TMP/$ASSET.sig" ] || die "the release has no signature for $ASSET and a release key is installed: nothing was changed"
   openssl base64 -d -A -in "$TMP/$ASSET.sig" -out "$TMP/sig.bin" 2>/dev/null || die "the signature is not valid base64: nothing was changed"
   openssl pkeyutl -verify -rawin -pubin -inkey "$PUB" -sigfile "$TMP/sig.bin" -in "$TMP/$ASSET" >/dev/null 2>&1 || die "the signature does not match the release key: nothing was changed"
