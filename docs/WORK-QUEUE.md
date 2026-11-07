@@ -1,6 +1,6 @@
 # Work queue
 
-Recorded 2026-11-07, for a later session (the owner was out of time that day). Newest decisions first. `TODO.md` holds the older, longer notes; this file is what to do next, in the order asked.
+Recorded 2026-11-07, for a later session (the owner was out of time that day). Newest decisions first (section 0 is the top priority). `TODO.md` holds the older, longer notes; this file is what to do next, in the order asked.
 Nothing below is built unless it says so. Each item says what was asked, what it can be based on, and what to check.
 
 ## How to work on this repository (what the last sessions did)
@@ -12,6 +12,17 @@ Nothing below is built unless it says so. Each item says what was asked, what it
 - After editing `native/host/js/*.js` run `touch native/host/src/main.rs` before `cargo build` (the JavaScript is compiled into the program). `npm run stamp` after changing page files (the version stamp test).
 - Test the Pi program here with the CPU renderer: `cargo run --release -- --config FILE --software --sink ppm:DIR --size 1280x720 --frames N --at EPOCH_MS` (add `--timing 1`), view the frames as PNG.
 - The owner's Pi: a Pi Zero W (ARMv6, VC4 GPU, OpenGL ES 2), hostname clock-bedroom, user `clock`, HDMI screen that gives no EDID (so the mode is forced on the kernel command line), the clock runs as the systemd service `wobbly-clock` (user `wobbly`). Logs: `journalctl -u wobbly-clock`.
+
+## 0. TOP PRIORITY: buttery smooth 60 fps on a modern iPhone (asked 2026-11-07; do this before anything else)
+
+The owner's iPhone (iOS 18_7 UA, Safari, Apple GPU, 956x330 at 3x, canvas 1912x660) showed no real frame-rate difference after versions 86 and 87 and the tree sway is still jerky. Wanted: the animated scene (plant and tree sway, clouds, water, rain, the digits' morph) at a steady **60 fps on a modern iPhone**, with **no change to how the Pi Zero behaves** (its ladder, rungs, slow clock and exact-minute rules stay as they are; gate anything new on the web host / capability, and run the Native checks).
+
+What is known (2026-11-07):
+- Before: the iPhone read about 70 fps by `?stats` once (the counter counts `_presented` calls, glass and scene together, so it may count the digits' own redraws, not the sky), yet median gaps of 54 ms (about 15 fps) in the same read-out: the counter and the gaps disagree, so first make `?stats` truthful (frames per second of the sky separately from the glass redraws, and the worst gap over the last second).
+- Low quality read 2 fps (gaps 508 and 1001 ms): the engine's interval for an animated scene was `max(1000 / fps, skyMs * 0.25)` while the ladder was on (fixed in 06d58d6 / 146949e: now `min(gov.tickMs, skyMs)`), but the owner saw almost no change, so the real limit is elsewhere.
+- Suspects to measure on the real phone, in this order: (1) the scheduler (`engine.js` `interval`, `_schedule`, `_quietFor`, `lowPower`; the 4 ms `setTimeout` then `requestAnimationFrame` hop adds a frame of latency; use rAF directly while animating) and `s.fps` (15 or 8) still capping something else; (2) the governor's cost probe (`_probe`, a `readPixels` once a second that stalls the pipeline and inflates `cost`, so `tickMs` never falls to 16.7 ms and the level steps down: the stats showed governor level 4 and scene scale 0.75 on a phone that handled 70 fps before; consider timer queries or a cost estimate from rAF timing instead); (3) the sky shader's cost since version 67 (`a076c0c`: 32-bit float tables read by four `texelFetch`es in `hdrTex`, `portable.js`) and the cloud and plant passes, at 1.3 MP; (4) the sway itself being driven from the clock tick (`vars.tick`, `conf.steps`, `js/sky/windsway.js`) at a lower rate than the sky; (5) the whole scene redrawn for a sway that only moves the plants (draw the sky once into a texture, redraw only the moving layers each frame: the 'fast path' task in TODO.md).
+- Tools: `?stats=gpu`, `?level=N&pin`, `?gov=0`, `?dpr=n`, `tools/profile` in the tests; Chromium here has only software WebGL, so the final number must come from the phone: ask the owner for the `?stats` read-outs (Auto and Low, ladder on and `?gov=0`) after each change.
+- Done when: `?stats` on a current iPhone shows about 60 fps with gaps (95%) under 20 ms while the scene is animated, at Auto and ideally at Low; the Zero's ladder tests, the Native suites and the perf budgets still pass unchanged.
 
 ## 1. Weather (asked 2026-11-07; the foundation comes first)
 
