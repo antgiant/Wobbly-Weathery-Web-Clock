@@ -7,6 +7,10 @@ on:
   push:
     tags: ['native-v*']
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'The version to release, for example 0.2.0 (the tag native-v0.2.0 is created on the branch this runs on)'
+        required: true
 
 permissions:
   contents: write
@@ -22,7 +26,10 @@ jobs:
           node-version: 22
       - name: Version from the tag
         run: |
-          echo "VERSION=$(echo "${GITHUB_REF_NAME:-native-v0.0.0}" | sed 's/^native-v//')" >> "$GITHUB_ENV"
+          V="${{ github.event.inputs.version }}"
+          [ -n "$V" ] || V="$(echo "${GITHUB_REF_NAME:-native-v0.0.0}" | sed 's/^native-v//')"
+          case "$V" in [0-9]*.[0-9]*.[0-9]*) ;; *) echo "not a version: $V"; exit 1 ;; esac
+          echo "VERSION=$V" >> "$GITHUB_ENV"
       - name: Tests
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq gcc-arm-linux-gnueabihf gcc-aarch64-linux-gnu
@@ -61,5 +68,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* --title "Native $VERSION" \
+          gh release create "native-v$VERSION" --target "$GITHUB_SHA" dist/* --title "Native $VERSION" \
             --notes "Raspberry Pi programs (the web page's own code, run without a browser). wobbly-clock-run for ARMv6 (every 32-bit Pi) and aarch64, with a .deb each. Verify with SHA256SUMS (and the .sig files with the release key). wobbly-clock-update, installed by the .deb, reads LATEST and these files." 
