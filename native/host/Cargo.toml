@@ -15,6 +15,7 @@ rquickjs = { version = "0.9", features = ["loader", "macro"] }
 libloading = "0.8"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 tiny-skia = "0.11"
+ab_glyph = "0.2"
 serde_json = "1"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 chrono-tz = "0.10"

@@ -3,6 +3,7 @@
 import './polyfills.js';
 import { parseDocument, Element, Evt, EventTarget_, Node_, Text, Doc, setLayoutHook, setCanvasFactory, computedStyle, rect } from './dom.js';
 import { layoutClock } from 'js/clocklayout.js';
+import { setPill, pillsVisible, paintPills } from './pills.js';
 import { SETTINGS } from 'schema/settings.js';
 
 const G = globalThis, A = __args, W = A.w, H = A.h;
@@ -36,6 +37,7 @@ G.navigator = { onLine: true, language: 'en-US', languages: ['en-US'], userAgent
 let searchText = A.search || '';
 if (A.at) { const q = new URLSearchParams(searchText); q.set('t', new Date(A.at).toISOString()); q.set('speed', '1'); searchText = q.toString(); }     // --at: pretend it is this moment (and let time run on)
 // a CPU doing the drawing (no usable GPU): smaller sky tables (js/sky/engine.js lutScale), unless --lut says otherwise
+G.__pillSet = (k, v) => { if (setPill(k, v) && G.__pillsChanged) G.__pillsChanged(); };       // (js/sky/alerts.js and js/clock.js say what the pills show; they are painted here: pills.js)
 G.__holdsFrames = !!A.present;       // this host can hold a finished picture until the minute (the slow clock and the seconds-off rungs draw it ahead)
 if (A.present) {
   // a clock that runs for years: every hour say how it is (uptime, memory, canvases, pictures), and restart if memory grows past a limit (systemd starts it again)
@@ -136,6 +138,7 @@ if (A.present) {
     const w = sky.width, h = sky.height; gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     const rt0 = performance.now(); const px = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px); if (A.profile) G.__pt['readPixels (picture off the GPU)'] = (G.__pt['readPixels (picture off the GPU)'] || 0) + performance.now() - rt0;
     const dim = $('dimmer'), level = dim && !dim.hidden ? Math.max(0, 1 - (parseFloat(dim.style.opacity) || 0)) : 1;
+    if (pillsVisible()) { clean = px.slice(); blendPills(px, w, h); } else clean = null;       // (the pills go on after the read-back; the picture without them is kept so a pill that only changes needs no GPU work)
     { const t0 = performance.now(); __present(w, h, px.buffer, level); if (A.profile) G.__pt['output (the sink: picture file, framebuffer or panel)'] = (G.__pt['output (the sink: picture file, framebuffer or panel)'] || 0) + performance.now() - t0; } presented++;
     const tm0 = performance.now();
     if (A.timing) {
@@ -149,6 +152,26 @@ if (A.present) {
     if (A.profile) G.__pt['send: the timing line (average colour, text)'] = (G.__pt['send: the timing line (average colour, text)'] || 0) + performance.now() - tm0;
     if (A.profile && typeof __qjsgc === 'function') { __print('--- the JavaScript heap ---'); __print('  the program holds ' + (typeof __rss === 'function' ? Math.round(__rss()) : '?') + ' MB'); const gc = __qjsgc(); __print('  a full collection takes ' + (Math.round(gc * 10) / 10) + ' ms'); }
     if (A.profile && G.__profDump) { const pd0 = performance.now(); G.__profDump(); G.__pt['the profile report itself (it is inside the "send" timer above, and not part of a real frame)'] = performance.now() - pd0; }
+  };
+  let clean = null;                 // the last picture as the GPU made it, kept while pills show
+  let pillRect = '';
+  const blendPills = (px, w, h) => {
+    const p = paintPills(w, h); if (!p) return;
+    __blend(px.buffer, p.rgba, `${w},${h},${p.x},${p.y},${p.w},${p.h}`);
+    const r = `${p.x},${p.y},${p.w},${p.h}`; if (A.timing && r !== pillRect) { pillRect = r; __print('pills: ' + r + ' (x, y, width, height from the top left)'); }       // (tests read this line)
+  };
+  let pillTimer = 0;
+  G.__pillsChanged = () => {         // a pill appeared, went or changed (the countdown's seconds): show it without drawing the sky again
+    if (pillTimer) return;
+    pillTimer = setTimeout(() => {
+      pillTimer = 0;
+      const e = G.__sky; if (!e) return;
+      const w = sky.width, h = sky.height;
+      if (!clean || clean.length !== w * h * 4) { e.redrawGlass(); return; }       // no clean picture (the pills were not showing): one ordinary frame carries them
+      const px = clean.slice(); if (pillsVisible()) blendPills(px, w, h); else clean = null;
+      const dim = $('dimmer'), level = dim && !dim.hidden ? Math.max(0, 1 - (parseFloat(dim.style.opacity) || 0)) : 1;
+      __present(w, h, px.buffer, level); presented++;
+    }, 120);
   };
   await until(() => !!G.__sky, 30000);
   if (A.profile && G.__sky) {      // time the engine's own CPU-side parts (the drawing inside them is counted by the GL profile)

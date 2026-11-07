@@ -67,6 +67,7 @@ export async function updateRain() {
       if (pill.dataset.html !== html) { pill.dataset.html = html; pill.innerHTML = html; }
     }
   }
+  if (window.__pillSet) window.__pillSet('rain', show ? { level: a.level, text: rainText(a) } : null);       // (the Raspberry Pi program draws the pills itself: native/host/js/pills.js)
   if (status) status.textContent = !conf.rainAlert ? '' : !a ? 'Waiting for the forecast…' : show ? rainText(a) : 'No rain worth an umbrella before 11 pm.';
   if (conf.screenMode === 'led') updateCountdown();                          // the LED panel draws the umbrella itself
 }
@@ -82,7 +83,8 @@ export function updateCountdown() {
   const el = document.getElementById('sunCountdown');
   if (!el || !engine) return;
   const mode = conf.countdown, led = conf.screenMode === 'led';
-  if (!mode || mode === 'off') { showing = false; el.hidden = true; if (led) drawLedCard(null, 0, false, rainState.a); return; }
+  const sunPill = (v) => { if (window.__pillSet) window.__pillSet('sun', v); };
+  if (!mode || mode === 'off') { sunPill(null); showing = false; el.hidden = true; if (led) drawLedCard(null, 0, false, rainState.a); return; }
   const d = now();
   const lead = num(conf.countdownLead, 20);
   const kind = conf.countdownKind || 'sun';
@@ -90,13 +92,14 @@ export function updateCountdown() {
   showing = !!st;
   if (led) { el.hidden = true; drawLedCard(st, lead * 60000, false, rainState.a); return; }
   drawLedCard(null, 0, true);
-  if (!st) { el.hidden = true; return; }
+  if (!st) { sunPill(null); el.hidden = true; return; }
   const rise = st.kind === 'sunrise', name = st.name, glyph = st.body === 'moon' ? '☾' : '☀';
   const total = Math.ceil(Math.max(0, st.msLeft) / 1000);
   const mm = String(Math.floor(total / 60)).padStart(2, '0'), ss = String(total % 60).padStart(2, '0');
   const html = st.msLeft <= 0
     ? `<span class="icon" aria-hidden="true">${glyph}</span><span class="what">${name}</span>`
     : `<span class="icon" aria-hidden="true">${glyph}${rise ? '↑' : '↓'}</span><span class="what">${name} in</span><span class="time">${mm}:${ss}</span>`;
+  sunPill({ kind: st.kind, body: st.body, name, left: st.msLeft <= 0 ? null : mm + ':' + ss });
   if (el.dataset.html !== html) { el.dataset.html = html; el.innerHTML = html; }
   el.dataset.kind = st.kind;
   el.dataset.body = st.body;

@@ -131,6 +131,7 @@ function updateTimerPill(counting, left, done) {
   var text = counting ? (conf.timerLabel ? conf.timerLabel + ' · ' : '') + (done ? 'today' : unitsFor(left, !hideSec())) : '';
   if (text === pillText) return;
   pillText = text;
+  if (window.__pillSet) window.__pillSet('timer', counting ? text : null);       // (the Raspberry Pi program draws the pills itself: native/host/js/pills.js)
   el.textContent = text;
   el.hidden = !counting;
 }
