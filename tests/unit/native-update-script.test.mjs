@@ -4,7 +4,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { execFileSync, spawnSync } from 'child_process';
+import { execFileSync, spawnSync, spawn } from 'child_process';
 import crypto from 'crypto';
 import { check, done } from '../lib/check.mjs';
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
@@ -85,4 +85,14 @@ r = run(mc, release('x86', '0.2.0'), { WOBBLY_ARCH: 'x86_64' });
 check('an unknown machine type says so', r.status !== 0 && /no program for this machine/.test(r.stderr + r.stdout));
 const timer = fs.readFileSync(path.join(root, 'native/scripts/wobbly-clock-update.timer'), 'utf8');
 check('the timer runs in the quiet hours (3 at night, spread over an hour) and catches up if the Pi was off', /OnCalendar=\*-\*-\* 03:00:00/.test(timer) && /RandomizedDelaySec=3600/.test(timer) && /Persistent=true/.test(timer));
+// 8. over http, through a redirect, the way GitHub's "latest release" address works (it answers 302 and the file is somewhere else): curl must follow it (it did not: the installed 0.2.1 read an empty LATEST)
+{
+  const rel = release('redirect', '0.2.0').replace('file://', '');
+  const server = `const h=require('http'),f=require('fs'),p=require('path');const rel=${JSON.stringify(rel)};h.createServer((q,s)=>{const n=p.basename(q.url);if(q.url.startsWith('/latest/download/')){s.writeHead(302,{Location:'/files/'+n});s.end();}else if(q.url.startsWith('/files/')&&f.existsSync(p.join(rel,n))){s.end(f.readFileSync(p.join(rel,n)));}else{s.writeHead(404);s.end();}}).listen(0,'127.0.0.1',function(){console.log(this.address().port)})`;
+  const srv = spawn('node', ['-e', server], { stdio: ['ignore', 'pipe', 'inherit'] });
+  const port = await new Promise((res) => srv.stdout.once('data', (d) => res(String(d).trim())));
+  mc = machine('0.1.0'); r = run(mc, `http://127.0.0.1:${port}/latest/download`);
+  srv.kill();
+  check('a release behind a redirect (GitHub\'s latest-release address) is found, checked and installed', r.status === 0 && mc.version() === 'wobbly-clock-run 0.2.0', r.stdout + r.stderr);
+}
 done();
