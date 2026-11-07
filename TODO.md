@@ -18,6 +18,15 @@ Things we know we want, not yet done. Newest first. Updated 2026-11-07. (The lon
   renderer, not the Zero's GPU driver.
 - **The iPhone**: the status line under Settings > Scene > Quality, `?stats`, and the sunrise banding fix (version 67 and later; "Update and reload").
 
+## Backlog (added 2026-11-07)
+
+- **Keep screen on stops working after leaving the app on iPhone.** Installed on an iPhone as a Home Screen app, "keep the screen on" works until the owner switches to another app and then returns; after that
+  the screen sleeps again. Where to look: `js/wakelock.js`. On return, `visibilitychange` clears the sentinel and calls `acquire(false)`, which has no user activation, and on iOS the silent video is what holds
+  the screen (Apple's Wake Lock does not work in Home Screen apps, WebKit bug 254545). Suspects: iOS pauses the looping `<video>` when the app is backgrounded and `play()` is refused without a gesture, so
+  `holding()` stays false until a tap; the retry banner may not show or may not be noticed. Check: also listen for `pageshow` and `focus` (iOS resume does not always fire `visibilitychange`), re-`play()` the
+  video on resume (and on the video's own `pause` event), recreate the video element if `play()` is refused, and show the "tap to keep awake" banner at once when the hold is lost. Needs testing on the real
+  phone (Chromium here cannot reproduce the iOS suspend).
+
 ## The capability ladder: what is left
 
 Built: ten rungs (weather, ambient, tick, seconds off, slow clock, solid digits, flat ground, gradient sky, half and quarter picture) layered over the resolution governor, on the Pi and on the web
