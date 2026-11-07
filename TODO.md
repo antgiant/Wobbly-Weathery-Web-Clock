@@ -43,9 +43,10 @@ Built: ten rungs (weather, ambient, tick, seconds off, slow clock, solid digits,
 
 ## CI performance breakdown: what is left
 
-Done: the recording (per-suite table on every run), each suite's covers line, docs/TESTS.md generated from a CI run (refreshed 2026-11-07 from run 207), and the three shares dealt by measured cost (FULL_COST in
-tests/run.mjs, refreshed from the same run: the shares now come out at about 270, 272 and 275 s of suites; they were 191, 350 and 276 s, so CI's browser wall time should fall from 5:52 to about 4:40).
-Still to do: cut page opens (46% of the browser time is opening pages: 182 pages at about 2.1 s) by reusing a page for several checks; shorter settles (37% is deliberate waiting: perf 75 s, idle 32 s, alerts 37 s);
+Done: the recording (per-suite table on every run), each suite's covers line, docs/TESTS.md generated from a CI run, and the three shares dealt by cost (FULL_COST in tests/run.mjs).
+Measured twice (runs 207 and 217, 2026-11-07): the same suites run up to 40% faster or slower from one runner to the next (digitweather 118 s and 68 s), so one run's numbers mislead: run 217's shares took 2:50, 5:46 and 3:17
+although they had been dealt to be equal. FULL_COST is now the average of both runs (about 256, 255 and 251 s a share). Read the next few runs and adjust.
+Still to do: cut page opens (46% of the browser time is opening pages, about 2 s each) by reusing a page for several checks; shorter settles (37% is deliberate waiting: perf 75 s, idle 32 s, alerts 37 s);
 decide what belongs in the fast local tier (`tests/impact.mjs`). Browser tests flake on slow runners: some poll instead of waiting a fixed time (wind, ladder); digitweather once failed the same way.
 
 ## CI hygiene: never merge on a red CI

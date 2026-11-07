@@ -51,7 +51,7 @@ export async function run(t) {
 
   // the digits are in the middle of the screen: the ink of the row (the paths' own boxes) is within 1.2% of the width of the middle, with the leading digit hidden or shown, seconds or not (it sat 1 to 4% left)
   for (const [label, qq, conf] of [['2:33, no seconds', 't=2026-11-07T07:33:30Z&speed=0', { hideSeconds: true }], ['2:33, seconds', 't=2026-11-07T07:33:30Z&speed=0', {}], ['12:33, no seconds', 't=2026-11-07T17:33:30Z&speed=0', { hideSeconds: true }], ['12:33, seconds', 't=2026-11-07T17:33:30Z&speed=0', {}], ['02:33 (24-hour), no seconds', 't=2026-11-07T07:33:30Z&speed=0', { hideSeconds: true, twentyFourHourClock: true }]]) {
-    if (t.quick && !/^2:33, no/.test(label) && !/^12:33, no/.test(label)) continue;
+    if (!/^2:33, no/.test(label) && !/^12:33, seconds/.test(label)) continue;       // (two pages are enough here: the unit test and the clocklayout suite cover the rest of the layouts)
     const hh = await t.open({ fast: true, query: qq, width: 1280, height: 720, conf });
     await hh.settle(500);
     const r = await hh.page.evaluate(() => { let l = Infinity, rr = -Infinity; document.querySelectorAll('#clock svg').forEach((el) => { if (getComputedStyle(el).display === 'none') return; el.querySelectorAll('path').forEach((p) => { const b = p.getBoundingClientRect(); if (b.width) { l = Math.min(l, b.left); rr = Math.max(rr, b.right); } }); }); return { c: (l + rr) / 2, vw: innerWidth }; });

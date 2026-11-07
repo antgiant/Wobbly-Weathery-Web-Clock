@@ -57,7 +57,7 @@ md += `## Where it could be faster
 
 - **Fewer page opens.** Every page costs about the same to get ready, so the suites with the most pages cost the most; checks that only need a different time or setting could reuse one page.
 - **Shorter waits.** Waits are fixed pauses; waiting for the event (the next frame, a message) is shorter and steadier.
-- **Keep the shares balanced.** CI's wall time is its slowest share. The suites are dealt to the three shares by cost (FULL_COST in tests/run.mjs, longest first to the lightest share): when a suite's time changes or a suite is added, copy its total from the table above into FULL_COST.
+- **Keep the shares balanced.** CI's wall time is its slowest share. The suites are dealt to the three shares by cost (FULL_COST in tests/run.mjs, longest first to the lightest share): when a suite's time changes or a suite is added, copy its total from the table above into FULL_COST. Runner speed varies by up to 40% between runs (runs 207 and 217 of the same suites), so deal by the average of several runs.
 `;
 fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
 fs.writeFileSync(path.join(root, 'docs/TESTS.md'), md);
