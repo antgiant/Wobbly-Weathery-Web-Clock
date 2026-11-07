@@ -137,6 +137,39 @@ jobs:
           timeout 240 native/target/release/wobbly-clock-run --config "$RUNNER_TEMP/pills.conf" --software 1 --sink "ppm:$RUNNER_TEMP/pills" --size 1280x720 --frames 45 --at 1782091200000 --timing 1 > "$RUNNER_TEMP/pills.log" 2>&1 || { tail -20 "$RUNNER_TEMP/pills.log"; exit 1; }
           node native/host/tests/pills-check.mjs "$RUNNER_TEMP/pills.log" "$(ls "$RUNNER_TEMP"/pills/frame-*.ppm | tail -1)"
           cp "$(ls "$RUNNER_TEMP"/pills/frame-*.ppm | tail -1)" "$RUNNER_TEMP/pills-last.ppm"
+      - name: "An LED panel (32 x 64: two 32 x 32 panels, one above the other) gets the LED card and no pills"
+        run: |
+          set -e
+          cat > "$RUNNER_TEMP/matrix-32x64.cfg" <<'CFG'
+          display_width = 32;
+          display_height = 64;
+          panel_width = 32;
+          panel_height = 32;
+          chain_length = 2;
+          parallel_count = 1;
+          panels = (
+            ( { order = 0; rotate = 0; } ),
+            ( { order = 1; rotate = 0; } )
+          )
+          CFG
+          cat > "$RUNNER_TEMP/led.conf" <<CONF
+          output = matrix
+          matrixConfig = $RUNNER_TEMP/matrix-32x64.cfg
+          weatherMode = rain
+          rainAlert = true
+          countdown = both
+          countdownLead = 30
+          location_latitude = 41.88
+          location_longitude = -87.63
+          timeZone = America/Chicago
+          clockMode = countdown
+          timerTarget = 2027-01-01T00:00
+          timerLabel = New Year
+          CONF
+          mkdir -p "$RUNNER_TEMP/led"
+          timeout 240 native/target/release/wobbly-clock-run --config "$RUNNER_TEMP/led.conf" --software 1 --sink "ppm:$RUNNER_TEMP/led" --frames 45 --at 1782091200000 --timing 1 > "$RUNNER_TEMP/led.log" 2>&1 || { tail -20 "$RUNNER_TEMP/led.log"; exit 1; }
+          node native/host/tests/led-check.mjs "$RUNNER_TEMP/led.log" "$(ls "$RUNNER_TEMP"/led/canvas-*.ppm | tail -1)"
+          cp "$(ls "$RUNNER_TEMP"/led/canvas-*.ppm | tail -1)" "$RUNNER_TEMP/led-last.ppm"
       - name: The pictures
         if: always()
         uses: actions/upload-artifact@v4
