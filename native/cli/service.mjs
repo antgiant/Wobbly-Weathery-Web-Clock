@@ -18,7 +18,9 @@ WatchdogSec=600
 ExecStart=${bin} --config ${config} --maxrss 350
 Restart=on-failure
 RestartSec=5
-${isMatrix ? '# the matrix library opens the GPIO as root, then drops privileges itself\n' : `User=${user}\nSupplementaryGroups=video render\n`}Nice=${isMatrix ? '-5' : '0'}
+${isMatrix ? '# the matrix library opens the GPIO as root, then drops privileges itself\n' : `User=${user}\nSupplementaryGroups=video render\n`}${isMatrix ? '' : `# at boot the framebuffer and the GPU's device files appear a moment after this unit could start (and get their permissions a moment later still): without this wait the GPU is refused and Mesa quietly takes the CPU
+ExecStartPre=/bin/sh -c 'for n in $$(seq 90); do [ -s /sys/class/graphics/fb0/virtual_size ] && [ -r /dev/dri/renderD128 ] && [ -w /dev/dri/card0 ] && exit 0; sleep 1; done; exit 0'
+`}Nice=${isMatrix ? '-5' : '0'}
 # the renderer says READY and, every 30 s while pictures keep coming, WATCHDOG=1; a hang means no word for 10 minutes and systemd restarts it.
 # --maxrss: if memory ever grows past 350 MB the program exits and is restarted (a safety valve; the soak test shows it should never be needed)
 TimeoutStartSec=infinity
