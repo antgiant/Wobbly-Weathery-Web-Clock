@@ -108,6 +108,33 @@ fn n_tzoffset(zone: String, ms: f64) -> f64 {
         Err(_) => f64::NAN,
     }
 }
+/// The zone to use from what the system says, in order: TZ, /etc/timezone's text (Debian), where /etc/localtime points. The first that names a zone this program knows; "" when none.
+fn pick_zone(tz: Option<&str>, timezone_file: Option<&str>, localtime_link: Option<&str>) -> String {
+    let ok = |z: &str| !z.is_empty() && z.parse::<chrono_tz::Tz>().is_ok();
+    if let Some(z) = tz { let z = z.trim_start_matches(':'); if ok(z) { return z.to_string(); } }
+    if let Some(t) = timezone_file { let z = t.trim(); if ok(z) { return z.to_string(); } }
+    if let Some(p) = localtime_link { if let Some(i) = p.find("zoneinfo/") { let z = &p[i + 9..]; if ok(z) { return z.to_string(); } } }
+    String::new()
+}
+/// The Pi's own time zone (what `timedatectl` shows).
+fn n_syszone() -> String {
+    let link = std::fs::read_link("/etc/localtime").ok().map(|p| p.to_string_lossy().to_string());
+    pick_zone(std::env::var("TZ").ok().as_deref(), std::fs::read_to_string("/etc/timezone").ok().as_deref(), link.as_deref())
+}
+#[cfg(test)]
+mod zone_tests {
+    use super::pick_zone;
+    #[test]
+    fn the_zone_comes_from_the_first_source_that_names_one() {
+        assert_eq!(pick_zone(Some("America/New_York"), Some("Europe/Paris\n"), None), "America/New_York");
+        assert_eq!(pick_zone(Some(":Europe/Paris"), None, None), "Europe/Paris");
+        assert_eq!(pick_zone(None, Some("America/Chicago\n"), Some("/usr/share/zoneinfo/Asia/Tokyo")), "America/Chicago");
+        assert_eq!(pick_zone(None, None, Some("/usr/share/zoneinfo/Asia/Tokyo")), "Asia/Tokyo");
+        assert_eq!(pick_zone(Some("Bogus/Zone"), Some(""), Some("../zoneinfo/America/Denver")), "America/Denver");
+        assert_eq!(pick_zone(None, None, None), "");
+        assert_eq!(pick_zone(Some(""), Some("garbage"), Some("/etc/foo")), "");
+    }
+}
 fn n_tzlist() -> Vec<String> { chrono_tz::TZ_VARIANTS.iter().map(|t| t.name().to_string()).collect() }
 
 // ---- storage: the page's localStorage, kept in one JSON file -----------------------------------------------------------------
@@ -365,6 +392,7 @@ fn main() {
         g.set("__c2d_read", Function::new(ctx.clone(), n_c2d_read)).unwrap();
         g.set("__tzoffset", Function::new(ctx.clone(), n_tzoffset)).unwrap();
         g.set("__tzlist", Function::new(ctx.clone(), n_tzlist)).unwrap();
+        g.set("__syszone", Function::new(ctx.clone(), n_syszone)).unwrap();
         g.set("__store_read", Function::new(ctx.clone(), n_store_read)).unwrap();
         g.set("__store_write", Function::new(ctx.clone(), n_store_write)).unwrap();
         g.set("__http_start", Function::new(ctx.clone(), n_http_start)).unwrap();

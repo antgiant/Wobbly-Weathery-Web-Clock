@@ -44,7 +44,7 @@ function zoneParts(date, zone) {
   const d = new Date(ms + off * 60000);
   return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate(), hour: d.getUTCHours(), minute: d.getUTCMinutes(), second: d.getUTCSeconds(), weekday: d.getUTCDay(), off };
 }
-const sysZone = () => (G.__args && G.__args.tz) || 'UTC';
+const sysZone = () => (G.__args && G.__args.tz) || (typeof __syszone === 'function' && __syszone()) || 'UTC';       // --tz, then the Pi's own zone (TZ, /etc/timezone, /etc/localtime), then UTC
 class DateTimeFormat {
   constructor(locale, o = {}) { this.o = { ...o }; if (this.o.timeZone && Number.isNaN(__tzoffset(this.o.timeZone, 0))) throw new RangeError('Invalid time zone specified: ' + this.o.timeZone); }
   resolvedOptions() { const h12 = this.o.hour12 !== undefined ? this.o.hour12 : this.o.hourCycle ? this.o.hourCycle === 'h12' || this.o.hourCycle === 'h11' : (G.__args && G.__args.hour12 !== undefined ? !!G.__args.hour12 : true); return { locale: 'en-US', calendar: 'gregory', numberingSystem: 'latn', timeZone: this.o.timeZone || sysZone(), hourCycle: h12 ? 'h12' : 'h23', hour12: h12 }; }
