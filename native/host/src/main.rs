@@ -186,12 +186,13 @@ fn n_tzoffset(zone: String, ms: f64) -> f64 {
         Err(_) => f64::NAN,
     }
 }
-/// The zone to use from what the system says, in order: TZ, /etc/timezone's text (Debian), where /etc/localtime points. The first that names a zone this program knows; "" when none.
+/// The zone to use from what the system says, in order: TZ, where /etc/localtime points (what timedatectl and the C library use), then /etc/timezone's text (a Debian habit that can be stale: an image
+/// that says Etc/UTC there while /etc/localtime points at the real zone). The first that names a zone this program knows; "" when none.
 fn pick_zone(tz: Option<&str>, timezone_file: Option<&str>, localtime_link: Option<&str>) -> String {
     let ok = |z: &str| !z.is_empty() && z.parse::<chrono_tz::Tz>().is_ok();
     if let Some(z) = tz { let z = z.trim_start_matches(':'); if ok(z) { return z.to_string(); } }
-    if let Some(t) = timezone_file { let z = t.trim(); if ok(z) { return z.to_string(); } }
     if let Some(p) = localtime_link { if let Some(i) = p.find("zoneinfo/") { let z = &p[i + 9..]; if ok(z) { return z.to_string(); } } }
+    if let Some(t) = timezone_file { let z = t.trim(); if ok(z) { return z.to_string(); } }
     String::new()
 }
 /// The Pi's own time zone (what `timedatectl` shows).
@@ -206,7 +207,9 @@ mod zone_tests {
     fn the_zone_comes_from_the_first_source_that_names_one() {
         assert_eq!(pick_zone(Some("America/New_York"), Some("Europe/Paris\n"), None), "America/New_York");
         assert_eq!(pick_zone(Some(":Europe/Paris"), None, None), "Europe/Paris");
-        assert_eq!(pick_zone(None, Some("America/Chicago\n"), Some("/usr/share/zoneinfo/Asia/Tokyo")), "America/Chicago");
+        assert_eq!(pick_zone(None, Some("America/Chicago\n"), Some("/usr/share/zoneinfo/Asia/Tokyo")), "Asia/Tokyo");       // /etc/localtime is what timedatectl shows
+        assert_eq!(pick_zone(None, Some("Etc/UTC\n"), Some("/usr/share/zoneinfo/America/New_York")), "America/New_York");   // a stale /etc/timezone loses
+        assert_eq!(pick_zone(None, Some("America/Chicago\n"), None), "America/Chicago");                                     // no link (a copied file): the text
         assert_eq!(pick_zone(None, None, Some("/usr/share/zoneinfo/Asia/Tokyo")), "Asia/Tokyo");
         assert_eq!(pick_zone(Some("Bogus/Zone"), Some(""), Some("../zoneinfo/America/Denver")), "America/Denver");
         assert_eq!(pick_zone(None, None, None), "");
