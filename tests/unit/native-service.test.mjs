@@ -1,5 +1,6 @@
 // Running on boot, updating itself, and rolling back (native/cli/service.mjs, update.mjs).
 import crypto from 'crypto';
+import fs from 'fs';
 import { check, done } from '../lib/check.mjs';
 const S = await import('../../native/cli/service.mjs');
 const U = await import('../../native/cli/update.mjs');
@@ -10,6 +11,8 @@ check('the service starts after the network, restarts on failure, logs to the jo
 check('HDMI runs as an unprivileged user in the video group; the LED panel opens the GPIO first and is not forced to a user', /User=wobbly/.test(unit) && /SupplementaryGroups=video/.test(unit) && !/User=/.test(led) && /Nice=-5/.test(led));
 check('the service can only write its own state directory', /ProtectSystem=strict/.test(unit) && /ReadWritePaths=\/var\/lib\/wobbly-clock/.test(unit) && /ProtectHome=true/.test(unit));
 check('the HDMI unit waits for the framebuffer and the GPU before it starts (at boot they appear late; $$ so systemd leaves the shell its variables)', /ExecStartPre=.*\$\$\(seq.*fb0\/virtual_size.*renderD128/.test(unit) && !/ExecStartPre/.test(led));
+check('the memory safety valve and the shader-cache cap are in the HDMI unit (a clock that runs for years)', /--maxrss 350/.test(unit) && /MESA_SHADER_CACHE_MAX_SIZE=64M/.test(unit));
+check('the packaged unit keeps the safety valve (make-deb rewrites the ExecStart line)', /--maxrss 350/.test(fs.readFileSync(new URL('../../native/scripts/make-deb.sh', import.meta.url), 'utf8')));
 check('a different binary and config path are honoured', /ExecStart=\/opt\/w --config \/x\.conf/.test(S.unit({ bin: '/opt/w', config: '/x.conf' })));
 check('a config on the boot partition is applied once, then not again', S.bootConfigAction(true, null, 'a').apply && !S.bootConfigAction(true, 'a', 'a').apply && !S.bootConfigAction(false).apply && S.BOOT_CONFIG_PATHS[0] === '/boot/firmware/wobbly-clock.conf');
 check('with no configuration the first boot says so, with what to do', /wobbly-clock setup/.test(S.firstBoot(false).say) && S.firstBoot(true) === null);
