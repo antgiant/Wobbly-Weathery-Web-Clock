@@ -36,7 +36,7 @@ Built: ten rungs (weather, ambient, tick, seconds off, slow clock, solid digits,
 - **2038**: the 32-bit builds use a 32-bit time counter (glibc 2.31, bullseye). Fix: Raspberry Pi OS built on Debian 13 (trixie) plus a build with 64-bit time. Whether trixie still runs the ARMv6 Zero is
   unconfirmed (a blog says yes): try a spare SD card (`dpkg --print-architecture`, `date -d @2147483648`). The `aarch64` build is not affected.
 - **`docs/TRY-ON-A-PI.md` is behind**: add removing an old kiosk (`startx` in `.bash_profile`, `.xinitrc`, browser and X packages), the `video=` kernel option, the service's wait for the GPU, the update timer, `journalctl ... | grep ladder`.
-- **Pills and the settings drawer natively** (they are page furniture; the LED card already draws into the canvas). Not needed for a headless clock.
+- **Pills on the Pi: built 2026-11-07** (sun countdown, umbrella alert, countdown name: `native/host/js/pills.js`, text from an embedded Inter subset). Not done: the settings drawer and the toast, wake, shared and update banners (page furniture with nothing to tap on a headless clock); backdrop blur behind the pills (a darker capsule instead); a custom font for names outside Latin letters (they show a box).
 - Direct scan-out through KMS/GBM: not built, on purpose (a clock draws about once a second; the framebuffer copy costs a few milliseconds).
 
 ## CI performance breakdown: what is left
@@ -54,7 +54,7 @@ and the three "Browser tests (share N of 3)" jobs (Native's jobs are not in that
 ## Share links and manual location
 
 Built: short and readable links, kiosk mode, a place by coordinates, search or the built-in city list (`js/cities.js`, offline), QR code, time at another place, kiosk updates in the quiet hour.
-Not done: a QR code for links over about 210 characters (use the short link).
+(Done 2026-11-07) a QR code for any link up to 2331 characters: the encoder makes versions 1 to 40, every version at both levels decoded with OpenCV; a link over about 210 characters says its code is dense and the short link is easier to scan.
 
 ## Built (was planning on 2026-11-02 to 11-04)
 

@@ -1,13 +1,34 @@
-// A small QR code encoder for share links: byte mode, versions 1 to 10, error correction L or M, the mask chosen by the standard's
-// penalty score. Pure functions, no DOM (render() returns rows of booleans). A short link fits version 3; a readable one version 5 to 8.
+// A small QR code encoder for share links: byte mode, versions 1 to 40 (up to 2331 bytes at M, 2953 at L), error correction L or M, the mask chosen by the
+// standard's penalty score. Pure functions, no DOM (render() returns rows of booleans). A short link fits version 3; a readable one version 5 to 8.
 // Checked by decoding its output with an independent decoder (tests/unit/qr.test.mjs holds golden codes made that way).
 
-// [error-correction codewords per block, blocks in group 1, data codewords each, blocks in group 2, data codewords each], per version 1..10
-const TABLE = {
-  L: [[7, 1, 19], [10, 1, 34], [15, 1, 55], [20, 1, 80], [26, 1, 108], [18, 2, 68], [20, 2, 78], [24, 2, 97], [30, 2, 116], [18, 2, 68, 2, 69]],
-  M: [[10, 1, 16], [16, 1, 28], [26, 1, 44], [18, 2, 32], [24, 2, 43], [16, 4, 27], [18, 4, 31], [22, 2, 38, 2, 39], [22, 3, 36, 2, 37], [26, 4, 43, 1, 44]],
+// The block structure comes from two small tables and the number of data modules a version has (ISO 18004): error-correction codewords per block, and blocks, for versions 1..40.
+const ECC_PER_BLOCK = {
+  L: [7, 10, 15, 20, 26, 18, 20, 24, 30, 18, 20, 24, 26, 30, 22, 24, 28, 30, 28, 28, 28, 28, 30, 30, 26, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30],
+  M: [10, 16, 26, 18, 24, 16, 18, 22, 22, 26, 30, 22, 22, 24, 24, 28, 28, 26, 26, 26, 26, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28],
 };
-const ALIGN = [[], [6, 18], [6, 22], [6, 26], [6, 30], [6, 34], [6, 22, 38], [6, 24, 42], [6, 26, 46], [6, 28, 50]];
+const BLOCKS = {
+  L: [1, 1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4, 6, 6, 6, 6, 7, 8, 8, 9, 9, 10, 12, 12, 12, 13, 14, 15, 16, 17, 18, 19, 19, 20, 21, 22, 24, 25],
+  M: [1, 1, 1, 2, 2, 4, 4, 4, 5, 5, 5, 8, 9, 9, 10, 10, 11, 13, 14, 16, 17, 17, 18, 20, 21, 23, 25, 26, 28, 29, 31, 33, 35, 37, 38, 40, 43, 45, 47, 49],
+};
+/** The alignment patterns' row and column positions for a version. */
+function alignAt(v) {
+  if (v === 1) return [];
+  const count = Math.floor(v / 7) + 2, size = 17 + 4 * v, step = v === 32 ? 26 : Math.ceil((v * 4 + 4) / (count * 2 - 2)) * 2, out = [6];
+  for (let pos = size - 7; out.length < count; pos -= step) out.splice(1, 0, pos);
+  return out;
+}
+/** Modules that carry data and error correction (everything but the finders, timing, alignment, format and version areas). */
+function rawModules(v) {
+  let n = (16 * v + 128) * v + 64;
+  if (v >= 2) { const a = Math.floor(v / 7) + 2; n -= (25 * a - 10) * a - 55; if (v >= 7) n -= 36; }
+  return n;
+}
+/** [error-correction codewords per block, blocks in group 1, data codewords each, blocks in group 2, data codewords each] */
+function spec(level, v) {
+  const words = rawModules(v) >> 3, ec = ECC_PER_BLOCK[level][v - 1], nb = BLOCKS[level][v - 1], short = nb - (words % nb), len = Math.floor(words / nb);
+  return [ec, short, len - ec, nb - short, len + 1 - ec];
+}
 const FORMAT_BITS = { L: 1, M: 0 };
 
 // ---- Reed-Solomon over GF(256) (x^8 + x^4 + x^3 + x^2 + 1) ----
@@ -26,10 +47,10 @@ function remainder(data, n) {
   return r;
 }
 
-const capacity = (level, v) => { const [, b1, d1, b2 = 0, d2 = 0] = TABLE[level][v - 1]; return b1 * d1 + b2 * d2; };
-/** The smallest version (1 to 10) that holds `bytes` bytes at this level, or 0 when none does. */
+const capacity = (level, v) => { const [, b1, d1, b2 = 0, d2 = 0] = spec(level, v); return b1 * d1 + b2 * d2; };
+/** The smallest version (1 to 40) that holds `bytes` bytes at this level, or 0 when none does. */
 export function fits(nbytes, level = 'M') {
-  for (let v = 1; v <= 10; v++) if (capacity(level, v) * 8 >= 4 + (v < 10 ? 8 : 16) + nbytes * 8) return v;
+  for (let v = 1; v <= 40; v++) if (capacity(level, v) * 8 >= 4 + (v < 10 ? 8 : 16) + nbytes * 8) return v;
   return 0;
 }
 
@@ -41,7 +62,7 @@ function codewords(bytes, level, v) {
   while (bits.length % 8) bits.push(0);
   for (let pad = 0xec; bits.length < total; pad ^= 0xec ^ 0x11) put(pad, 8);
   const data = []; for (let i = 0; i < bits.length; i += 8) data.push(parseInt(bits.slice(i, i + 8).join(''), 2));
-  const [ec, b1, d1, b2 = 0, d2 = 0] = TABLE[level][v - 1], blocks = [];
+  const [ec, b1, d1, b2 = 0, d2 = 0] = spec(level, v), blocks = [];
   let at = 0;
   for (let i = 0; i < b1 + b2; i++) { const n = i < b1 ? d1 : d2, d = data.slice(at, at + n); at += n; blocks.push({ d, e: remainder(d, ec) }); }
   const out = [], longest = Math.max(d1, d2);
@@ -57,7 +78,7 @@ function blank(v) {
   const finder = (r0, c0) => { for (let r = -1; r <= 7; r++) for (let c = -1; c <= 7; c++) { const edge = r === 0 || r === 6 || c === 0 || c === 6, core = r >= 2 && r <= 4 && c >= 2 && c <= 4; set(r0 + r, c0 + c, r >= 0 && r <= 6 && c >= 0 && c <= 6 && (edge || core)); } };
   finder(0, 0); finder(0, n - 7); finder(n - 7, 0);
   for (let i = 8; i < n - 8; i++) { set(6, i, i % 2 === 0); set(i, 6, i % 2 === 0); }
-  const pos = ALIGN[v - 1];
+  const pos = alignAt(v);
   for (const r of pos) for (const c of pos) { if ((r === 6 && c === 6) || (r === 6 && c === pos[pos.length - 1]) || (c === 6 && r === pos[pos.length - 1])) continue; for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) set(r + dr, c + dc, Math.max(Math.abs(dr), Math.abs(dc)) !== 1); }
   for (let i = 0; i < 9; i++) { fixed[8][i] = true; fixed[i][8] = true; }         // format areas (filled later)
   for (let i = 0; i < 8; i++) { fixed[8][n - 1 - i] = true; fixed[n - 1 - i][8] = true; }
@@ -71,7 +92,7 @@ const MASKS = [(r, c) => (r + c) % 2 === 0, (r) => r % 2 === 0, (r, c) => c % 3 
 function place(g, v, words, level, mask) {
   const { n, fixed } = g, cell = g.cell.map((row) => row.slice()), bits = [];
   for (const w of words) for (let i = 7; i >= 0; i--) bits.push((w >> i) & 1);
-  if (v >= 2 && v <= 6) for (let i = 0; i < 7; i++) bits.push(0);
+  for (let i = 0, rem = rawModules(v) % 8; i < rem; i++) bits.push(0);                // (the remainder bits: 7 for versions 2 to 6, 3 for 14 to 20 and 28 to 34, 4 for 21 to 27)
   let k = 0, up = true;
   for (let c = n - 1; c > 0; c -= 2) {
     if (c === 6) c = 5;
@@ -110,7 +131,7 @@ function penalty(m) {
   return p + Math.floor(Math.abs(pct - 50) / 5) * 10;
 }
 
-/** @returns {boolean[][]|null} rows of modules (true = dark), without the quiet zone; null when the text is too long (more than ~210 bytes). */
+/** @returns {boolean[][]|null} rows of modules (true = dark), without the quiet zone; null when the text is too long (more than 2331 bytes at M, 2953 at L). */
 export function render(text, level = 'M') {
   const bytes = Array.from(new TextEncoder().encode(String(text)));
   const v = fits(bytes.length, level);
