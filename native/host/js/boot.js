@@ -159,6 +159,11 @@ if (A.present) {
       e[k] = (...a) => { const t = performance.now(), g0 = G.__glClock; const r = f(...a); const d = performance.now() - t; G.__pt[label] = (G.__pt[label] || 0) + d; const js = label + ' [its own JavaScript, less the GL calls]'; G.__pt[js] = (G.__pt[js] || 0) + d - (G.__glClock - g0); return r; };
     }
   }
+  if (G.__sky && G.__sky.gov) {                        // where the capability ladder stands, said whenever it moves (journalctl -u wobbly-clock | grep ladder)
+    const e = G.__sky, was = e.onKnobs; let last = -1;
+    const say = (k) => { if (k && k.rung !== last) { last = k.rung; __print('ladder: rung ' + k.rung + ' (' + k.name + ')' + (e.gov.why ? ', ' + e.gov.why : '') + ', sky scale ' + (k.scale != null ? k.scale.toFixed(2) : '?')); } };
+    e.onKnobs = (k) => { if (was) was(k); say(k); }; say(e.knobs);
+  }
   if (A.ledCols && G.__sky) G.__sky.glass.led.gap = 0;                 // the panel needs the cells' own colours, with no dark lines between
   if (G.__sky) {                                      // every change to the picture, including a digit that only moved; several changes in one turn are one frame
     let pending = false;
