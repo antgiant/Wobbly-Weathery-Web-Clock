@@ -651,7 +651,7 @@ export class SkyEngine {
   interval() {
     const sim = getSim();
     if (this.fast || (sim && sim.scale > 1)) return 0;
-    if (this.gov) { const k = this.gov.knobs; return this._animated() ? Math.max(1000 / this.s.fps, k.skyMs * 0.25) : k.skyMs; }     // the governor decides how often the sky is redrawn
+    if (this.gov) { const k = this.gov.knobs; return this._animated() ? Math.min(this.gov.tickMs, k.skyMs) : k.skyMs; }     // the governor decides how often a still sky is redrawn; a moving one (sway, clouds, water) is drawn as fast as the measured frame cost allows, 60 a second at best (the governor's tickMs), never slowed by the still sky's
     if (this._animated()) return this.s.lowPower ? 900 : 1000 / this.s.fps;    // saving power: an animated scene (the sea) redraws only with the clock's tick, once a second
     return 1000;
   }
