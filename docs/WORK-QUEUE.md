@@ -13,6 +13,10 @@ Nothing below is built unless it says so. Each item says what was asked, what it
 - Test the Pi program here with the CPU renderer: `cargo run --release -- --config FILE --software --sink ppm:DIR --size 1280x720 --frames N --at EPOCH_MS` (add `--timing 1`), view the frames as PNG.
 - The owner's Pi: a Pi Zero W (ARMv6, VC4 GPU, OpenGL ES 2), hostname clock-bedroom, user `clock`, HDMI screen that gives no EDID (so the mode is forced on the kernel command line), the clock runs as the systemd service `wobbly-clock` (user `wobbly`). Logs: `journalctl -u wobbly-clock`.
 
+## 0. TOP PRIORITY: Pi Zero GPU memory exhausted after about 2 days (reported 2026-11-09)
+
+`vc4_bo_create ... Failed to allocate from GEM DMA helper` repeats on the console and the clock stops drawing. Full details and where to look are the first item under "In flight" in `TODO.md`. Do this before the weather work.
+
 ## 1. Weather (asked 2026-11-07; the foundation comes first)
 
 All of these are part of the "weather" rung of the capability ladder: they must switch off on weak hardware like rain does (the Zero drops weather first). Tornado graphics are **not** wanted (removed on request); tornado *notices* are (item 2).
