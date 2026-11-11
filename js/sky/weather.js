@@ -107,6 +107,7 @@ export function mapOpenMeteo(cur, air) {
   if (air && Number.isFinite(air.aerosol_optical_depth)) w.aod = clamp(air.aerosol_optical_depth, 0.01, 3);
   // dust in the air (ug/m3, the air-quality service's `dust`): 50 is a noticeable haze, 500 and more a dust storm
   if (air && Number.isFinite(air.dust)) w.dust = clamp((air.dust - 50) / 450, 0, 1);
+  if (w.dust > 0) { w.aod = Math.max(w.aod, 0.12 + 1.4 * w.dust); w.visKm = Math.min(w.visKm, 25 - 23.5 * w.dust); }        // a dust storm is thick, brown haze: you cannot see far
   w.label = 'Live';
   return w;
 }

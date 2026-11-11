@@ -47,6 +47,7 @@ check('climate needs a month of data', climateOf([1, 2, 3]) === null && climateO
   check('CAPE is kept (null when the forecast has none)', m({ cape: 1200 }).cape === 1200 && m({}).cape === null);
   check('rime: weather code 48, or fog below freezing; plain fog is not rime', m({ weather_code: 48 }).rime === 1 && m({ visibility: 200, temperature_2m: -4 }).rime === 0.6 && m({ visibility: 200, temperature_2m: 8 }).rime === 0 && m({ weather_code: 48 }).fog >= 0.8);
   check('dust from the air-quality service: 50 ug/m3 nothing, 500 a storm, in between scales', m({}, { dust: 50 }).dust === 0 && m({}, { dust: 500 }).dust === 1 && Math.abs(m({}, { dust: 275 }).dust - 0.5) < 1e-9 && m({}, null).dust === 0 && m({}, { dust: 9 }).dust === 0);
+  check('a dust storm is thick brown haze: less to see, more aerosol; clean air changes nothing', (() => { const d = m({}, { dust: 500, aerosol_optical_depth: 0.1 }), c = m({}, { dust: 9, aerosol_optical_depth: 0.1 }); return d.visKm <= 2 && d.aod >= 1.4 && c.visKm >= 25 && Math.abs(c.aod - 0.1) < 1e-9; })());
   const g = m({ wind_speed_10m: 6, wind_gusts_10m: 15 });
   check('wind: mean and gusts at the surface in m/s; gusts never below the mean; none given means calm', g.windMs === 6 && g.gust === 15 && m({ wind_speed_10m: 6 }).gust === 6 && m({}).windMs === 0 && m({ wind_speed_10m: 9, wind_gusts_10m: 4 }).gust === 9);
   check('every preset has every field of the clear sky (nothing undefined for the renderer)', Object.entries(PRESETS).every(([, p]) => Object.keys(CLEAR).every((k) => k in p)));

@@ -964,6 +964,8 @@ uniform vec3  uGround2;       // second ground colour (patches of dry / bare / d
 uniform float uWet;           // 0..1 wet ground (rain)
 uniform float uSleet;         // 0..1: rain and snow falling together (both are drawn); 0 = whichever uSnow says
 uniform float uGlaze;         // 0..1 freezing rain: the rain is ice-clear, the ground is coated with ice
+uniform float uRime;          // 0..1 freezing fog: frost on the ground, glitter in the air
+uniform float uDust;          // 0..1 dust storm: a brown veil and sand blowing along
 uniform float uHail;          // 0..1: hail (stones in the air, a litter of them on the ground)
 uniform float uFlash;         // 0..1 lightning flash lifting the whole picture
 uniform vec4  uBolt;          // a bolt: x across 0..1, how low it reaches (0..1 from the bottom), a seed, how bright (0 = none)
@@ -1251,7 +1253,8 @@ vec3 shadeTerrain(int layer, vec3 d) {
       alb = mix(uGround, uGround2, smoothstep(0.38, 0.62, pa * 0.7 + pb * 0.3));
       alb *= mix(1.0, 0.62 + 0.9 * sp, sm);
       alb = mix(alb, vec3(0.30, 0.28, 0.25), step(0.985, hash12(floor(gp * 7.0))) * sm * 0.55);   // pebbles
-      alb = mix(alb, vec3(0.86, 0.9, 0.95), step(0.9, hash12(floor(gp * 11.0 + 3.0))) * sm * uHail * 0.85);   // hail stones lying on the ground
+      alb = mix(alb, vec3(0.86, 0.9, 0.95), step(0.9, hash12(floor(gp * 11.0 + 3.0))) * sm * uHail * 0.85);
+      alb = mix(alb, vec3(0.88, 0.94, 1.0), uRime * (0.45 + 0.4 * sp));                                           // rime: the ground is white with frost, the more where the grass would be   // hail stones lying on the ground
       // wet ground: darker, with a sky-reflecting sheen that grows toward grazing angles and in puddles
       float pud = smoothstep(0.55, 0.72, pb) * uWet;
       alb *= 1.0 - 0.35 * uWet;
@@ -1375,6 +1378,30 @@ vec4 finish(vec3 L, float alpha) {
     }
   }
 
+  // ---------- dust: sand blowing sideways along the wind (the brown cast is added after the tonemap, below) ----------
+  if (uDust > 0.02) {
+    vec2 dp = gl_FragCoord.xy / uDpr;
+    float dirx = uLeanOn > 0.5 && uLean < 0.0 ? -1.0 : 1.0;
+    for (int k = 0; k < 2; k++) {
+      float sc = k == 0 ? 1.0 : 0.6;
+      float row = floor(dp.y / (4.0 / sc));
+      float rnd = hash12(vec2(row, 91.0 + float(k)));
+      float len = 70.0 * sc, cyc = 520.0 * sc;
+      float x = fract((dp.x * dirx + uTime * (700.0 + 500.0 * rnd) * sc) / cyc + rnd);
+      float along = smoothstep(0.0, 0.05, x) * (1.0 - smoothstep(0.05, 0.05 + len / cyc, x));
+      float on = step(1.0 - uDust * 0.6, hash12(vec2(row, 12.5 + float(k))));
+      float across = exp(-pow((fract(dp.y / (4.0 / sc)) - 0.5) * 4.0, 2.0));
+      rainRel += vec3(0.85, 0.6, 0.32) * along * across * on * 0.3 * sc;
+    }
+  }
+
+  // ---------- rime: ice crystals glittering in the air ----------
+  if (uRime > 0.02) {
+    vec2 rp = floor(gl_FragCoord.xy / (uDpr * 2.0));
+    float tw = hash12(rp + floor(uTime * 1.5) * 7.0);
+    rainRel += vec3(0.8, 0.9, 1.0) * step(0.9975 - 0.003 * uRime, tw) * uRime * 0.5;
+  }
+
   // ---------- hail: round stones, fast, and larger than rain ----------
   if (uHail > 0.05) {
     vec2 hp = gl_FragCoord.xy / uDpr;
@@ -1406,6 +1433,7 @@ vec4 finish(vec3 L, float alpha) {
 
   // ---------- exposure, scotopic shift, tonemap ----------
   vec3 c = toDisplay(L, expo, rainRel);
+  c = mix(c, c * vec3(1.0, 0.68, 0.38) * 0.88 + vec3(0.09, 0.045, 0.0), uDust * 0.75);                  // dust: everything is seen through brown
   // triangular dither avoids banding in the dark gradients
   float n1 = hash12(gl_FragCoord.xy + uFrame * 1.31);
   float n2 = hash12(gl_FragCoord.yx + uFrame * 2.17 + 11.0);

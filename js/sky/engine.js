@@ -642,7 +642,7 @@ export class SkyEngine {
     const K = this.knobs, weatherOn = !K || K.weather, ambientOn = !K || K.ambient;      // (the capability ladder: what the hardware can handle outranks the settings)
     const clouds = ambientOn && s.cloudMotion > 0 && (w.cover[0] > 0.02 || w.cover[1] > 0.02 || w.cover[2] > 0.02);
     const water = ambientOn && s.landscape.ocean;
-    const rain = weatherOn && (w.precip > 0.01 || w.lightning > 0.01);      // (a storm flashes)
+    const rain = weatherOn && (w.precip > 0.01 || w.lightning > 0.01 || w.dust > 0.02 || w.rime > 0.02);      // (a storm flashes)
     const night = ambientOn && this.sky && this.sky.sun.alt < -6 && s.twinkle;
     const wind = ambientOn && s.plants.on && s.plants.count > 0 && s.cloudMotion > 0;      // plants sway
     const lights = ambientOn && this.s.tree.on;                    // the tree's bulbs twinkle
@@ -852,6 +852,8 @@ export class SkyEngine {
     this._1f('uWet', Math.min(1, w.precip * (1 - w.snowfall)));
     this._1f('uSleet', !K || K.weather ? (w.sleet || 0) : 0);
     this._1f('uHail', !K || K.weather ? (w.hail || 0) : 0);
+    this._1f('uRime', !K || K.weather ? (w.rime || 0) : 0);
+    this._1f('uDust', !K || K.weather ? (w.dust || 0) : 0);
     this._1f('uGlaze', !K || K.weather ? (w.freezing || 0) : 0);
     // sea state: real marine data when we have it, otherwise grown from the wind (fully developed sea, damped for fetch)
     if (land.ocean) {
@@ -1528,6 +1530,7 @@ export class SkyEngine {
     this._3f('uLeaf', pal.leaf); this._3f('uConifer', pal.conifer); this._3f('uGrass', pal.grass);
     this._3f('uDry', pal.dry); this._3f('uRock', pal.rock);
     this._1f('uSnowCover', Math.max(pal.snow || 0, w.snowCover));
+    this._1f('uRime', !K || K.weather ? (w.rime || 0) : 0);
     this._1f('uOcean', s.landscape.ocean ? 1 : 0);
     this._2f('uResPx', this.sceneTarget.w, this.sceneTarget.h);
     if (plantsOn) {
