@@ -12,6 +12,7 @@
 // the display rate with the render scale adapting to hold the frame rate.
 
 import { Lightning } from './lightning.js';
+import { rainbowStrength } from './rainbow.js';
 import { Capability, RUNG_OF, quietFor } from './capability.js';
 import { VERT_STROKE, FRAG_STROKE, VERT_LIGHT, FRAG_LIGHT, VERT_DROP, FRAG_DROP, VERT_TRAIL, FRAG_TRAIL } from './glsl-mask.js';
 import {
@@ -852,6 +853,7 @@ export class SkyEngine {
     this._1f('uWet', Math.min(1, w.precip * (1 - w.snowfall)));
     this._1f('uSleet', !K || K.weather ? (w.sleet || 0) : 0);
     this._1f('uHail', !K || K.weather ? (w.hail || 0) : 0);
+    this._1f('uBow', !K || K.weather ? (typeof s.bow === 'number' ? s.bow : rainbowStrength(sky.sun.alt, w)) : 0);          // (s.bow: a number forces it, for tests and screenshots)
     this._1f('uRime', !K || K.weather ? (w.rime || 0) : 0);
     this._1f('uDust', !K || K.weather ? (w.dust || 0) : 0);
     this._1f('uGlaze', !K || K.weather ? (w.freezing || 0) : 0);

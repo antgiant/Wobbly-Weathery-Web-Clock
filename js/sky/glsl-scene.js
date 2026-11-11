@@ -964,6 +964,7 @@ uniform vec3  uGround2;       // second ground colour (patches of dry / bare / d
 uniform float uWet;           // 0..1 wet ground (rain)
 uniform float uSleet;         // 0..1: rain and snow falling together (both are drawn); 0 = whichever uSnow says
 uniform float uGlaze;         // 0..1 freezing rain: the rain is ice-clear, the ground is coated with ice
+uniform float uBow;           // 0..1 rainbow (js/sky/rainbow.js): a ring 42 degrees from the point opposite the sun
 uniform float uRime;          // 0..1 freezing fog: frost on the ground, glitter in the air
 uniform float uDust;          // 0..1 dust storm: a brown veil and sand blowing along
 uniform float uHail;          // 0..1: hail (stones in the air, a litter of them on the ground)
@@ -1107,6 +1108,13 @@ vec4 moonDisc(vec3 d, float expo) {
 }
 
 // Everything above the skyline. skyMask = how much of the sky is still open to stars.
+// the colours of a bow from violet (0) through blue, green, yellow, orange to red (1)
+vec3 spectrumBow(float t) {
+  t = clamp(t, 0.0, 1.0) * 5.0;
+  vec3 c0 = vec3(0.50, 0.18, 0.95), c1 = vec3(0.15, 0.40, 1.00), c2 = vec3(0.15, 0.90, 0.30), c3 = vec3(0.95, 0.90, 0.15), c4 = vec3(1.00, 0.52, 0.08), c5 = vec3(1.00, 0.12, 0.08);
+  return t < 1.0 ? mix(c0, c1, t) : t < 2.0 ? mix(c1, c2, t - 1.0) : t < 3.0 ? mix(c2, c3, t - 2.0) : t < 4.0 ? mix(c3, c4, t - 3.0) : mix(c4, c5, t - 4.0);
+}
+
 vec3 shadeSky(vec3 d, out float skyMask) {
   vec3 L;
   skyMask = 1.0;
@@ -1138,6 +1146,14 @@ vec3 shadeSky(vec3 d, out float skyMask) {
   vec4 mo = moonDisc(d, expo);
   L += mo.rgb * mo.a;               // added on top: the air in front of the moon still glows
   skyMask *= 1.0 - mo.a;
+  if (uBow > 0.01) {                // rainbow: red outside at 42 degrees, violet inside; a fainter second bow at 51 degrees with the colours reversed; the sky between them is a little darker
+    float ang = degrees(acos(clamp(dot(d, -uSunDir), -1.0, 1.0)));
+    float p = (ang - 40.6) / 1.9, q = (ang - 50.0) / 3.5;
+    float inP = smoothstep(0.0, 0.15, p) * (1.0 - smoothstep(0.85, 1.0, p)), inS = smoothstep(0.0, 0.15, q) * (1.0 - smoothstep(0.85, 1.0, q));
+    vec3 bowC = spectrumBow(p) * inP + spectrumBow(1.0 - q) * inS * 0.28;
+    float dark = 1.0 - 0.14 * smoothstep(42.4, 43.6, ang) * (1.0 - smoothstep(49.4, 50.4, ang));
+    L *= mix(1.0, dark, uBow) * (1.0 + 3.2 * uBow * bowC);
+  }
   return L;
 }
 
