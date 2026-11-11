@@ -8,7 +8,7 @@ import { DEFAULT_CONFIG, parseFile, serialize, setValue, applyPreset, applyLink,
 import { probe, fit, unavailable } from './hardware.mjs';
 import { PANEL_SIZES, WIRINGS, fromAnswers, validate, totals, draw, parseMatrixCfg, writeMatrixCfg } from './panel.mjs';
 import { sequence } from './patterns.mjs';
-import { unit, status as statusText } from './service.mjs';
+import { unit, status as statusText, rungFromLog } from './service.mjs';
 import { manCommand, manConfig, help } from './manpage.mjs';
 import { configTool } from './configtool.mjs';
 import { PRESET_LIST } from '../../schema/presets.js';
@@ -154,7 +154,7 @@ export async function run(argv, io = realIO()) {
       case 'run': { const code = io.exec('wobbly-clock-run', ['--config', CONF, ...args]); return code === 0 ? done() : fail(code === 127 ? 3 : 1, code === 127 ? 'wobbly-clock-run is not installed (install the .deb, or build native/core)' : `wobbly-clock-run stopped with status ${code}`); }
       case 'status': {
         const v = io.capture('wobbly-clock-run', ['--version']), active = io.capture('systemctl', ['is-active', 'wobbly-clock']), enabled = io.capture('systemctl', ['is-enabled', 'wobbly-clock']);
-        say(statusText({ version: v.code === 0 && v.out ? v.out.split(' ').pop() : 'not installed', output: config.output, layout: io.read(MATRIX(config)) ? 'see matrix.cfg' : 'no layout yet', machine: profile.name, active: active.out === 'active', enabled: enabled.out === 'enabled' }));
+        say(statusText({ version: v.code === 0 && v.out ? v.out.split(' ').pop() : 'not installed', output: config.output, layout: io.read(MATRIX(config)) ? 'see matrix.cfg' : 'no layout yet', machine: profile.name, active: active.out === 'active', enabled: enabled.out === 'enabled', rung: rungFromLog(io.capture('journalctl', ['-u', 'wobbly-clock', '--no-pager', '-o', 'cat', '-g', 'ladder: rung', '-n', '20']).out) }));
         return done();
       }
       case 'logs': { const code = io.exec('journalctl', ['-u', 'wobbly-clock', args.length ? '' : '-n', args.length ? '' : '50', '--no-pager', ...args].filter((x) => x !== '')); return code === 0 ? done() : fail(1, 'journalctl failed (is this a systemd machine?)'); }

@@ -51,5 +51,12 @@ export const SETUP_NEEDED = ['SETUP', 'NEEDED'];
 export function firstBoot(hasConfig) { return hasConfig ? null : { show: 'setup-needed', say: 'No configuration yet. Run: wobbly-clock setup  (or put wobbly-clock.conf on the boot partition).' }; }
 
 export function status(s) {
-  return [`wobbly-clock ${s.version}`, `output     ${s.output}${s.output === 'matrix' ? ` (${s.layout})` : ''}`, `machine    ${s.machine}`, `service    ${s.active ? 'running' : 'stopped'}${s.enabled ? ', starts on boot' : ', does not start on boot'}`].join('\n');
+  return [`wobbly-clock ${s.version}`, `output     ${s.output}${s.output === 'matrix' ? ` (${s.layout})` : ''}`, `machine    ${s.machine}`, `service    ${s.active ? 'running' : 'stopped'}${s.enabled ? ', starts on boot' : ', does not start on boot'}`, ...(s.rung ? [`detail     ${s.rung}`] : [])].join('\n');
+}
+
+/** The capability ladder's rung from the program's log (`ladder: rung 4 (seconds off), seconds are hidden ...`): the last line that says one, as "rung 4 (seconds off)", or ''. */
+export function rungFromLog(text) {
+  let last = '';
+  for (const l of String(text || '').split('\n')) { const m = /ladder: rung (\d+) \(([^)]*)\)/.exec(l); if (m) last = `rung ${m[1]} (${m[2]})`; }
+  return last;
 }

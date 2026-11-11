@@ -540,8 +540,10 @@ export class SkyEngine {
   // ----------------------------------------------------------- astronomy ---
   _updateAstro(perfNow, force) {
     const s = this.s, sim = getSim(), scaled = sim && sim.scale > 1;
-    const interval = scaled ? 0 : 1000;
-    if (!force && perfNow - this.lastAstro < interval && this.sky) return false;
+    // The sun and moon move 0.004 degree a second: working the sky out every 4 s instead of every second is invisible (half a pixel) and saves most of the JavaScript the
+    // astronomy costs a slow machine (250 to 580 ms a time on a Pi Zero). A jump of the shown time (time travel, a changed date) is picked up at once.
+    const interval = scaled ? 0 : 4000;
+    if (!force && this.sky && perfNow - this.lastAstro < interval && Math.abs(+this.now - +this.sky.date) < interval + 2000) return false;
     const needPlanets = scaled || perfNow - this.lastPlanets > 10000 || !this.sky;
     const date = this.now;
     const sky = computeSky(date, s.lat, s.lon, s.elevM, { planets: needPlanets });
@@ -1363,6 +1365,9 @@ export class SkyEngine {
 
   /** Updates glass settings ({mode, frost, light, lightCol}) and redraws without re-rendering the sky. */
   setGlass(patch) {
+    let changed = false;                                                    // (the light timer says the same thing every second: no change, no redraw)
+    for (const k of Object.keys(patch)) if (this.glass[k] !== patch[k] && JSON.stringify(this.glass[k]) !== JSON.stringify(patch[k])) { changed = true; break; }
+    if (!changed) return;
     this.markWork();
     Object.assign(this.glass, patch);
     this.redrawGlass();
