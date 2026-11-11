@@ -34,6 +34,8 @@ export async function run(t) {
   const st = await h.page.evaluate(async () => { const { sway } = await import('/js/wind.js'); return { ...sway }; });
   t.check('storm wind (towards the east-north-east) seen looking north: the tops lean right', meanLean(north) - base > 10, `${(meanLean(north) - base).toFixed(1)} units`);
   t.check('lean-only mode has no gusts (the digits are not redrawn all the time)', st.mode === 'lean' && st.flutter === false);
+  const dots = await h.page.evaluate(() => [...document.querySelectorAll('#clock svg')].filter((e) => !e.querySelector('path[id]')).flatMap((e) => [...e.querySelectorAll('path')].map((p) => (p.getAttribute('d').match(/-?\d+(\.\d+)?/g) || []).map(Number))));
+  t.check('the colon leans with the digits: the top dot moves downwind, more than the bottom one, and neither moves up or down', dots.length >= 2 && dots.every((d) => d.length >= 8 && d[1] === d[3] && d[5] === d[7]) && dots.filter((d) => d[1] < 200).every((d) => d[0] > 49) && dots.filter((d) => d[1] > 300).every((d) => d[0] >= 48) && Math.min(...dots.filter((d) => d[1] < 200).map((d) => d[0])) > Math.max(...dots.filter((d) => d[1] > 300).map((d) => d[0])), JSON.stringify(dots));
   const moved = Object.entries(north).map(([k, p]) => Math.max(...p.map((pt, i) => Math.abs(pt[0] - straight[k][i][0]))));
   t.check(`no control point moves more than the cap (${MAX_LEAN + MAX_GUST} units): the time stays readable`, Math.max(...moved) <= MAX_LEAN + MAX_GUST + 0.5, moved.map((x) => x.toFixed(0)).join(' '));
   t.check('the bottom of every digit stays where it was', Object.entries(north).every(([k, p]) => p.every((pt, i) => straight[k][i][1] !== pt[1] ? false : (pt[1] < 440 || Math.abs(pt[0] - straight[k][i][0]) < 1))));
@@ -88,6 +90,7 @@ export async function run(t) {
   await h.page.evaluate(() => { const s = document.getElementById('windSway'); s.value = 'off'; s.dispatchEvent(new Event('change', { bubbles: true })); });
   await h.page.waitForTimeout(1800);
   t.check('choosing "Off" stands them straight again', Math.abs(meanLean(await digits(h.page)) - base) < 1);
+  t.check('and the colon stands straight again too (its dots back where they started)', await h.page.evaluate(() => [...document.querySelectorAll('#clock svg')].filter((e) => !e.querySelector('path[id]')).flatMap((e) => [...e.querySelectorAll('path')].map((p) => p.getAttribute('d'))).every((d) => /^M\s*48 /.test(d))));
   t.check('no errors', h.errors.length === 0, h.errors.join(' | '));
   await h.close();
 }
