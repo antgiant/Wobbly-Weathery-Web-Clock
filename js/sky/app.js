@@ -71,7 +71,14 @@ function init() {
   window.__sky = engine;                         // handy for debugging / tests
   {                                                            // ?stats: frames a second and the picture's size, tap to copy (?stats=0 turns it off; once asked for, it comes back on this device's next visits)
     let want = false;
-    let mode = ''; try { const v = new URLSearchParams(location.search).get('stats'); if (v === '0') localStorage.removeItem('stats'); else if (v !== null) localStorage.setItem('stats', v || '1'); mode = localStorage.getItem('stats') || ''; want = !!mode; } catch (_) { mode = new URLSearchParams(location.search).get('stats'); want = mode !== null; }
+    let mode = '';
+    try {                                                                                   // the flag is kept as {m: mode, t: when} and lapses after a day (an installed app has no address bar to say ?stats=0 in); the box has a close button
+      const v = new URLSearchParams(location.search).get('stats');
+      if (v === '0') localStorage.removeItem('stats'); else if (v !== null) localStorage.setItem('stats', JSON.stringify({ m: v || '1', t: Date.now() }));
+      const raw = localStorage.getItem('stats');
+      if (raw) { let o = null; try { o = JSON.parse(raw); } catch (_) { /* an old flag: a plain word */ } if (o && typeof o === 'object' && o.m && Date.now() - o.t < 864e5) mode = String(o.m); else localStorage.removeItem('stats'); }
+      want = !!mode;
+    } catch (_) { mode = new URLSearchParams(location.search).get('stats'); want = mode !== null; }
     if (want) {
       const note = document.createElement('div');                // (shown at once, so a missing read-out says whether this code ran at all)
       note.style.cssText = 'position:fixed;left:6px;top:6px;z-index:99999;padding:4px 8px;border-radius:6px;background:rgba(0,0,0,.7);color:#9f9;font:11px ui-monospace,Menlo,monospace';

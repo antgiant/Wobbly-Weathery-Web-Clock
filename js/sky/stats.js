@@ -5,6 +5,10 @@ export function initStats(engine, canvas, mode) {
   const box = document.createElement('pre');
   box.style.cssText = 'position:fixed;left:6px;top:6px;z-index:99999;margin:0;padding:6px 8px;border-radius:6px;background:rgba(0,0,0,.7);color:#9f9;font:11px/1.35 ui-monospace,Menlo,monospace;white-space:pre;max-width:96vw;overflow:hidden';
   document.body.appendChild(box);
+  const close = document.createElement('button');            // closes the read-out for good (until ?stats is asked for again)
+  close.textContent = '\u00d7'; close.setAttribute('aria-label', 'Close the stats'); close.id = 'statsClose';
+  close.style.cssText = 'position:fixed;left:6px;top:6px;z-index:100000;margin:0;padding:0 7px;border:0;border-radius:0 6px 0 6px;background:rgba(0,0,0,.85);color:#f99;font:14px/1.3 ui-monospace,Menlo,monospace;cursor:pointer';
+  document.body.appendChild(close);
   let gpu = '?';
   try { const gl = canvas.getContext('webgl2'); const x = gl && gl.getExtension('WEBGL_debug_renderer_info'); gpu = x ? gl.getParameter(x.UNMASKED_RENDERER_WEBGL) : (gl ? 'hidden by the browser' : '?'); } catch (e) { /* the name stays ? */ }
   const gaps = [], drawMs = []; let last = 0, since = performance.now(), n = 0, text = '';
@@ -14,7 +18,7 @@ export function initStats(engine, canvas, mode) {
   timed('render'); if (gpuWait) timed('redrawGlass');         // the time the page spends on a frame (with ?stats=gpu, until the GPU has finished it)
   const q = (a, p) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(s.length * p))]; };
   const f = (v) => (Math.round(v * 10) / 10).toFixed(1);
-  setInterval(() => {
+  const timer = setInterval(() => {
     const now = performance.now(), fps = n * 1000 / (now - since); since = now; n = 0;
     const med = q(gaps, 0.5), p95 = q(gaps, 0.95), p99 = q(gaps, 0.99), worst = q(gaps, 1);
     text = [
@@ -26,6 +30,8 @@ export function initStats(engine, canvas, mode) {
       'tap to copy',
     ].join('\n');
     box.textContent = text;
+    close.style.left = Math.max(6, box.getBoundingClientRect().right - close.offsetWidth) + 'px';
   }, 1000);
+  close.addEventListener('click', () => { clearInterval(timer); box.remove(); close.remove(); try { localStorage.removeItem('stats'); } catch (e) { /* nothing saved */ } });
   box.addEventListener('click', () => { try { navigator.clipboard.writeText(text + '\n' + navigator.userAgent); box.style.outline = '2px solid #9f9'; setTimeout(() => { box.style.outline = ''; }, 600); } catch (e) { /* no clipboard: read it off the screen */ } });
 }

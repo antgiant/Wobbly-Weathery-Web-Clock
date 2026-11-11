@@ -33,4 +33,29 @@ export async function run(t) {
   const ls = await l.page.evaluate(() => ({ clock: getComputedStyle(document.getElementById('clock')).visibility, loading: getComputedStyle(document.getElementById('loading')).display, ready: document.body.classList.contains('ready') }));
   t.check('before the first frame: loading screen up, digits hidden', ls.ready === false && ls.loading !== 'none' && ls.clock === 'hidden', JSON.stringify(ls));
   await l.close();
+
+  // ---- ?stats: asked for once it stays, but it has a close button, and lapses after a day (an installed app has no address bar to say ?stats=0 in) ----
+  if (!t.quick) {
+    const st = await t.open({ query: 't=2026-06-21T17:00:00Z&speed=0&stats=1', conf: { clockStyle: 'solid' } });
+    await st.settle(2500);
+    const shown = () => st.page.evaluate(() => ({ box: [...document.querySelectorAll('pre')].some((e) => /fps/.test(e.textContent)), close: !!document.getElementById('statsClose'), flag: localStorage.getItem('stats') }));
+    let v = await shown();
+    t.check('stats: ?stats=1 shows the read-out with a close button, and keeps a flag with a time', v.box && v.close && /"m":"1"/.test(v.flag || '') && /"t":\d+/.test(v.flag || ''), JSON.stringify(v));
+    await st.page.click('#statsClose'); await st.settle(300);
+    v = await shown();
+    t.check('stats: the close button removes the read-out and clears the flag', !v.box && !v.close && v.flag === null, JSON.stringify(v));
+    await st.page.evaluate(() => localStorage.setItem('stats', JSON.stringify({ m: '1', t: Date.now() })));
+    await st.page.goto(st.url.replace(/&stats=1/, '')); await st.ready(); await st.settle(2500);
+    v = await shown();
+    t.check('stats: a flag saved a moment ago brings the read-out back on the next visit, with no query', v.box && v.close, JSON.stringify(v));
+    await st.page.evaluate(() => localStorage.setItem('stats', JSON.stringify({ m: '1', t: Date.now() - 2 * 864e5 })));
+    await st.page.goto(st.url.replace(/&stats=1/, '')); await st.ready(); await st.settle(2500);
+    v = await shown();
+    t.check('stats: a flag two days old has lapsed (no read-out, flag cleared)', !v.box && !v.close && v.flag === null, JSON.stringify(v));
+    await st.page.evaluate(() => localStorage.setItem('stats', '1'));
+    await st.page.goto(st.url.replace(/&stats=1/, '')); await st.ready(); await st.settle(2500);
+    v = await shown();
+    t.check('stats: an old-style flag (a bare "1", from before it lapsed) is dropped', !v.box && v.flag === null, JSON.stringify(v));
+    await st.close();
+  }
 }
