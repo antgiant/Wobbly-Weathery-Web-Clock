@@ -25,6 +25,6 @@ check(`the page's own scripts are under ${BUDGET.ownScriptKB} KB`, own / 1024 < 
 const big = js.filter((f) => !/vendor|virgo/.test(f)).map((f) => [f, size(f)]).sort((a, b) => b[1] - a[1])[0];
 check(`no single script of ours is over ${BUDGET.largestFileKB} KB (${big[0]})`, big[1] / 1024 < BUDGET.largestFileKB, `${kb(big[1])} KB`);
 check(`the stylesheet is under ${BUDGET.cssKB} KB`, size('styles.css') / 1024 < BUDGET.cssKB, `${kb(size('styles.css'))} KB`);
-const png = walk('.').filter((f) => /\.(png|jpg|webp)$/.test(f) && !/node_modules|tests|\.git/.test(f)).reduce((a, f) => a + size(f), 0);
-check('images and icons together stay under 600 KB', png / 1024 < 600, `${kb(png)} KB`);
+const png = walk('.').filter((f) => /\.(png|jpg|webp)$/.test(f) && !/node_modules|tests|\.git|^docs\//.test(f)).reduce((a, f) => a + size(f), 0);
+check('images and icons together stay under 600 KB (the app itself: the README pictures in docs/ are not downloaded by it)', png / 1024 < 600, `${kb(png)} KB`);
 done();
