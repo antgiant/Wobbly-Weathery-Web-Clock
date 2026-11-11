@@ -11,6 +11,7 @@
 // one (drifting clouds, water, twinkle) ~15 fps, and look-around modes run at
 // the display rate with the render scale adapting to hold the frame rate.
 
+import { Lightning } from './lightning.js';
 import { Capability, RUNG_OF, quietFor } from './capability.js';
 import { VERT_STROKE, FRAG_STROKE, VERT_LIGHT, FRAG_LIGHT, VERT_DROP, FRAG_DROP, VERT_TRAIL, FRAG_TRAIL } from './glsl-mask.js';
 import {
@@ -641,7 +642,7 @@ export class SkyEngine {
     const K = this.knobs, weatherOn = !K || K.weather, ambientOn = !K || K.ambient;      // (the capability ladder: what the hardware can handle outranks the settings)
     const clouds = ambientOn && s.cloudMotion > 0 && (w.cover[0] > 0.02 || w.cover[1] > 0.02 || w.cover[2] > 0.02);
     const water = ambientOn && s.landscape.ocean;
-    const rain = weatherOn && w.precip > 0.01;
+    const rain = weatherOn && (w.precip > 0.01 || w.lightning > 0.01);      // (a storm flashes)
     const night = ambientOn && this.sky && this.sky.sun.alt < -6 && s.twinkle;
     const wind = ambientOn && s.plants.on && s.plants.count > 0 && s.cloudMotion > 0;      // plants sway
     const lights = ambientOn && this.s.tree.on;                    // the tree's bulbs twinkle
@@ -840,6 +841,10 @@ export class SkyEngine {
       const lean = Math.max(-0.75, Math.min(0.75, sideways * 0.04 * gust));
       this.lean = { on: ws > 0, v: lean };                                                                  // (the glass drops read it: glass.js)
       this._1f('uLeanOn', ws > 0 ? 1 : 0); this._1f('uLean', lean);
+    }
+    {                                                                                        // lightning: a flash lifts the sky and a bolt shows (js/sky/lightning.js); none when the page asks for calm, or the hardware cannot afford weather
+      const lr = (!K || K.weather) && !s.reducedMotion ? (w.lightning || 0) : 0, lf = (this.lightning || (this.lightning = new Lightning(Math.floor(Math.random() * 1e6) + 1))).update(perfNow / 1000, lr), bolt = lf.bolt;
+      this._1f('uFlash', lf.flash); this._4f('uBolt', bolt ? bolt.x : 0, bolt ? bolt.bottom : 0, bolt ? bolt.seed : 0, bolt ? bolt.a : 0);
     }
     this._1f('uDpr', T.h / Math.max(1, this.canvas.clientHeight));
     this._3f('uGround', ground);

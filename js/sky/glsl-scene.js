@@ -964,6 +964,8 @@ uniform vec3  uGround2;       // second ground colour (patches of dry / bare / d
 uniform float uWet;           // 0..1 wet ground (rain)
 uniform float uSleet;         // 0..1: rain and snow falling together (both are drawn); 0 = whichever uSnow says
 uniform float uGlaze;         // 0..1 freezing rain: the rain is ice-clear, the ground is coated with ice
+uniform float uFlash;         // 0..1 lightning flash lifting the whole picture
+uniform vec4  uBolt;          // a bolt: x across 0..1, how low it reaches (0..1 from the bottom), a seed, how bright (0 = none)
 uniform vec4  uWaveA;         // wind sea: significant height m, period s, travel direction (x east, z north)
 uniform vec4  uWaveB;         // swell, same layout
 uniform vec4  uSea;           // wind speed m/s, foam amount 0..1, wind direction x, z
@@ -1369,6 +1371,18 @@ vec4 finish(vec3 L, float alpha) {
       vec3 dropCol = mix(vec3(0.55, 0.6, 0.68), vec3(0.72, 0.88, 1.0), uGlaze);       // freezing rain is clear and icy
       rainRel += dropCol * across * along * on * (0.20 + 0.06 * uGlaze) * sc;
     }
+  }
+
+  // ---------- lightning: the sky flashes, and the first strike of a flash is a jagged bolt ----------
+  if (uFlash > 0.001) rainRel += vec3(0.78, 0.84, 1.0) * uFlash * 0.7;
+  if (uBolt.w > 0.02) {
+    vec2 bv = gl_FragCoord.xy / uRes;
+    float bf = bv.y * 26.0, bi = floor(bf);
+    float kink = mix(hash12(vec2(bi, uBolt.z)), hash12(vec2(bi + 1.0, uBolt.z)), fract(bf)) - 0.5;
+    float bx = uBolt.x + kink * 0.07 + (hash12(vec2(floor(bv.y * 5.0), uBolt.z + 3.0)) - 0.5) * 0.08;
+    float bd = abs(bv.x - bx);
+    float reach = smoothstep(uBolt.y - 0.02, uBolt.y + 0.02, bv.y);
+    rainRel += vec3(0.9, 0.93, 1.0) * (exp(-pow(bd / 0.0022, 2.0)) + 0.35 * exp(-pow(bd / 0.012, 2.0))) * reach * uBolt.w * 1.4;
   }
 
   // ---------- exposure, scotopic shift, tonemap ----------
