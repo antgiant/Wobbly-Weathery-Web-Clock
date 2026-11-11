@@ -67,9 +67,28 @@ if ('serviceWorker' in navigator) {
       if (!kioskTimer) kioskTimer = setTimeout(() => location.reload(), msUntilQuiet());
       return;
     }
-    const b = document.getElementById('updateBanner');
-    if (b) b.hidden = false;
+    autoApply();
   });
+}
+
+// A new version is applied by itself, at a moment that cannot lose anything: no dialog or settings screen open, nothing being typed, no finger on the screen. If one of
+// those is going on it waits (the banner offers the update by hand meanwhile) and applies the moment the last one is done. One automatic reload a minute at most, so a
+// copy that comes back old (a slow connection) cannot loop; the banner stays as the manual way.
+let pointerDown = false, waiting = 0;
+addEventListener('pointerdown', () => { pointerDown = true; }, true);
+addEventListener('pointerup', () => { pointerDown = false; }, true);
+addEventListener('pointercancel', () => { pointerDown = false; }, true);
+export function updateSafe() {
+  const a = document.activeElement, shared = document.getElementById('sharedBanner');                 // (a shared setup waiting to be used or not is a decision half made too)
+  return !document.querySelector('.modal:not([hidden])') && !pointerDown && !(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) && (!shared || shared.hidden);
+}
+function autoApply() {
+  const b = document.getElementById('updateBanner');
+  let last = 0; try { last = +sessionStorage.getItem('autoUpdateAt') || 0; } catch (_) { /* no session storage */ }
+  if (Date.now() - last < 60000) { if (b) b.hidden = false; return; }               // just did one: only offer it
+  if (updateSafe()) { try { sessionStorage.setItem('autoUpdateAt', String(Date.now())); } catch (_) { /* fine */ } refreshApp(); return; }
+  if (b) b.hidden = false;                                                           // busy: offer it, and apply when the busy moment ends
+  if (!waiting) waiting = setInterval(() => { if (updateSafe()) { clearInterval(waiting); waiting = 0; autoApply(); } }, 1500);
 }
 document.addEventListener('DOMContentLoaded', () => document.getElementById('updateBanner')?.addEventListener('click', refreshApp));
 
@@ -87,7 +106,7 @@ async function showVersion() {
     const s = parse(await r.text());
     if (!s) newest.textContent = 'Could not read the newest version.';
     else if (s.hash === V.hash) newest.textContent = `The server has the same version (${s.number}): you are up to date.`;
-    else if (s.number > V.number) { newest.textContent = `The server has a newer version: ${s.number} (${s.hash}). Use "Update and reload" below.`; const b = document.getElementById('updateBanner'); if (b) b.hidden = false; }
+    else if (s.number > V.number) { newest.textContent = `The server has a newer version: ${s.number} (${s.hash}). It is applied by itself when you close this; or use "Update and reload" below.`; autoApply(); }
     else newest.textContent = `The server has version ${s.number} (${s.hash}), which differs from yours.`;
   } catch (_) { newest.textContent = 'Could not reach the server to check.'; }
 }
