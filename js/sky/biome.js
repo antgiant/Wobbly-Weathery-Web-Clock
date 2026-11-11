@@ -43,10 +43,25 @@ export function classify(rgb, sd, lat, lon, elevM = 0) {
   return finish(kind, V, lat, lon, elevM);
 }
 
+/** Roughly where trees stop growing, metres above the sea, by latitude (4100 at the equator, about 2250 in the Alps, 1300 at 70 degrees). */
+export const treeline = (lat) => Math.max(0, 4100 - 40 * Math.abs(lat));
+
+/** Places with dry summers and mild wet winters: California, the Mediterranean basin, central Chile, the south-west Cape, south-west and southern Australia. */
+function mediterranean(lat, lon) {
+  const a = Math.abs(lat);
+  if (a < 30 || a > 45) return false;
+  return (lat > 0 && lon > -125 && lon < -115) || (lat > 0 && lon > -10 && lon < 40) || (lat < 0 && lon > -75 && lon < -70) || (lat < 0 && lon > 17 && lon < 22) || (lat < 0 && lon > 114 && lon < 140);
+}
+
 function finish(kind, V, lat, lon, elevM) {
   const tropical = Math.abs(lat) < 23.5 && (kind === 'forest' || kind === 'grass');
   const conifer = kind === 'forest' && !tropical && (Math.abs(lat) > 50 || elevM > 1500 || V < 20);
-  return { kind, conifer, tropical, region: region(lat, lon), lat, lon };
+  const reg = region(lat, lon);
+  const alpine = elevM > treeline(lat) * 0.92 && kind !== 'desert' && kind !== 'water' && kind !== 'snow';                    // above the trees: meadow, scree and rock
+  const med = mediterranean(lat, lon) && (kind === 'grass' || kind === 'steppe' || kind === 'forest' || kind === 'urban');
+  const savanna = !alpine && Math.abs(lat) < 25 && (kind === 'steppe' || (kind === 'grass' && (reg === 'africa' || reg === 'oceania')));
+  const evergreen = med || reg === 'oceania' || tropical;                                                                           // broadleaf trees that keep their leaves (eucalyptus, olive, cork oak, rainforest)
+  return { kind, conifer, tropical, region: reg, lat, lon, elevM, alpine, mediterranean: med, savanna, evergreen };
 }
 
 /** Latitude-only guess for when the tile cannot be fetched. */
@@ -128,7 +143,7 @@ const smoothstep = (x, a, b) => { const t = Math.min(1, Math.max(0, (x - a) / (b
  */
 export function foliage(date, lat, biome, climate = null) {
   const alat = Math.abs(lat);
-  if (alat < 23.5 || (biome && (biome.tropical || biome.kind === 'desert' || biome.kind === 'snow'))) return { cover: 1, autumn: 0, fresh: 0 };
+  if (alat < 23.5 || (biome && (biome.tropical || biome.evergreen || biome.kind === 'desert' || biome.kind === 'snow'))) return { cover: 1, autumn: 0, fresh: 0 };
   const year = date.getUTCFullYear(), doy = (Date.UTC(year, date.getUTCMonth(), date.getUTCDate()) - Date.UTC(year, 0, 0)) / 864e5;
   const d = (doy + (lat < 0 ? 182.6 : 0)) % 365.25;                          // the day of the year by the hemisphere's own calendar
   const k = (alat - 40) * 1.6;                                               // days later in spring and earlier in autumn for each degree beyond 40 (and the reverse nearer the equator)
@@ -152,8 +167,8 @@ export function paletteFor(biome, season, snowCover = 0, sat = null, fol = null)
   const k = biome.kind;
   const grass = { spring: [0.14, 0.26, 0.08], summer: [0.10, 0.20, 0.06], autumn: [0.22, 0.20, 0.07], winter: [0.26, 0.22, 0.12] }[season];
   const leaf = { spring: [0.12, 0.24, 0.06], summer: [0.06, 0.14, 0.04], autumn: [0.35, 0.16, 0.04], winter: [0.13, 0.10, 0.07] }[season];
-  let g1, g2, gr = grass, lf = biome.tropical ? [0.05, 0.16, 0.05] : leaf;
-  if (fol && !biome.tropical) {                                                       // the leaves by the day, not the season: new green, full green, turning, bare
+  let g1, g2, gr = grass, lf = biome.tropical ? [0.05, 0.16, 0.05] : biome.mediterranean ? [0.07, 0.11, 0.05] : (biome.region === 'oceania' && biome.kind !== 'desert') ? [0.07, 0.13, 0.08] : leaf;      // olive green, and the grey-green of eucalyptus
+  if (fol && !biome.tropical && !biome.evergreen) {                                                       // the leaves by the day, not the season: new green, full green, turning, bare
     const summer = [0.06, 0.14, 0.04], young = [0.12, 0.24, 0.06], turned = [0.35, 0.16, 0.04], bare = [0.13, 0.10, 0.07];
     lf = mix(mix(mix(summer, young, fol.fresh), turned, fol.autumn), bare, 1 - fol.cover);
   }

@@ -191,7 +191,7 @@ export function applyPlants() {
   const q = engine.s.quality;
   const count = q === 'low' ? 450 : q === 'high' ? 1500 : 1000;
   const seed = seedFromLocation();
-  const key = `${b.kind}|${b.conifer}|${b.tropical}|${b.region}|${season}|${count}|${seed}`;
+  const key = `${b.kind}|${b.conifer}|${b.tropical}|${b.region}|${b.alpine}|${b.mediterranean}|${b.savanna}|${season}|${count}|${seed}`;
   if (on && key !== state.plantKey) {
     state.plantKey = key;
     engine.setPlants({ ...generatePlants(b, { count, seed, season }), palette: pal, on });
@@ -201,7 +201,7 @@ export function applyPlants() {
 export function statusText() {
   const b = currentBiome(), t = engine?.s.landscape.type;
   const base = (document.getElementById('terrainStatus')?.dataset.base) || '';
-  const bio = state.biome ? `Land cover: ${b.kind}${b.conifer ? ' (conifer)' : b.tropical ? ' (tropical)' : ''}` : 'Land cover: estimated from latitude';
+  const bio = state.biome ? `Land cover: ${b.kind}${b.alpine ? ' (above the trees)' : b.conifer ? ' (conifer)' : b.tropical ? ' (tropical)' : b.savanna ? ' (savanna)' : b.mediterranean ? ' (Mediterranean)' : ''}` : 'Land cover: estimated from latitude';
   return [base, t === 'ocean' || t === 'city' ? (t === 'ocean' ? state.seaText : '') : bio].filter(Boolean).join(' · ');
 }
 
