@@ -964,6 +964,7 @@ uniform vec3  uGround2;       // second ground colour (patches of dry / bare / d
 uniform float uWet;           // 0..1 wet ground (rain)
 uniform float uSleet;         // 0..1: rain and snow falling together (both are drawn); 0 = whichever uSnow says
 uniform float uGlaze;         // 0..1 freezing rain: the rain is ice-clear, the ground is coated with ice
+uniform float uHail;          // 0..1: hail (stones in the air, a litter of them on the ground)
 uniform float uFlash;         // 0..1 lightning flash lifting the whole picture
 uniform vec4  uBolt;          // a bolt: x across 0..1, how low it reaches (0..1 from the bottom), a seed, how bright (0 = none)
 uniform vec4  uWaveA;         // wind sea: significant height m, period s, travel direction (x east, z north)
@@ -1250,6 +1251,7 @@ vec3 shadeTerrain(int layer, vec3 d) {
       alb = mix(uGround, uGround2, smoothstep(0.38, 0.62, pa * 0.7 + pb * 0.3));
       alb *= mix(1.0, 0.62 + 0.9 * sp, sm);
       alb = mix(alb, vec3(0.30, 0.28, 0.25), step(0.985, hash12(floor(gp * 7.0))) * sm * 0.55);   // pebbles
+      alb = mix(alb, vec3(0.86, 0.9, 0.95), step(0.9, hash12(floor(gp * 11.0 + 3.0))) * sm * uHail * 0.85);   // hail stones lying on the ground
       // wet ground: darker, with a sky-reflecting sheen that grows toward grazing angles and in puddles
       float pud = smoothstep(0.55, 0.72, pb) * uWet;
       alb *= 1.0 - 0.35 * uWet;
@@ -1370,6 +1372,23 @@ vec4 finish(vec3 L, float alpha) {
                                 : smoothstep(0.0, 0.2, y) * (1.0 - smoothstep(0.2, 0.2 + 1.0 / 5.0, y));
       vec3 dropCol = mix(vec3(0.55, 0.6, 0.68), vec3(0.72, 0.88, 1.0), uGlaze);       // freezing rain is clear and icy
       rainRel += dropCol * across * along * on * (0.20 + 0.06 * uGlaze) * sc;
+    }
+  }
+
+  // ---------- hail: round stones, fast, and larger than rain ----------
+  if (uHail > 0.05) {
+    vec2 hp = gl_FragCoord.xy / uDpr;
+    for (int k = 0; k < 2; k++) {
+      float sc = k == 0 ? 1.0 : 0.7;
+      float cellW = 22.0 / sc, cycle = 260.0 * sc;
+      vec2 g = vec2(hp.x + hp.y * (uLeanOn > 0.5 ? uLean : 0.12), hp.y);
+      float cx = floor(g.x / cellW);
+      float rnd = hash12(vec2(cx, 40.0 + float(k)));
+      float y = fract((g.y + uTime * 1500.0 * (0.8 + 0.4 * rnd) * sc) / cycle + rnd);
+      float fx = (fract(g.x / cellW) - 0.5) * cellW;
+      float on = step(1.0 - uHail * 0.5, hash12(vec2(cx, 7.7 + float(k))));
+      float stone = smoothstep(2.8, 0.9, length(vec2(fx, (y - 0.5) * cycle * 0.35)));
+      rainRel += vec3(0.82, 0.87, 0.92) * stone * on * 0.5 * sc;
     }
   }
 

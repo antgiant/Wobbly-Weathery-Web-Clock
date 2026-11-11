@@ -155,4 +155,15 @@ const sitting = (x, y, r = 3) => ({ x, y, r, vy: 0, run: false, y0: y, hang: 0, 
   check('when the freezing stops the ice thaws and runs', thaw.drops.some((d) => d.run || d.dying));
 }
 
+// ---- hail: stones bounce off the glass ----
+{
+  const hailRun = (hail, secs = 6) => { const t = make(21); t.hail = hail; let max = 0, bounced = 0, up = false; for (let k = 0; k < secs / 0.02; k++) { t.step(0.02, 0); max = Math.max(max, t.stones.length); for (const q of t.stones) if (q.bounces > 0 && q.vy < 0) up = true; bounced += t.stones.filter((q) => q.bounces > 0).length; } return { t, max, bounced, up }; };
+  const none = hailRun(0), some = hailRun(1);
+  check('no hail, no stones', none.max === 0 && none.t.stones.length === 0);
+  check('hail sends stones down, never more than the limit', some.max > 0 && some.max <= 30, String(some.max));
+  check('a stone that hits the ink bounces back up', some.up && some.bounced > 0);
+  check('stones are shown like beads (drawn with the drops)', (() => { const t = make(22); t.hail = 1; for (let k = 0; k < 100; k++) t.step(0.02, 0); return t.stones.length > 0; })());
+  check('when the hail stops the last stones fall away', (() => { const t = hailRun(1, 3).t; t.hail = 0; for (let k = 0; k < 300; k++) t.step(0.02, 0); return t.stones.length === 0; })());
+}
+
 done();

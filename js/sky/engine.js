@@ -851,6 +851,7 @@ export class SkyEngine {
     this._3f('uGround2', ground2);
     this._1f('uWet', Math.min(1, w.precip * (1 - w.snowfall)));
     this._1f('uSleet', !K || K.weather ? (w.sleet || 0) : 0);
+    this._1f('uHail', !K || K.weather ? (w.hail || 0) : 0);
     this._1f('uGlaze', !K || K.weather ? (w.freezing || 0) : 0);
     // sea state: real marine data when we have it, otherwise grown from the wind (fully developed sea, damped for fetch)
     if (land.ocean) {
@@ -970,7 +971,7 @@ export class SkyEngine {
       const w = this.s.weather, on = this.s.digitWeather !== false && !this.s.reducedMotion && (!this.knobs || this.knobs.weather);
       const mixed = (w.sleet || 0) > 0.15;                                                          // sleet: both, half each
       const snowRate = mixed ? (w.precip || 0) * 0.5 : (w.precip || 0) * (w.snowfall || 0), rainRate = mixed ? (w.precip || 0) * 0.5 : (w.precip || 0) * (1 - (w.snowfall || 0));
-      this.wx = { snow: on ? Math.min(1, snowRate * 1.4) : 0, rain: on ? Math.min(1, rainRate * 1.3) : 0, freeze: on ? (w.freezing || 0) : 0 };       // (read by the tests)
+      this.wx = { snow: on ? Math.min(1, snowRate * 1.4) : 0, rain: on ? Math.min(1, rainRate * 1.3) : 0, freeze: on ? (w.freezing || 0) : 0, hail: on ? (w.hail || 0) : 0 };       // (read by the tests)
     }
     // An ES 2 GPU gets the glass as small programs, each reading what the ones before made (a Pi Zero's driver could not fit the whole glass in one: it drew nothing): the height field and
     // slope (ggeo), the shadow and halo (gaura), for stained glass the tube's colours (gemit, ghalo), the body (gbody), snow and rain when there are any (gwx), the outline (gout).
