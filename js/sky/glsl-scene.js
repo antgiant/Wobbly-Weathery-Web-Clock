@@ -964,6 +964,7 @@ uniform vec3  uGround2;       // second ground colour (patches of dry / bare / d
 uniform float uWet;           // 0..1 wet ground (rain)
 uniform float uSleet;         // 0..1: rain and snow falling together (both are drawn); 0 = whichever uSnow says
 uniform float uGlaze;         // 0..1 freezing rain: the rain is ice-clear, the ground is coated with ice
+uniform vec4  uAur;           // aurora: how visible 0..1, how high 0 (low in the pole's direction) .. 1 (overhead), the pole's azimuth (radians from north, clockwise), -
 uniform float uBow;           // 0..1 rainbow (js/sky/rainbow.js): a ring 42 degrees from the point opposite the sun
 uniform float uRime;          // 0..1 freezing fog: frost on the ground, glitter in the air
 uniform float uDust;          // 0..1 dust storm: a brown veil and sand blowing along
@@ -1146,6 +1147,19 @@ vec3 shadeSky(vec3 d, out float skyMask) {
   vec4 mo = moonDisc(d, expo);
   L += mo.rgb * mo.a;               // added on top: the air in front of the moon still glows
   skyMask *= 1.0 - mo.a;
+  if (uAur.x > 0.01 && d.y > 0.0) {   // aurora: a wavy arc of curtains toward the magnetic pole, green below and pink above, striped with rays
+    float az = atan(d.x, d.z), alt = asin(clamp(d.y, 0.0, 1.0));
+    float da = az - uAur.z; da = atan(sin(da), cos(da));
+    float wav = 0.06 * sin(da * 5.0 + uTime * 0.4) + 0.04 * sin(da * 11.0 - uTime * 0.7);
+    float altC = mix(0.16, 0.95, uAur.y) + wav;
+    float up = (alt - altC) / 0.16;
+    float band = up < 0.0 ? exp(-up * up * 6.0) : exp(-up * up * 0.9);                        // a sharp lower edge, a soft glow above it
+    float across = exp(-pow(da / mix(0.8, 2.2, uAur.y), 2.0));
+    float rays = 0.5 + 0.5 * sin(da * 41.0 + 2.0 * sin(da * 9.0 + uTime * 0.3) + uTime * 0.6);
+    rays = 0.35 + 0.65 * rays * (0.6 + 0.4 * sin(da * 17.0 - uTime * 0.5));
+    vec3 ac = mix(vec3(0.18, 1.0, 0.42), vec3(0.78, 0.28, 0.72), smoothstep(0.0, 1.6, up));
+    L += ac * band * across * rays * uAur.x * 0.08;
+  }
   if (uBow > 0.01) {                // rainbow: red outside at 42 degrees, violet inside; a fainter second bow at 51 degrees with the colours reversed; the sky between them is a little darker
     float ang = degrees(acos(clamp(dot(d, -uSunDir), -1.0, 1.0)));
     float p = (ang - 40.6) / 1.9, q = (ang - 50.0) / 3.5;

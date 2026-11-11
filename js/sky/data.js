@@ -3,6 +3,7 @@
 
 import { conf, formatTemp, lowPower } from '../config.js';
 import { now } from '../simtime.js';
+import { fetchKp } from './aurora.js';
 import { PRESETS, fetchLiveWeather, fetchMarine, CLEAR, fetchWeatherDay, weatherFromDay, fetchClimate } from './weather.js';
 import { fetchDem, demSkyline, LANDSCAPES } from './landscape.js';
 import Virgo from '../virgo/virgo.js';
@@ -316,6 +317,19 @@ export async function loadLiveData() {
     applyWeather();
     applyLandscape();
   }
+  await loadKp(signal);
+  applyAurora();
+}
+/** The aurora: the place and the planetary K index now (NOAA; cached 30 minutes; `?kp=6` forces one). Not drawn for a past or future date (Kp is only known for now), unless one is forced. */
+export function applyAurora() {
+  if (!engine) return;
+  const lat = num(ov.lat ?? conf.location_latitude, NaN), lon = num(ov.lon ?? conf.location_longitude, NaN);
+  engine.set({ aurora: Number.isFinite(state.kp) && Number.isFinite(lat) && Number.isFinite(lon) && (!histActive() || Number.isFinite(ov.kp)) ? { lat, lon, kp: state.kp } : null });
+}
+async function loadKp(signal) {
+  if (Number.isFinite(ov.kp)) { state.kp = Math.min(9, Math.max(0, ov.kp)); return; }
+  try { state.kp = await cachedFetch('kp', 30 * 60000, () => fetchKp(signal)); }
+  catch (e) { if (e.name !== 'AbortError') console.info('[sky] Kp fetch failed:', e.message); }               // (the last value is kept: Kp changes slowly)
 }
 /** Fetch weather, terrain and land cover now (app.js repeats this every 15 minutes through the scheduler). */
 export function scheduleLiveData() {

@@ -27,6 +27,7 @@ export const RULES = [
   [/^js\/sky\/flatsky\.js$/, ['sky', 'led', 'perf']],
   [/^js\/sky\/ladderui\.js$/, ['settings', 'perf']],                            // the settings screens following the capability ladder                            // the flat sky and ground of the capability ladder                         // the capability ladder (what the hardware can handle; the Pi's program asks for it)                         // the quality governor (off unless asked for; the Pi's program asks)
   [/^js\/sky\/lightning\.js$/, ['sky', 'digitweather']],                                   // when and how brightly a storm flashes (a pure module, with its own unit test)
+  [/^js\/sky\/aurora\.js$/, ['sky']],                                                         // where and when an aurora shows (pure logic and one fetch, with its own unit test)
   [/^js\/sky\/rainbow\.js$/, ['sky']],                                                       // when a rainbow shows (a pure module, with its own unit test)
   [/^js\/sky\/glsl-scene\.js$/, ['sky', 'led', 'digitweather']],
   [/^js\/sky\/portable\.js$/, ['sky', 'led', 'digitweather', 'options', 'maskgpu', 'dropsgpu']],       // the ES 2 form of the shaders (Pi Zero, 3): the same pictures from every shader

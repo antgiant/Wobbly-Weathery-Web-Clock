@@ -13,6 +13,7 @@
 
 import { Lightning } from './lightning.js';
 import { rainbowStrength } from './rainbow.js';
+import { auroraView } from './aurora.js';
 import { Capability, RUNG_OF, quietFor } from './capability.js';
 import { VERT_STROKE, FRAG_STROKE, VERT_LIGHT, FRAG_LIGHT, VERT_DROP, FRAG_DROP, VERT_TRAIL, FRAG_TRAIL } from './glsl-mask.js';
 import {
@@ -644,7 +645,7 @@ export class SkyEngine {
     const clouds = ambientOn && s.cloudMotion > 0 && (w.cover[0] > 0.02 || w.cover[1] > 0.02 || w.cover[2] > 0.02);
     const water = ambientOn && s.landscape.ocean;
     const rain = weatherOn && (w.precip > 0.01 || w.lightning > 0.01 || w.dust > 0.02 || w.rime > 0.02);      // (a storm flashes)
-    const night = ambientOn && this.sky && this.sky.sun.alt < -6 && s.twinkle;
+    const night = (ambientOn && this.sky && this.sky.sun.alt < -6 && s.twinkle) || (weatherOn && this._aur > 0.02);      // (twinkling stars, or an aurora)
     const wind = ambientOn && s.plants.on && s.plants.count > 0 && s.cloudMotion > 0;      // plants sway
     const lights = ambientOn && this.s.tree.on;                    // the tree's bulbs twinkle
     return clouds || water || rain || night || wind || lights;
@@ -853,6 +854,11 @@ export class SkyEngine {
     this._1f('uWet', Math.min(1, w.precip * (1 - w.snowfall)));
     this._1f('uSleet', !K || K.weather ? (w.sleet || 0) : 0);
     this._1f('uHail', !K || K.weather ? (w.hail || 0) : 0);
+    {                                                                                        // aurora (js/sky/aurora.js): where the place is in the magnetic field, Kp now, how dark and clear it is
+      const a = s.aurora, v = a && (!K || K.weather) ? auroraView({ lat: a.lat, lon: a.lon, kp: a.kp, sunAlt: sky.sun.alt, cover: w.cover, fog: w.fog }) : null;
+      this._aur = v ? v.strength : 0;
+      this._4f('uAur', v ? v.strength : 0, v ? v.height : 0, v ? v.bearing * Math.PI / 180 : 0, 0);
+    }
     this._1f('uBow', !K || K.weather ? (typeof s.bow === 'number' ? s.bow : rainbowStrength(sky.sun.alt, w)) : 0);          // (s.bow: a number forces it, for tests and screenshots)
     this._1f('uRime', !K || K.weather ? (w.rime || 0) : 0);
     this._1f('uDust', !K || K.weather ? (w.dust || 0) : 0);

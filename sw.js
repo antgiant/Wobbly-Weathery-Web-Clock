@@ -20,7 +20,7 @@ const PRECACHE = [
   'js/virgo/virgo.js', 'js/virgo/lib/timezone_centroids.js', 'js/virgo/lib/timezone_links.js',
   'js/sky/alerts.js', 'js/sky/app.js', 'js/sky/appearance.js', 'js/sky/astro.js', 'js/sky/bindings.js', 'js/sky/biome.js', 'js/sky/controls.js', 'js/sky/core.js',
   'js/sky/data.js', 'js/sky/dim.js', 'js/sky/engine.js', 'js/sky/glass.js', 'js/sky/glsl-atmosphere.js', 'js/sky/glsl-plants.js', 'js/sky/glsl-scene.js', 'js/sky/governor.js', 'js/sky/capability.js', 'js/sky/flatsky.js', 'js/sky/ladderui.js', 'js/sky/stats.js', 'js/sky/glsl-mask.js', 'js/sky/portable.js',
-  'js/sky/burnin.js', 'js/sky/sharebox.js', 'js/sky/drops.js', 'js/sky/lightning.js', 'js/sky/rainbow.js', 'js/sky/pillroom.js', 'js/sky/windsway.js', 'js/sky/landscape.js', 'js/sky/ledcard.js', 'js/sky/ledgrid.js', 'js/sky/ledpanel.js', 'js/sky/lightpollution.js', 'js/sky/orientation.js', 'js/sky/plants.js', 'js/sky/presets.js', 'js/sky/rain.js',
+  'js/sky/burnin.js', 'js/sky/sharebox.js', 'js/sky/drops.js', 'js/sky/lightning.js', 'js/sky/rainbow.js', 'js/sky/aurora.js', 'js/sky/pillroom.js', 'js/sky/windsway.js', 'js/sky/landscape.js', 'js/sky/ledcard.js', 'js/sky/ledgrid.js', 'js/sky/ledpanel.js', 'js/sky/lightpollution.js', 'js/sky/orientation.js', 'js/sky/plants.js', 'js/sky/presets.js', 'js/sky/rain.js',
   'js/sky/scheduler.js', 'js/sky/sunpath.js', 'js/sky/view.js', 'js/sky/weather.js',
 ];
 
