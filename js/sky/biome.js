@@ -115,16 +115,48 @@ export function seasonFromClimate(date, lat, biome, climate) {
   return rising ? 'spring' : (t < 4 ? 'winter' : 'autumn');
 }
 
+// -------------------------------------------------------------- foliage ----
+const smoothstep = (x, a, b) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+/**
+ * How leafy the broadleaf trees are, as a gradual change through the year rather than four jumps (js/sky/plants.js draws the trees, the shader thins their crowns).
+ * Returns { cover: 0 bare .. 1 in full leaf, autumn: 0 green .. 1 turned (yellow, orange, red), fresh: 0 .. 1 the bright green of new leaves }.
+ * From the date and the hemisphere (the south is half a year on), the latitude (leaves open later and fall earlier the further from the equator), and, when the last month's
+ * warmth is known (weather.fetchClimate), what this year is doing: a warm spell in March opens leaves early, a cold snap in September turns and drops them early.
+ * The tropics and the desert have no leaf season; the subtropics (under 35 degrees) keep most of their leaves through a mild winter.
+ * @param {{t15:number, tPrev:number|null}|null} climate
+ */
+export function foliage(date, lat, biome, climate = null) {
+  const alat = Math.abs(lat);
+  if (alat < 23.5 || (biome && (biome.tropical || biome.kind === 'desert' || biome.kind === 'snow'))) return { cover: 1, autumn: 0, fresh: 0 };
+  const year = date.getUTCFullYear(), doy = (Date.UTC(year, date.getUTCMonth(), date.getUTCDate()) - Date.UTC(year, 0, 0)) / 864e5;
+  const d = (doy + (lat < 0 ? 182.6 : 0)) % 365.25;                          // the day of the year by the hemisphere's own calendar
+  const k = (alat - 40) * 1.6;                                               // days later in spring and earlier in autumn for each degree beyond 40 (and the reverse nearer the equator)
+  const warm = climate && Number.isFinite(climate.t15) ? smoothstep(climate.t15, 3, 12) : null, cold = climate && Number.isFinite(climate.t15) ? 1 - smoothstep(climate.t15, 4, 12) : null;
+  let open = smoothstep(d, 95 + k, 140 + k);
+  if (warm != null && d < 200) open = Math.min(1, Math.max(0, 0.6 * open + 0.4 * warm));          // a warm spell opens leaves early, a cold spring holds them back
+  let turn = smoothstep(d, 262 - k, 296 - k), fall = smoothstep(d, 285 - k, 330 - k);
+  if (cold != null && d >= 200) { const late = smoothstep(d, 240, 262); turn = Math.max(turn, late * cold * 0.9); fall = Math.max(fall, late * cold * cold * 0.9); }
+  let cover = open * (1 - fall);
+  if (alat < 35) cover = 0.7 + 0.3 * cover;                                  // mild winters: mostly evergreen in effect
+  const fresh = open * (1 - smoothstep(d, 150 + k, 200 + k)) * (d < 200 ? 1 : 0);
+  return { cover, autumn: turn * (cover > 0.02 ? 1 : 0), fresh };
+}
+
 // --------------------------------------------------------------- palette ----
 const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
 const SNOW = [0.80, 0.82, 0.86];
 
 /** Colours (linear-ish albedo) for the ground and the plant sprites. */
-export function paletteFor(biome, season, snowCover = 0, sat = null) {
+export function paletteFor(biome, season, snowCover = 0, sat = null, fol = null) {
   const k = biome.kind;
   const grass = { spring: [0.14, 0.26, 0.08], summer: [0.10, 0.20, 0.06], autumn: [0.22, 0.20, 0.07], winter: [0.26, 0.22, 0.12] }[season];
   const leaf = { spring: [0.12, 0.24, 0.06], summer: [0.06, 0.14, 0.04], autumn: [0.35, 0.16, 0.04], winter: [0.13, 0.10, 0.07] }[season];
   let g1, g2, gr = grass, lf = biome.tropical ? [0.05, 0.16, 0.05] : leaf;
+  if (fol && !biome.tropical) {                                                       // the leaves by the day, not the season: new green, full green, turning, bare
+    const summer = [0.06, 0.14, 0.04], young = [0.12, 0.24, 0.06], turned = [0.35, 0.16, 0.04], bare = [0.13, 0.10, 0.07];
+    lf = mix(mix(mix(summer, young, fol.fresh), turned, fol.autumn), bare, 1 - fol.cover);
+  }
   const dry = [0.30, 0.26, 0.12], conifer = [0.03, 0.09, 0.05];
   const rock = k === 'desert' ? [0.36, 0.27, 0.20] : [0.28, 0.26, 0.24];
   switch (k) {
@@ -145,6 +177,6 @@ export function paletteFor(biome, season, snowCover = 0, sat = null) {
   return {
     ground: mix(g1, SNOW, s * 0.9), ground2: mix(g2, SNOW, s * 0.8),
     grass: mix(gr, SNOW, s * 0.5), leaf: mix(lf, SNOW, s * 0.4), conifer: mix(conifer, SNOW, s * 0.3), dry: mix(dry, SNOW, s * 0.5), rock,
-    snow: s,
+    snow: s, leafCover: fol ? fol.cover : 1,
   };
 }

@@ -1539,6 +1539,7 @@ export class SkyEngine {
     this._3f('uDry', pal.dry); this._3f('uRock', pal.rock);
     this._1f('uSnowCover', Math.max(pal.snow || 0, w.snowCover));
     this._1f('uRime', !K || K.weather ? (w.rime || 0) : 0);
+    this._1f('uLeafCover', pal.leafCover == null ? 1 : pal.leafCover);
     this._1f('uOcean', s.landscape.ocean ? 1 : 0);
     this._2f('uResPx', this.sceneTarget.w, this.sceneTarget.h);
     if (plantsOn) {

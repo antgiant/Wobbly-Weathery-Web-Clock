@@ -11,6 +11,7 @@ export async function run(t) {
   const { page } = h;
   await open(page);
   await page.waitForTimeout(400);
+  await page.waitForFunction(() => { const r = document.querySelector('.modal__content').getBoundingClientRect(); return Math.abs(r.bottom - innerHeight) < 2; }, null, { timeout: 4000 }).catch(() => {});      // (the sheet slides in over 220 ms, later when the page is busy drawing: wait for it to arrive instead of guessing)
   t.check('settings open on the Presets tab', await page.evaluate(() => document.querySelector('.tab[aria-selected="true"]').dataset.tab) === 'presets');
   t.check('there are nine presets, each a button with a name and a note', await page.evaluate(() => [...document.querySelectorAll('#presetList .preset')].filter((b) => b.querySelector('strong') && b.querySelector('small')).length) === 9);
   t.check('the tab order starts with Presets', await page.evaluate(() => [...document.querySelectorAll('.tab')].map((x) => x.dataset.tab).join()) === 'presets,clock,scene,weather,extras,place');

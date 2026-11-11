@@ -7,7 +7,7 @@ import { fetchKp } from './aurora.js';
 import { PRESETS, fetchLiveWeather, fetchMarine, CLEAR, fetchWeatherDay, weatherFromDay, fetchClimate } from './weather.js';
 import { fetchDem, demSkyline, LANDSCAPES } from './landscape.js';
 import Virgo from '../virgo/virgo.js';
-import { fetchBiome, fallbackBiome, seasonFromClimate, paletteFor } from './biome.js';
+import { fetchBiome, fallbackBiome, seasonFromClimate, paletteFor, foliage } from './biome.js';
 import { generatePlants } from './plants.js';
 import { estimateBortle, fetchPlaces } from './lightpollution.js';
 import { isChristmasSeason } from '../season.js';
@@ -184,7 +184,7 @@ export function applyPlants() {
   const on = !!conf.plants && !water && type !== 'city' && b.kind !== 'water';
   const season = seasonFromClimate(now(), b.lat ?? num(conf.location_latitude, DEFAULT_LAT), b, state.climate);
   const w = engine.s.weather;
-  const pal = paletteFor(b, season, w.snowCover || 0, b.rgb);
+  const pal = paletteFor(b, season, w.snowCover || 0, b.rgb, foliage(now(), b.lat ?? num(conf.location_latitude, DEFAULT_LAT), b, state.climate));
   // ground colours follow the biome too (the ocean keeps its own water shading)
   if (!water && type !== 'city') engine.set({ ground: { g1: pal.ground, g2: pal.ground2 } });
   else engine.set({ ground: null });
