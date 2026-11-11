@@ -17,7 +17,7 @@ import { canvas, engine, controls, setEngine, setControls, setGlass, ov, num, to
 import { applyQuality, applyLocation, applyWeather, applyLandscape, applyPlants, applyTree, syncTimeData, scheduleLiveData, loadLiveData, dayLoad } from './data.js';
 import { applyView, atDefault, followActive, updateHud, updateVrReadout, updateHomeButton, returnToDefaultView } from './view.js';
 import { markReady, startFallback, updateClockColor, updateFavicon } from './appearance.js';
-import { updateCountdown, updateRain, countdownPeriod } from './alerts.js';
+import { updateCountdown, updateRain, countdownPeriod, loadSevere } from './alerts.js';
 import { bindSettings } from './bindings.js';
 import { initDim, updateDim, dimmingOn } from './dim.js';
 import { initPresets } from './presets.js';
@@ -109,6 +109,7 @@ function init() {
   engine.start();
   engine.onFrame(() => { window.__frames = (window.__frames || 0) + 1; });
   scheduleLiveData();
+  loadSevere();
   if (simBase) { syncTimeData(); glassRef.apply(); }          // the clock style (and the season) follow the date being shown
 
   const finishSetup = () => {
@@ -132,10 +133,11 @@ function init() {
     const solid = clockStyleNow() === 'solid' && conf.screenMode !== 'led';
     if ((window.__frames >= 1 && engine.assetsDone && (solid || engine.glass.hasMask)) || performance.now() - t0 > 8000) { ready = true; markReady(); }
   }, () => (ready ? Infinity : 80));
+  every('severe', loadSevere, () => (conf.severeAlerts === 'off' ? Infinity : 60000));                 // official alerts: once a minute (a notice must not linger)
   every('live', loadLiveData, 15 * 60000);                                 // weather, terrain, land cover
   every('live-retry', loadLiveData, () => (state.needRetry && navigator.onLine !== false ? 60000 : Infinity));   // a lookup failed: try again soon
   // the connection came back: bring in everything that could not be fetched, at once
-  window.addEventListener('online', () => { dayLoad.key = ''; scheduleLiveData(); syncTimeData(); updateRain(); });
+  window.addEventListener('online', () => { dayLoad.key = ''; scheduleLiveData(); syncTimeData(); updateRain(); loadSevere(); });
   window.addEventListener('powerchange', () => { engine.set({ lowPower: lowPower() }); glassRef.apply(); });       // the battery ran low (or was plugged in): the automatic clock style follows
   window.addEventListener('offline', () => applyWeather());               // the status line says "offline"
   every('timedata', syncTimeData, () => (simActive() ? 4000 : 60000));     // history and seasons follow the (simulated) date

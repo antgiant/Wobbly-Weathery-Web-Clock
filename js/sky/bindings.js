@@ -7,7 +7,7 @@ import { engine, controls, glass } from './core.js';
 import { applyQuality, applyAdapt, applyLandscape, applyWeather, applyPlants, applyTree, applyLocation, applySim, syncTimeData, scheduleLiveData, dayLoad } from './data.js';
 import { applyView, atDefault, updateHud, updateVrReadout, applySensorFixes, setViewMode, setBaseMode, returnToDefaultView, updateHomeButton } from './view.js';
 import { updateClockColor } from './appearance.js';
-import { updateCountdown, updateRain } from './alerts.js';
+import { updateCountdown, updateRain, updateSevere, loadSevere } from './alerts.js';
 import { updateDim } from './dim.js';
 import { applyLedPanel } from './ledpanel.js';
 import { updateBurnIn } from './burnin.js';
@@ -50,6 +50,9 @@ export function bindSettings() {
   bindRange('glassGlow', 'glassGlow', () => glass.apply(), 'glassGlowOut');
   bindSelect('glassGlowColor', 'glassGlowColor', () => glass.apply());
   bindSelect('tempUnit', 'tempUnit', () => { applyWeather(); updateRain(); });
+  bindSelect('severeAlerts', 'severeAlerts', () => loadSevere());
+  $('severeOther').checked = !!conf.severeOther;
+  $('severeOther').addEventListener('change', (e) => { conf.severeOther = e.target.checked; updateSevere(); });
   $('rainAlert').checked = !!conf.rainAlert;
   $('rainAlert').addEventListener('change', (e) => { conf.rainAlert = e.target.checked; updateRain(); });
   $('holidayTree').checked = conf.holidayTree !== false;

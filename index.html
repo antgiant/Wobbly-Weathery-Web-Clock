@@ -85,6 +85,7 @@
   <link rel="modulepreload" href="js/sky/lightning.js">
   <link rel="modulepreload" href="js/sky/rainbow.js">
   <link rel="modulepreload" href="js/sky/aurora.js">
+  <link rel="modulepreload" href="js/sky/severe.js">
   <link rel="modulepreload" href="js/sky/sharebox.js">
   <link rel="modulepreload" href="js/sky/windsway.js">
   <link rel="preload" href="data/stars.bin" as="fetch" crossorigin>
@@ -99,6 +100,7 @@
   <div id="dimmer" hidden aria-hidden="true"></div>
   <div id="alerts">
     <div id="sunCountdown" role="timer" aria-live="off" hidden></div>
+    <div id="severePill" role="alert" hidden></div>
     <div id="rainAlertPill" role="status" hidden></div>
     <div id="timerPill" role="status" hidden></div>
   </div>
@@ -593,6 +595,22 @@
               </select>
               <p class="hint" id="skyStatus"></p>
             </div>
+          </div>
+
+          <div class="group">
+            <h3>Severe weather</h3>
+            <div class="field">
+              <label class="field__label" for="severeAlerts">Severe weather notices</label>
+              <select id="severeAlerts">
+                <option value="off">Off</option>
+                <option value="warning">Warnings only</option>
+                <option value="watch">Watches and warnings</option>
+                <option value="all">Everything, advisories too</option>
+              </select>
+              <p class="hint">Official alerts for your place from the US National Weather Service (the United States and its territories), shown above the umbrella.</p>
+              <p class="hint" id="severeStatus"></p>
+            </div>
+            <label class="field toggle adv"><span class="field__text">Also non-weather emergencies<small>Civil emergencies, evacuations, child abduction alerts</small></span><input type="checkbox" id="severeOther"></label>
           </div>
 
           <div class="group">

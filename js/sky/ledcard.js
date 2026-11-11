@@ -61,7 +61,11 @@ const cardHeight = (sz, stacked) => 1 + (stacked ? sz.h + 1 + sz.h : sz.h) + 1 +
 const RAIN_ICON = {   // 9 x 7: an umbrella; the heavy-rain one has drops under the canopy
   umbrella: ['...###...', '.#######.', '#########', '....#....', '....#....', '....#....', '...##....'],
   slicker: ['...###...', '.#######.', '#########', '.#..#..#.', '....#....', '#..#..#..', '...##....'],
+  // a severe weather notice (js/sky/severe.js): a warning triangle, solid for a warning (red), an outline for a watch (amber) or an advisory (blue)
+  sevwarning: ['....#....', '...###...', '...#.#...', '..##.##..', '..##.##..', '.#######.', '#########'],
+  sevwatch: ['....#....', '...#.#...', '...#.#...', '..#.#.#..', '..#...#..', '.#..#..#.', '#########'],
 };
+const LED_RAIN_COLOR = { umbrella: '#7fd4ff', slicker: '#ffd24a', sevwarning: '#ff4a3d', sevwatch: '#ffb300', sevadvisory: '#7fd4ff' };
 
 const clearPixel = () => {
   if (!ledCardKey) return;
@@ -136,7 +140,7 @@ export function drawLedCard(st, leadMs, off = false, rain = null) {
     for (let i = 0; i < filled; i++) px(x0 + 1 + i, y0 + cardH - 2, sun);
   }
   if (rain) {                                                                    // the umbrella, bottom left
-    blit(RAIN_ICON[rain.level], 1, rows - 8, rain.level === 'slicker' ? '#ffd24a' : '#7fd4ff');
+    blit(RAIN_ICON[rain.level] || RAIN_ICON.sevwatch, 1, rows - 8, LED_RAIN_COLOR[rain.level] || '#ffb300');
   }
   c.fillStyle = 'rgba(0,0,0,0.82)';                                              // the outline first: every empty LED next to a lit one
   for (const k of lit.keys()) {
@@ -191,8 +195,8 @@ function drawFit(st, rain) {
     y = pill(c, W / 2, y, parts, s);
   }
   if (rain) {
-    const col = rain.level === 'slicker' ? '#ffd24a' : '#7fd4ff';
-    pill(c, W / 2, y, [{ t: '☂', color: col, font: f(18), size: 18 }, { t: rain.text || (rain.level === 'slicker' ? 'Slicker weather' : 'Umbrella'), color: '#fff', font: f(15), size: 15 }], s);
+    const col = LED_RAIN_COLOR[rain.level] || '#7fd4ff', sev = /^sev/.test(rain.level);
+    pill(c, W / 2, y, [{ t: sev ? '⚠' : '☂', color: col, font: f(18), size: 18 }, { t: rain.text || (rain.level === 'slicker' ? 'Slicker weather' : 'Umbrella'), color: '#fff', font: f(15), size: 15 }], s);
   }
   engine.setOverlayFull(fitCard);
 }

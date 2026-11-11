@@ -146,4 +146,55 @@ export async function run(t) {
   await h.settle(2500);
   t.check('a 16 x 16 panel shows the normal pill, made of LEDs (full-size overlay, no pixel card)', await h.page.evaluate(() => window.__sky.glass.overlayFull === true && window.__sky.glass.overlay === false));
   await h.close();
+
+  // ---- severe weather notices: official alerts for the place (js/sky/severe.js), mocked NWS answers ----
+  const feat = (event, extra = {}) => ({ id: `urn:${event}`, properties: { id: `urn:${event}`, event, severity: 'Severe', urgency: 'Immediate', headline: `${event} for the county`, areaDesc: 'Test County', ends: '2026-06-21T20:00:00Z', messageType: 'Alert', status: 'Actual', ...extra } });
+  const sevPill = (page) => page.evaluate(() => { const e = document.getElementById('severePill'); return e && !e.hidden ? { level: e.dataset.level, text: e.textContent.trim(), icon: !!e.querySelector('svg path') } : null; });
+  const rainVisible = (page) => page.evaluate(() => { const e = document.getElementById('rainAlertPill'); return !!e && !e.hidden; });
+  const sevOpen = { fast: true, fixedTime: '2026-06-21T12:00:00Z', conf: { weatherMode: 'live', rainAlert: true, clockStyle: 'solid', twentyFourHourClock: true } };
+  const pollNow = (page) => page.evaluate(async () => { const m = await import('/js/sky/alerts.js'); await m.loadSevere(); });
+  const sv = await t.open({ ...sevOpen, load: false });
+  sv.net.alerts = [feat('Tornado Warning', { severity: 'Extreme' }), feat('Flood Watch', { severity: 'Moderate', urgency: 'Future' }), feat('Wind Advisory', { severity: 'Minor' })];
+  await sv.page.goto(sv.url); await sv.ready(); await sv.settle(4500);
+  let sp = await sevPill(sv.page);
+  t.check('severe notice: a tornado warning shows first, in red, with an icon, until its end time, and says there is one more (the watch; the advisory is off by default)', sp && sp.level === 'warning' && /^Tornado Warning until /.test(sp.text) && /\(\+1 more\)$/.test(sp.text) && sp.icon, JSON.stringify(sp));
+  t.check('severe notice: the umbrella steps aside while it shows', (await rainVisible(sv.page)) === false);
+  t.check('severe notice: the settings panel says what it is', /Tornado Warning for the county/.test(await sv.page.evaluate(() => document.getElementById('severeStatus').textContent)));
+  t.check('severe notice: asked for this place (the NWS point), no other service', sv.net.calls.some((u) => /api\.weather\.gov\/alerts\/active\?point=40\.\d+,-7\d\.\d+/.test(u)));
+  sv.net.alerts = [feat('Flood Watch', { severity: 'Moderate', urgency: 'Future' })];
+  await pollNow(sv.page); await sv.settle(300);
+  sp = await sevPill(sv.page);
+  t.check('severe notice: the warning is cancelled (gone at the next poll): the watch takes over, amber, and the umbrella is still away', sp && sp.level === 'watch' && /^Flood Watch/.test(sp.text) && !/more/.test(sp.text) && (await rainVisible(sv.page)) === false, JSON.stringify(sp));
+  sv.net.alerts = [];
+  await pollNow(sv.page); await sv.settle(400);
+  t.check('severe notice: nothing left: no pill, and the umbrella is back', (await sevPill(sv.page)) === null && (await rainVisible(sv.page)) === true);
+  await sv.close();
+
+  const off = await t.open({ ...sevOpen, load: false, conf: { ...sevOpen.conf, severeAlerts: 'off' } });
+  off.net.alerts = [feat('Tornado Warning')];
+  await off.page.goto(off.url); await off.ready(); await off.settle(3500);
+  t.check('severe notice: off means no pill and no request to the service', (await sevPill(off.page)) === null && !off.net.calls.some((u) => /api\.weather\.gov/.test(u)));
+  await off.close();
+
+  const abroad = await t.open({ ...sevOpen, load: false, query: 'lat=51.5&lon=-0.1' });
+  abroad.net.alerts = [feat('Tornado Warning')];
+  await abroad.page.goto(abroad.url); await abroad.ready(); await abroad.settle(3500);
+  const abroadText = await abroad.page.evaluate(() => document.getElementById('severeStatus').textContent);
+  t.check('severe notice: outside the United States the service is not asked, and the settings panel says why', (await sevPill(abroad.page)) === null && !abroad.net.calls.some((u) => /api\.weather\.gov/.test(u)) && /United States/.test(abroadText), JSON.stringify([abroadText, abroad.net.calls.filter((u) => /weather\.gov/.test(u))]));
+  await abroad.close();
+
+  const advisory = await t.open({ ...sevOpen, load: false, conf: { ...sevOpen.conf, severeAlerts: 'all' } });
+  advisory.net.alerts = [feat('Wind Advisory', { severity: 'Minor' })];
+  await advisory.page.goto(advisory.url); await advisory.ready(); await advisory.settle(3500);
+  const ap = await sevPill(advisory.page);
+  t.check('severe notice: with "Everything" an advisory shows too (blue), and a civil emergency stays away unless asked', ap && ap.level === 'advisory' && /^Wind Advisory/.test(ap.text), JSON.stringify(ap));
+  await advisory.close();
+
+  // ---- a severe weather notice on an LED panel: a warning triangle (red) takes the umbrella's corner ----
+  const ledSev = await t.open({ fast: true, fixedTime: '2026-06-21T12:00:00Z', width: 1000, height: 560, load: false, conf: { weatherMode: 'rain', rainAlert: true, screenMode: 'led', clockStyle: 'solid', countdown: 'off', twentyFourHourClock: true } });
+  ledSev.net.alerts = [feat('Tornado Warning', { severity: 'Extreme' })];
+  await ledSev.page.goto(ledSev.url); await ledSev.ready(); await ledSev.settle(4500);
+  const redLit = await ledSev.page.evaluate(() => { const c = window.__ledCard, d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let red = 0, blue = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 250) { if (d[i] > 200 && d[i + 1] < 120 && d[i + 2] < 120) red++; else if (d[i + 2] > 200 && d[i] < 160) blue++; } return { red, blue }; });
+  t.check('LED panel: a tornado warning takes the umbrella\'s corner as a red triangle (the blue umbrella is not drawn)', redLit.red >= 15 && redLit.blue === 0, JSON.stringify(redLit));
+  await ledSev.close();
 }

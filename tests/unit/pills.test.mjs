@@ -15,7 +15,7 @@ globalThis.document = { createElement: () => { canvasCount++; const c = { width:
 globalThis.__c2d_read = (id, x, y, w, h) => new ArrayBuffer(w * h * 4);
 
 const P = await import('../../native/host/js/pills.js');
-const none = () => { for (const k of ['sun', 'rain', 'timer']) P.setPill(k, null); };
+const none = () => { for (const k of ['sun', 'rain', 'timer', 'severe']) P.setPill(k, null); };
 
 none();
 check('no pill shows: nothing is painted', P.paintPills(1280, 720) === null && !P.pillsVisible());
@@ -57,4 +57,19 @@ none(); P.setPill('rain', { level: 'umbrella', text: 'Umbrella: rain now' });
 const small = P.paintPills(1920, 1080), big = P.paintPills(3840, 2160);
 check('on a 4K screen the pills are about twice as big as on 1080p', big.w > small.w * 1.7 && big.w < small.w * 2.3, `${big.w} vs ${small.w}`);
 check('painting reuses one canvas', canvasCount === 1, `${canvasCount} canvases`);
+// ---- the severe weather notice: first, in its level's colour, wraps, and comes and goes like the others ----
+{
+  none();
+  check('a severe notice is a pill like the others (shown, hidden, reported)', P.setPill('severe', { level: 'warning', type: 'tornado', text: 'Tornado Warning until 4:15 PM (+1 more)' }) && P.pillsVisible() && !P.setPill('severe', { level: 'warning', type: 'tornado', text: 'Tornado Warning until 4:15 PM (+1 more)' }) && P.setPill('severe', null) && !P.pillsVisible());
+  P.setPill('severe', { level: 'warning', type: 'tornado', text: 'Tornado Warning until 4:15 PM' });
+  const one = P.paintPills(1280, 720); P.setPill('rain', { level: 'umbrella', text: 'Umbrella: rain now' }); const two = P.paintPills(1280, 720);
+  check('it is painted inside the picture, low and about in the middle', one && one.x >= 0 && one.x + one.w <= 1280 && one.y + one.h > 720 * 0.8 && Math.abs(one.x + one.w / 2 - 640) < 120);
+  check('with another pill the picture is bigger (both show; the page hides the umbrella itself)', two.w > one.w || two.h > one.h);
+  none(); P.setPill('severe', { level: 'watch', type: 'flood', text: 'Flash Flood Watch for the whole of a very large county and the ones next to it until tomorrow evening at 8:00 PM' });
+  const wide = P.paintPills(1280, 720), tall = P.paintPills(720, 1280);
+  check('a long headline wraps instead of running off the screen, on a landscape and an upright screen', wide && wide.w <= 1280 && tall && tall.w <= 720 && tall.h > 30);
+  check('a watch and a warning differ in colour (the notice is cached per state, so they are painted apart)', (() => { none(); P.setPill('severe', { level: 'watch', text: 'Flood Watch' }); const w = P.paintPills(1280, 720); P.setPill('severe', { level: 'warning', text: 'Flood Watch' }); return P.paintPills(1280, 720) !== w; })());
+  none();
+}
+
 done();

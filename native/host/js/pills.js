@@ -3,7 +3,7 @@
 // the GPU (boot.js). What they say comes from the page itself: js/sky/alerts.js and js/clock.js call __pillSet(kind, value) beside the HTML they fill (a browser has no __pillSet).
 // The look follows styles.css (#sunCountdown, #rainAlertPill, #timerPill): sizes in CSS pixels scaled up on screens wider than 1920 (a phone or a 4K screen would use the device pixel ratio).
 
-const state = { sun: null, rain: null, timer: null };
+const state = { sun: null, rain: null, timer: null, severe: null };
 let canvas = null;
 
 /** Sets what one pill says (null: hidden). Returns true when that changed anything. */
@@ -14,12 +14,12 @@ export function setPill(kind, value) {
   state[kind] = v;
   return true;
 }
-export const pillsVisible = () => !!(state.sun || state.rain || state.timer);
+export const pillsVisible = () => !!(state.sun || state.rain || state.timer || state.severe);
 export const pillState = () => state;
 
 const clamp = (lo, x, hi) => Math.max(lo, Math.min(hi, x));
 const BG = 'rgba(10,16,32,0.62)', BG_TIMER = 'rgba(15,18,32,0.7)', BORDER = 'rgba(255,255,255,0.32)';
-const SUN_COL = { sunrise: '#ffd27a', sunset: '#ff9a5c' }, RAIN_COL = { umbrella: '#7fd4ff', slicker: '#ffd24a' };
+const SUN_COL = { sunrise: '#ffd27a', sunset: '#ff9a5c' }, RAIN_COL = { umbrella: '#7fd4ff', slicker: '#ffd24a' }, SEV_COL = { watch: '#ffb300', warning: '#ff4a3d', advisory: '#7fd4ff' };
 
 function font(ctx, px) { ctx.font = `600 ${px}px Inter`; }
 const width = (ctx, px, text) => { font(ctx, px); return ctx.measureText(text).width; };
@@ -71,11 +71,36 @@ function umbrellaIcon(ctx, x, y, box, level, color) {       // the page's own dr
   if (level === 'slicker') for (const [a, b, c, d] of [[5, 15, -1, 2.5], [9, 17, -1, 2.5], [18, 17, -1, 2.5], [7, 21, -0.6, 1.5]]) { ctx.beginPath(); ctx.moveTo(x + a * k, y + b * k); ctx.lineTo(x + (a + c) * k, y + (b + d) * k); ctx.stroke(); }
 }
 
+/** A warning triangle with an exclamation mark: an outline for a watch or an advisory, solid for a warning (the page draws a picture for each kind of hazard; here one sign serves all). */
+function severeIcon(ctx, x, y, box, level, color) {
+  const k = box / 24;
+  ctx.lineWidth = 1.8 * k; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = level === 'warning' ? '#fff' : color; ctx.fillStyle = color;
+  ctx.beginPath(); ctx.moveTo(x + 12 * k, y + 3 * k); ctx.lineTo(x + 22 * k, y + 21 * k); ctx.lineTo(x + 2 * k, y + 21 * k); ctx.closePath();
+  if (level === 'warning') ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = level === 'warning' ? '#fff' : color;
+  ctx.beginPath(); ctx.moveTo(x + 12 * k, y + 10 * k); ctx.lineTo(x + 12 * k, y + 15 * k); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x + 12 * k, y + 18 * k); ctx.lineTo(x + 12 * k, y + 18.1 * k); ctx.stroke();
+}
+
 /** The pills as pictures: [{ w, h, border, bg, paint(ctx, x, y) }] in the page's order (sun, rain, timer), laid out for a screen of W x H. */
 function build(ctx, W, H) {
   const k = Math.max(1, W / 1920), vw = W / 100, land = W >= H, out = [];
   const avail = land ? W - (0.05 * W + 132 * k) - (0.05 * W + Math.max(0.05 * W, 44 * k) + 12 * k) : W - 32 * k;
   const maxW = Math.max(120, avail);
+  const v = state.severe;
+  if (v) {                                                   // a severe weather notice comes first, in the colour of its level (watch amber, warning red)
+    const fs = clamp(14.4 * k, 3.2 * vw, 19.6 * k), box = 1.7 * fs, padL = 0.7 * fs, padR = fs, padY = 0.4 * fs, gap = 0.5 * fs, lh = fs * 1.2, col = SEV_COL[v.level] || SEV_COL.watch;
+    const lines = wrap(ctx, fs, v.text, maxW - padL - padR - box - gap), tw = Math.max(...lines.map((l) => width(ctx, fs, l)));
+    const w = padL + box + gap + tw + padR, h = Math.round(Math.max(box, lines.length * lh) + padY * 2);
+    out.push({
+      w, h, border: true, borderColor: col, borderWidth: 2, bg: v.level === 'warning' ? 'rgba(60,10,10,0.7)' : BG,
+      paint(c, x, y) {
+        severeIcon(c, x + padL, y + (h - box) / 2, box, v.level, col);
+        font(c, fs); c.textAlign = 'left';
+        lines.forEach((l, i) => shadowText(c, l, x + padL + box + gap + (tw - width(c, fs, l)) / 2, y + (h - lines.length * lh) / 2 + lh * i + fs * 0.98, '#fff'));
+      },
+    });
+  }
   const s = state.sun;
   if (s) {
     const fs = clamp(16 * k, 3.8 * vw, 28.8 * k), tfs = fs * 1.4, padX = 1.3 * fs, padY = 0.55 * fs, gap = 0.6 * fs;
@@ -158,7 +183,7 @@ function paint(W, H) {
     for (const p of r) {
       const py = y + h - p.h;                                  // (align-items: flex-end)
       c.beginPath(); c.roundRect(x, py, p.w, p.h, p.h / 2); c.fillStyle = p.bg; c.fill();
-      if (p.border) { c.beginPath(); c.roundRect(x + 0.5, py + 0.5, p.w - 1, p.h - 1, p.h / 2); c.strokeStyle = BORDER; c.lineWidth = 1; c.stroke(); }
+      if (p.border) { const bwid = p.borderWidth || 1; c.beginPath(); c.roundRect(x + bwid / 2, py + bwid / 2, p.w - bwid, p.h - bwid, p.h / 2); c.strokeStyle = p.borderColor || BORDER; c.lineWidth = bwid; c.stroke(); }
       p.paint(c, x, py);
       x += p.w + gap;
     }
