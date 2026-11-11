@@ -59,7 +59,7 @@ export async function run(t) {
 
   // ---- dry weather: nothing ----
   const clear = await open(t, 'clear');
-  t.check('clear sky: nothing on the digits', JSON.stringify(await wx(clear.page)) === JSON.stringify({ snow: 0, rain: 0 }));
+  { const cw = await wx(clear.page); t.check('clear sky: nothing on the digits (no rain, snow, ice or hail)', Object.values(cw).every((v) => v === 0) && cw.snow === 0 && cw.rain === 0, JSON.stringify(cw)); }
   await clear.close();
 
   // ---- the coloured tube and the LED panel get it too; flat colour is left alone ----
