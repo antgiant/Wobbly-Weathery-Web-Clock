@@ -259,6 +259,8 @@ fn n_c2d_count() -> usize { canvas2d::count() }
 /// Resident memory of this program in MB (Linux), or 0.
 fn rss_mb() -> f64 { std::fs::read_to_string("/proc/self/statm").ok().and_then(|s| s.split_whitespace().nth(1).and_then(|v| v.parse::<f64>().ok())).map(|p| p * 4096.0 / 1048576.0).unwrap_or(0.0) }
 fn n_rss() -> f64 { rss_mb() }
+/// Free contiguous memory (CMA) in MB, which the VC4 GPU draws its buffers from (`CmaFree` in /proc/meminfo), or -1 where the kernel has none: when it runs out the driver logs "Failed to allocate from GEM DMA helper" and nothing more can be drawn.
+fn n_cma_free() -> f64 { std::fs::read_to_string("/proc/meminfo").ok().and_then(|s| s.lines().find(|l| l.starts_with("CmaFree:")).and_then(|l| l.split_whitespace().nth(1).and_then(|v| v.parse::<f64>().ok()))).map(|k| k / 1024.0).unwrap_or(-1.0) }
 /// The CPU time this program has used so far, "user,system" in ms (Linux; the kernel counts it in 10 ms ticks): set against the wall clock it says whether a run is waiting (for the GPU, a timer) or computing,
 /// and the system part is the driver's own work.
 fn n_cpu() -> String {
@@ -467,6 +469,7 @@ fn main() {
         g.set("__c2d_free", Function::new(ctx.clone(), n_c2d_free)).unwrap();
         g.set("__c2d_count", Function::new(ctx.clone(), n_c2d_count)).unwrap();
         g.set("__rss", Function::new(ctx.clone(), n_rss)).unwrap();
+        g.set("__cma_free", Function::new(ctx.clone(), n_cma_free)).unwrap();
         g.set("__exit", Function::new(ctx.clone(), n_exit)).unwrap();
         g.set("__presents", Function::new(ctx.clone(), n_presents)).unwrap();
         g.set("__c2d_call", Function::new(ctx.clone(), n_c2d_call)).unwrap();

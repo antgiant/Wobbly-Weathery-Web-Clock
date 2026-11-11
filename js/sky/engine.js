@@ -1363,7 +1363,7 @@ export class SkyEngine {
         }
       }
     } else {
-      if (!this._snap || this._snap.w !== w || this._snap.h !== h) this._snap = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);
+      if (!this._snap || this._snap.w !== w || this._snap.h !== h) { if (this._snap) { gl.deleteTexture(this._snap.tex); gl.deleteFramebuffer(this._snap.fbo); } this._snap = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE); }
       gl.bindFramebuffer(gl.READ_FRAMEBUFFER, T.fbo);
       gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this._snap.fbo);
       gl.blitFramebuffer(0, 0, T.w, T.h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.LINEAR);

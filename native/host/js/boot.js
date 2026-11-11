@@ -43,10 +43,13 @@ if (A.present) {
   // a clock that runs for years: every hour say how it is (uptime, memory, canvases, pictures), and restart if memory grows past a limit (systemd starts it again)
   const maxRss = A.maxrss || 0; let hourly = 0;
   setInterval(() => {
-    const rss = __rss(), line = 'health: up ' + (performance.now() / 3600000).toFixed(2) + ' h, rss ' + rss.toFixed(0) + ' MB, canvases ' + __c2d_count() + ', pictures ' + __presents() + (G.__sky && G.__sky.gov ? ', level ' + G.__sky.gov.level : '');
+    const rss = __rss(), cma = __cma_free(), line = 'health: up ' + (performance.now() / 3600000).toFixed(2) + ' h, rss ' + rss.toFixed(0) + ' MB' + (cma >= 0 ? ', gpu memory free ' + cma.toFixed(0) + ' MB' : '') + ', canvases ' + __c2d_count() + ', pictures ' + __presents() + (G.__sky && G.__sky.gov ? ', level ' + G.__sky.gov.level : '');
     if (A.health || ++hourly % 1 === 0) __print(line);
     if (maxRss && rss > maxRss) { __print('health: memory ' + rss.toFixed(0) + ' MB is over the limit of ' + maxRss + ' MB, restarting'); __exit(3); }
   }, A.health ? A.health * 1000 : 3600000);
+  setInterval(() => {
+    if (__gl('getError') === 0x505 || (A.mincma && __cma_free() >= 0 && __cma_free() < A.mincma)) { __print('health: the GPU is out of memory (' + (__cma_free() >= 0 ? __cma_free().toFixed(0) + ' MB free' : 'GL_OUT_OF_MEMORY') + '), restarting'); __exit(4); }       // (the VC4 driver: "Failed to allocate from GEM DMA helper"; a restart frees it all, and a dead picture helps nobody)
+  }, 30000);       // (looked at every 30 s, not hourly: the driver's errors came every few minutes)
   const renderer = String(__gl('getString', 0x1F01));
   const soft = /llvmpipe|softpipe|swrast/i.test(renderer);
   const q = new URLSearchParams(searchText);
