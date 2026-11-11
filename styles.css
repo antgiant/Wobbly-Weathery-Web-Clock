@@ -17,9 +17,13 @@ body {
 #sky {
   position: fixed;
   inset: 0;
-  width: 100vw;
+  width: 100%;
+  height: 100%;
+  /* the largest the viewport gets, so the picture reaches under a browser toolbar or the home indicator on a phone (with 100dvh an iPhone left a dark band at the bottom when the toolbar was
+     showing; a fixed box is as tall as the screen the page is in, and 100lvh says so where it is known) */
   height: 100vh;
-  height: 100dvh;
+  height: 100lvh;
+  min-height: 100%;
   display: block;
   z-index: 0;
   touch-action: none;
