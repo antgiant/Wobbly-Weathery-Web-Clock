@@ -76,6 +76,7 @@ export function initGlass(engine, getBasis) {
     lastDropT = t;
     if (inkStale) refreshInk();
     if (engine.knobs) sim.maxDrops = engine.knobs.drops;               // the quality governor's limit
+    sim.wind = engine.lean && engine.lean.on ? engine.lean.v : 0;          // wind pushes the drops that have left the glass
     sim.step(dt, rain);
     const L = engine.glass.light || [-0.5, 0.8, 0.6];
     if (engine.canDrawMask && !window.__canvasMask) {                // the GPU draws the drops (glsl-mask.js); the CPU only lists them

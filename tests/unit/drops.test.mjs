@@ -136,4 +136,12 @@ const sitting = (x, y, r = 3) => ({ x, y, r, vy: 0, run: false, y0: y, hang: 0, 
   const t = new DropSim(41); t.setInk(new Uint8Array(400 * 400).fill(255), 400, 400, 400, 400, 40); t.maxDrops = 20; run(t, 20, 1);
   check('the number of drops respects the governor\'s limit (maxDrops)', t.drops.length <= 20, String(t.drops.length));
 }
+// ---- wind carries a drop that has left the glass ----
+{
+  const fall = (wind) => { const t = make(7); t.wind = wind; t.drops.push({ x: 50, y: 50, r: 2, vy: 0, vx: 0, run: false, y0: 50, hang: 0, wait: 0, dying: true, fall: 0, age: 0, trail: [] }); for (let k = 0; k < 5; k++) t.step(0.05, 0); return t.drops.length ? t.drops[0].x : null; };
+  const calm = fall(0), right = fall(0.6), left = fall(-0.6);
+  check('wind to the right carries a falling drop right, to the left carries it left, none leaves it be', calm === 50 && right > 50.5 && left < 49.5, `${left} ${calm} ${right}`);
+  check('a drop on the glass is not pushed by the wind (it runs down the stroke)', (() => { const t = make(8); t.wind = 0.75; run(t, 6, 1); return t.drops.filter((d) => !d.dying).every((d) => t.inkAt(d.x, d.y) > 0.9); })());
+}
+
 done();

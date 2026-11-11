@@ -956,6 +956,8 @@ uniform float uVisKm;         // meteorological visibility
 uniform float uFog;           // 0..1 ground fog
 uniform float uPrecip;        // 0 none, 1 heavy
 uniform float uSnow;          // 0 rain, 1 snow
+uniform float uLean;          // wind across the view: how far the falling rain leans (+ toward the right), -0.75..0.75
+uniform float uLeanOn;        // 1 when the weather knows the wind (else rain leans a fixed 0.12 and snow falls straight)
 uniform float uDpr;
 uniform vec3  uGround;        // ground albedo
 uniform vec3  uGround2;       // second ground colour (patches of dry / bare / different cover)
@@ -1347,7 +1349,7 @@ vec4 finish(vec3 L, float alpha) {
     for (int k = 0; k < 2; k++) {
       float sc = k == 0 ? 1.0 : 0.6;
       float cellW = mix(5.0, 11.0, uSnow) / sc;
-      float slant = (1.0 - uSnow) * 0.12;
+      float slant = uLeanOn > 0.5 ? uLean * mix(1.0, 2.2, uSnow) : (1.0 - uSnow) * 0.12;      // wind: rain leans, snow (which falls slowly) is carried further
       vec2 g = vec2(sp.x + sp.y * slant, sp.y);
       float cx = floor(g.x / cellW);
       float rnd = hash12(vec2(cx, float(k) * 17.0));

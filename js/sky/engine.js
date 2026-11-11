@@ -832,6 +832,15 @@ export class SkyEngine {
     this._1f('uFog', w.fog);
     this._1f('uPrecip', !K || K.weather ? w.precip : 0);
     this._1f('uSnow', !K || K.weather ? w.snowfall : 0);
+    {                                                                                        // wind leans the falling rain and carries the snow: the sideways part of the surface wind, across the view
+      const ws = w.windMs || 0, wl = Math.hypot(w.wind[0], w.wind[1]) || 1;
+      const sideways = ws > 0 ? (w.wind[0] / wl * cam.mat[0] + w.wind[1] / wl * cam.mat[2]) * ws : 0;           // m/s toward screen right (cam.mat columns: right, up, forward; x east, z north)
+      const t = (perfNow / 1000) % 100000 * (s.cloudMotion === 0 ? 0 : s.cloudMotion), gustiness = ws > 0 ? Math.max(0, (w.gust || ws) - ws) / Math.max(w.gust || ws, 1) : 0;
+      const gust = 1 + gustiness * (0.7 * Math.sin(t * 1.7) + 0.5 * Math.sin(t * 4.3 + 1));               // (gusts come and go; none in steady wind)
+      const lean = Math.max(-0.75, Math.min(0.75, sideways * 0.04 * gust));
+      this.lean = { on: ws > 0, v: lean };                                                                  // (the glass drops read it: glass.js)
+      this._1f('uLeanOn', ws > 0 ? 1 : 0); this._1f('uLean', lean);
+    }
     this._1f('uDpr', T.h / Math.max(1, this.canvas.clientHeight));
     this._3f('uGround', ground);
     this._3f('uGround2', ground2);

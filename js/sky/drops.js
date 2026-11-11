@@ -19,6 +19,7 @@ export class DropSim {
     this.drops = [];
     this.gw = 0; this.gh = 0; this.grid = null; this.w = 1; this.h = 1; this.inkCells = 0;
     this.stroke = 30;
+    this.wind = 0;                      // sideways push on a drop in the air, -0.75..0.75 (engine.lean): the wind across the view
     this.maxDrops = MAX_DROPS;          // the quality governor lowers this on a slow machine
     this.wet = null;                    // water left on the glass by running drops (0..1 per cell of the ink grid); later drops are drawn along it
   }
@@ -102,6 +103,7 @@ export class DropSim {
       d.age += dt;
       if (d.dying) {
         d.fall += dt; d.vy += GRAVITY * S * dt * 1.5; d.y += d.vy * dt;
+        if (this.wind) d.vx = (d.vx || 0) + this.wind * S * 9 * dt;            // wind carries a drop that has left the glass
         if (d.vx) { d.x += d.vx * dt; d.vx *= Math.exp(-dt * 1.5); }
         if (d.thrown && d.fall > 0.03 && this.inkAt(d.x, d.y) > 0.9) { d.dying = false; d.thrown = false; d.fall = 0; d.vx = 0; d.vy = 0; d.run = false; d.hang = 0; d.r *= 0.85; d.y0 = d.y; d.trail.length = 0; }   // it lands on other glass and sticks
         continue;
