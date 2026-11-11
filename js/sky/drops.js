@@ -19,6 +19,7 @@ export class DropSim {
     this.drops = [];
     this.gw = 0; this.gh = 0; this.grid = null; this.w = 1; this.h = 1; this.inkCells = 0;
     this.stroke = 30;
+    this.freeze = 0;                    // 0..1, freezing rain: drops freeze where they land (they grow into larger beads and sheets and do not run)
     this.wind = 0;                      // sideways push on a drop in the air, -0.75..0.75 (engine.lean): the wind across the view
     this.maxDrops = MAX_DROPS;          // the quality governor lowers this on a slow machine
     this.wet = null;                    // water left on the glass by running drops (0..1 per cell of the ink grid); later drops are drawn along it
@@ -110,6 +111,7 @@ export class DropSim {
       }
       if (!d.run && !d.hang) {                                       // sitting: grows while it rains, until it is heavy enough to run
         d.r += dt * S * (0.004 + 0.03 * rain);
+        if (this.freeze > 0.5) { d.ice = true; d.r = Math.min(d.r, S * 0.2); continue; }            // frozen: it stays a bead (the big ones are sheets of ice) until the rain stops and it thaws away
         if (d.r >= rRun * (0.85 + 0.3 * ((d.age * 7.13) % 1))) { d.run = true; d.vy = S * 0.15; d.y0 = d.y; d.wait = 0; d.trail.length = 0; }
         continue;
       }

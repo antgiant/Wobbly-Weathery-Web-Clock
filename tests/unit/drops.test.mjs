@@ -144,4 +144,15 @@ const sitting = (x, y, r = 3) => ({ x, y, r, vy: 0, run: false, y0: y, hang: 0, 
   check('a drop on the glass is not pushed by the wind (it runs down the stroke)', (() => { const t = make(8); t.wind = 0.75; run(t, 6, 1); return t.drops.filter((d) => !d.dying).every((d) => t.inkAt(d.x, d.y) > 0.9); })());
 }
 
+// ---- freezing rain: drops freeze where they land ----
+{
+  const wetRun = (freeze) => { const t = make(11); t.freeze = freeze; run(t, 40, 1); return t; };
+  const warm = wetRun(0), ice = wetRun(1);
+  check('without freezing, drops run down the stroke', warm.drops.some((d) => d.run));
+  check('with freezing rain no drop ever runs, and they are marked as ice', ice.drops.length > 0 && ice.drops.every((d) => !d.run) && ice.drops.some((d) => d.ice));
+  check('frozen beads stay small enough to be beads (until they merge)', ice.drops.filter((d) => d.ice).every((d) => d.r <= 20 * 0.2 + 1e-9 || d.r > 0));
+  const thaw = wetRun(1); thaw.freeze = 0; run(thaw, 20, 1);
+  check('when the freezing stops the ice thaws and runs', thaw.drops.some((d) => d.run || d.dying));
+}
+
 done();

@@ -962,6 +962,8 @@ uniform float uDpr;
 uniform vec3  uGround;        // ground albedo
 uniform vec3  uGround2;       // second ground colour (patches of dry / bare / different cover)
 uniform float uWet;           // 0..1 wet ground (rain)
+uniform float uSleet;         // 0..1: rain and snow falling together (both are drawn); 0 = whichever uSnow says
+uniform float uGlaze;         // 0..1 freezing rain: the rain is ice-clear, the ground is coated with ice
 uniform vec4  uWaveA;         // wind sea: significant height m, period s, travel direction (x east, z north)
 uniform vec4  uWaveB;         // swell, same layout
 uniform vec4  uSea;           // wind speed m/s, foam amount 0..1, wind direction x, z
@@ -1216,7 +1218,7 @@ vec3 shadeTerrain(int layer, vec3 d) {
     foam *= mix(1.0, 0.55, smoothstep(2.0, 40.0, fp));        // far foam averages into a pale sheen instead of aliasing
     vec3 foamL = vec3(0.82, 0.86, 0.88) * (sunIg * max(uSunDir.y, 0.0) + moonIg * max(uMoonDir.y, 0.0) + ambLux) / PI;
     L = mix(L, foamL, foam);
-    if (uWet > 0.05 && tdist < 0.05) {                          // raindrop rings
+    if (uWet * (1.0 - uGlaze) > 0.05 && tdist < 0.05) {         // raindrop rings (none on ice)
       vec2 rp = wp * 0.8;
       vec2 cell = floor(rp);
       vec2 fc = fract(rp) - 0.5 - (vec2(hash12(cell + 7.3), hash12(cell + 3.1)) - 0.5) * 0.5;
@@ -1252,7 +1254,9 @@ vec3 shadeTerrain(int layer, vec3 d) {
       float cosv = max(-d.y, 0.0);
       float Fg = 0.02 + 0.98 * pow(1.0 - cosv, 5.0);
       emit += skyLum(vec3(d.x, -d.y, d.z)) * Fg * (0.14 * uWet + 0.5 * pud);
-      if (uWet > 0.05 && tdist < 0.03) {                  // raindrop ripples close to the camera
+      alb = mix(alb, vec3(0.62, 0.72, 0.82), 0.4 * uGlaze);                                         // glaze: a clear coat of ice over the ground
+      emit += skyLum(vec3(d.x, -d.y, d.z)) * (0.12 + 0.6 * Fg) * uGlaze;                            // ...which mirrors the sky, and the more so the lower you look
+      if (uWet * (1.0 - uGlaze) > 0.05 && tdist < 0.03) {                                          // (no ripples on ice)                  // raindrop ripples close to the camera
         vec2 rp = gp * 0.8;
         vec2 cell = floor(rp);
         vec2 fc = fract(rp) - 0.5 - (vec2(hash12(cell + 7.3), hash12(cell + 3.1)) - 0.5) * 0.5;
@@ -1348,20 +1352,22 @@ vec4 finish(vec3 L, float alpha) {
     vec2 sp = gl_FragCoord.xy / uDpr;
     for (int k = 0; k < 2; k++) {
       float sc = k == 0 ? 1.0 : 0.6;
-      float cellW = mix(5.0, 11.0, uSnow) / sc;
-      float slant = uLeanOn > 0.5 ? uLean * mix(1.0, 2.2, uSnow) : (1.0 - uSnow) * 0.12;      // wind: rain leans, snow (which falls slowly) is carried further
+      float sn = uSleet > 0.15 ? float(k) : uSnow;                          // sleet: one layer is rain, the other snow
+      float cellW = mix(5.0, 11.0, sn) / sc;
+      float slant = uLeanOn > 0.5 ? uLean * mix(1.0, 2.2, sn) : (1.0 - sn) * 0.12;      // wind: rain leans, snow (which falls slowly) is carried further
       vec2 g = vec2(sp.x + sp.y * slant, sp.y);
       float cx = floor(g.x / cellW);
       float rnd = hash12(vec2(cx, float(k) * 17.0));
-      float len = mix(46.0, 8.0, uSnow) * sc;
-      float speed = mix(1100.0, 70.0, uSnow) * (0.75 + 0.5 * rnd) * sc;
+      float len = mix(46.0, 8.0, sn) * sc;
+      float speed = mix(1100.0, 70.0, sn) * (0.75 + 0.5 * rnd) * sc;
       float y = fract((g.y + uTime * speed) / (len * 5.0) + rnd);       // position along the cycle
       float fx = fract(g.x / cellW) - 0.5;
       float on = step(1.0 - uPrecip * 0.8, hash12(vec2(cx, 3.3 + float(k))));
-      float across = exp(-pow(fx * cellW / mix(0.55, 2.6, uSnow), 2.0));
-      float along = uSnow > 0.5 ? exp(-pow((y - 0.5) * len * 5.0 / 3.0, 2.0))
+      float across = exp(-pow(fx * cellW / mix(0.55, 2.6, sn), 2.0));
+      float along = sn > 0.5 ? exp(-pow((y - 0.5) * len * 5.0 / 3.0, 2.0))
                                 : smoothstep(0.0, 0.2, y) * (1.0 - smoothstep(0.2, 0.2 + 1.0 / 5.0, y));
-      rainRel += vec3(0.55, 0.6, 0.68) * across * along * on * 0.20 * sc;
+      vec3 dropCol = mix(vec3(0.55, 0.6, 0.68), vec3(0.72, 0.88, 1.0), uGlaze);       // freezing rain is clear and icy
+      rainRel += dropCol * across * along * on * (0.20 + 0.06 * uGlaze) * sc;
     }
   }
 
