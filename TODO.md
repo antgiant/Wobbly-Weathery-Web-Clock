@@ -42,7 +42,7 @@ Built: ten rungs (weather, ambient, tick, seconds off, slow clock, solid digits,
 - **An LED panel on the Zero**: the panel library's busy loop against a one-core Zero is unmeasured.
 - **2038**: the 32-bit builds use a 32-bit time counter (glibc 2.31, bullseye). Fix: Raspberry Pi OS built on Debian 13 (trixie) plus a build with 64-bit time. Whether trixie still runs the ARMv6 Zero is
   unconfirmed (a blog says yes): try a spare SD card (`dpkg --print-architecture`, `date -d @2147483648`). The `aarch64` build is not affected.
-- **`docs/TRY-ON-A-PI.md` was behind: updated 2026-11-11** (screen mode, removing an old kiosk, the service's wait for the GPU, the update timer, `journalctl ... | grep ladder`, the kernel crash note). Left there: say which release to download instead of the Actions artifact (step 1 still points at CI runs).
+- **`docs/TRY-ON-A-PI.md` was behind: updated 2026-11-11** (screen mode, removing an old kiosk, the service's wait for the GPU, the update timer, `journalctl ... | grep ladder`, the kernel crash note).  Step 1 now points at the releases page.
 - **Pills on the Pi: built 2026-11-07** (sun countdown, umbrella alert, countdown name: `native/host/js/pills.js`, text from an embedded Inter subset). Not done: the settings drawer and the toast, wake, shared and update banners (page furniture with nothing to tap on a headless clock); backdrop blur behind the pills (a darker capsule instead); a custom font for names outside Latin letters (they show a box).
 - Direct scan-out through KMS/GBM: not built, on purpose (a clock draws about once a second; the framebuffer copy costs a few milliseconds).
 

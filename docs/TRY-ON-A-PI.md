@@ -8,8 +8,8 @@ by lowering the picture's size and detail as far as it must. If a Pi falls back 
 The first start on an ES 2 Pi takes a while (the GPU's shader compiler works through the big sky shader); after that frames are quick. Step 3 measures it.
 
 ## 1. Get the package
-On GitHub open the **Actions** tab, the newest green **Native** run on branch `claude/wobbly-clock-sky-simulator-njbc4r` (or `main`), and download the
-artifact **wobbly-clock-debs** (a zip with two files). Which one:
+Download the `.deb` from the newest release on GitHub (**Releases**, the ones named `Native x.y.z`; the Pi's own update timer and the `stellarium_clock` repository's `setup.sh` use the same files),
+or, to try an unreleased change, from the newest green **Native** run on the **Actions** tab (artifact **wobbly-clock-debs**, a zip with two files). Which one:
 
 | Your Pi and its OS | File |
 |---|---|
