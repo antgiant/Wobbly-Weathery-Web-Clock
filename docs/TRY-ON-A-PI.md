@@ -58,6 +58,9 @@ sudo systemctl enable --now wobbly-clock
 journalctl -u wobbly-clock -f                      # what it says
 ```
 
+### Changing settings without editing a file
+`sudo wobbly-clock config` is the web Settings drawer in the terminal: numbered menus for the same tabs, a * on what you changed, "reset to the default" for each setting, a place search by name (or an estimate from the network address, only if you say yes), and an offer to restart the clock. It writes `/etc/wobbly-clock/wobbly-clock.conf`, which is the only source of the clock's settings.
+
 ### The screen mode
 A screen that gives no mode list (`/sys/class/drm/card0-HDMI-A-1/edid` is 0 bytes) shows nothing, or the wrong size, until a mode is forced on the kernel command line.
 Add to the one line in `/boot/firmware/cmdline.txt` (or `/boot/cmdline.txt`): `video=HDMI-A-1:1280x720@60D` (the `D` forces the connector on). Use 1280x720 on a Pi Zero: at 1920x1080

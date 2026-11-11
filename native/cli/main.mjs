@@ -10,6 +10,7 @@ import { PANEL_SIZES, WIRINGS, fromAnswers, validate, totals, draw, parseMatrixC
 import { sequence } from './patterns.mjs';
 import { unit, status as statusText } from './service.mjs';
 import { manCommand, manConfig, help } from './manpage.mjs';
+import { configTool } from './configtool.mjs';
 import { PRESET_LIST } from '../../schema/presets.js';
 
 export const VERSION = '0.1.0';
@@ -22,6 +23,7 @@ export function realIO() {
     write: (f, t) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, t); },
     profile: (output) => probe(output),
     ask: null,
+    fetchJson: async (url) => { const r = spawnSync('curl', ['-sS', '-L', '--max-time', '15', '-A', 'wobbly-clock-config', url], { encoding: 'utf8' }); if (r.error || r.status !== 0) throw new Error((r.stderr || 'curl failed').trim()); return JSON.parse(r.stdout); },
     // run a program and wait (the clock itself, the update); and run one and keep what it prints (systemctl)
     exec: (cmd, args) => { const r = spawnSync(cmd, args, { stdio: 'inherit' }); return r.error ? 127 : r.status ?? 1; },
     capture: (cmd, args) => { const r = spawnSync(cmd, args, { encoding: 'utf8' }); return { code: r.error ? 127 : r.status ?? 1, out: (r.stdout || '').trim() }; },
@@ -78,7 +80,7 @@ export async function setup(io, say, config, profileFor) {
 
 export async function run(argv, io = realIO()) {
   const o = [], e = [];
-  const say = (...a) => o.push(...a);
+  const say = (...a) => (io.say ? io.say(...a) : o.push(...a));           // a terminal shows each line as it comes (the questions need their menus); tests collect them
   const fail = (code, msg) => { e.push(msg); return { code, out: o.join('\n'), err: e.join('\n') }; };
   const done = () => ({ code: 0, out: o.join('\n'), err: e.join('\n') });
   const [cmd, ...args] = argv;
@@ -119,6 +121,17 @@ export async function run(argv, io = realIO()) {
         save(r.config); if (r.matrix) io.write(MATRIX(r.config), writeMatrixCfg(r.matrix));
         say('', 'Saved. Check it with: wobbly-clock test'); return done();
       }
+      case 'config': {
+        if (!io.ask) return fail(2, 'config asks questions: run it in a terminal');
+        const r = await configTool(io, say, config, profile, CONF);
+        if (r.save) {
+          const f = fit(r.config, profile); f.changes.forEach((c) => say(`Note: ${c.reason}; using "${showValue(c.to)}".`));
+          save(f.config); say(`Saved ${CONF}.`);
+          if (r.askRestart && io.exec && /^y/i.test(String(await io.ask('Restart the clock now so it uses them? (Y/n) ') || 'y'))) { const code = io.exec('systemctl', ['restart', 'wobbly-clock']); say(code === 0 ? 'Restarted.' : 'Could not restart the clock (are you root? try: sudo wobbly-clock restart).'); }
+          else say('It uses them the next time it starts (or: sudo wobbly-clock restart).');
+        }
+        return done();
+      }
       case 'import-matrix-cfg': {
         const text = io.read(args[0]); if (!text) return fail(1, `cannot read ${args[0]}`);
         const cfg = parseMatrixCfg(text), problems = validate(cfg, profile);
@@ -155,7 +168,7 @@ export async function run(argv, io = realIO()) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(new URL(import.meta.url).pathname)) {
   const io = realIO();
-  if (process.stdin.isTTY) { const rl = (await import('readline')).createInterface({ input: process.stdin, output: process.stdout }); io.ask = (q) => new Promise((r) => rl.question(q, r)); process.on('exit', () => rl.close()); }
+  if (process.stdin.isTTY) { const rl = (await import('readline')).createInterface({ input: process.stdin, output: process.stdout }); io.ask = (q) => new Promise((r) => { const onClose = () => r(null); rl.once('close', onClose); rl.question(q, (a) => { rl.off('close', onClose); r(a); }); }); io.say = (...a) => console.log(...a); process.on('exit', () => rl.close()); }
   const r = await run(process.argv.slice(2), io);
   if (r.out) console.log(r.out); if (r.err) console.error(r.err);
   process.exit(r.code);
