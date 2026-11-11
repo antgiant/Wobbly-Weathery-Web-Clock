@@ -7,6 +7,19 @@ sunsets, twilight, stars, the Milky Way, the moon with its real phase, planets, 
 and a landscape. Static files only, so it hosts on GitHub Pages as is. It is built to run
 on a phone, and has a **VR look-around mode** where you move the phone to look around the sky.
 
+## Gallery
+
+Made by `npm run screenshots` (`tools/screenshots.mjs`): the same fixed times and places each time, so they can be refreshed whenever the look changes. The weather in them is chosen by hand.
+
+| | |
+|---|---|
+| ![The glass clock by day](docs/images/day.jpg)<br>The glass clock by day | ![Dusk](docs/images/dusk.jpg)<br>Dusk |
+| ![Night, with stars](docs/images/night.jpg)<br>Night | ![Rain on the glass digits](docs/images/rain.jpg)<br>Rain, with the umbrella alert on |
+| ![Snow](docs/images/snow.jpg)<br>Snow | ![A thunderstorm with a bolt of lightning](docs/images/storm.jpg)<br>A thunderstorm |
+| ![A rainbow](docs/images/rainbow.jpg)<br>A rainbow (sun low and out, rain in the air) | ![An aurora over Fairbanks](docs/images/aurora.jpg)<br>An aurora, from the place's magnetic latitude and the planetary K index |
+| ![The solid style](docs/images/style-solid.jpg)<br>Solid digits | ![The stained-glass style](docs/images/style-stained.jpg)<br>Stained glass |
+| ![A 64 x 32 LED panel](docs/images/led-64x32.jpg)<br>A 64 x 32 LED panel (the countdown and the umbrella are whole LEDs) | ![The settings](docs/images/settings.jpg)<br>Settings |
+
 With thanks to
 [Bézier Clock](http://jackf.net/bezier-clock/) in [VanillaJS](http://vanilla-js.com) with some [easing options](http://www.robertpenner.com/easing/)
 

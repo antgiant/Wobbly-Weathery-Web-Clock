@@ -14,6 +14,7 @@
     "test:quick": "node tools/schema-json.mjs && node tools/native-man.mjs && node tools/stamp.mjs && npm run lint && TIER=fast node tests/run.mjs all",
     "test:full": "node tools/schema-json.mjs && node tools/native-man.mjs && node tools/stamp.mjs && npm run lint && node tests/run.mjs all",
     "stamp": "node tools/stamp.mjs",
+    "screenshots": "node tools/screenshots.mjs",
     "schema": "node tools/schema-json.mjs",
     "man": "node tools/native-man.mjs"
   },

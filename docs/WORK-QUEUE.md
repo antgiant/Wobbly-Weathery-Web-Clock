@@ -52,6 +52,8 @@ Official warnings and watches for the clock's place, treated like the umbrella n
 
 ## 3b. README screenshots (asked 2026-11-07)
 
+**Built 2026-11-11:** `tools/screenshots.mjs` (`npm run screenshots`, `ONLY=day,rain` for some) takes twelve pictures with the tests' headless Chromium at fixed times and places (day, dusk, night, rain, snow, storm, rainbow, aurora, solid and stained styles, a 64 x 32 LED panel, the settings), 960 x 540 JPEGs of 33 to 112 KB (about 660 KB in all) in `docs/images/`, and the README has the gallery. NOT done: the upright 32 x 64 LED picture with the sun card, pictures from the Pi program (`--sink ppm:DIR` converted), a photo of the Pi on a real screen (someone has to take it).
+
 Add screenshots to `README.md`: a small gallery near the top. Suggested set: the glass clock by day, at dusk and at night; rain and snow; the other clock styles; an LED panel picture (64x32 and the upright 32x64, with the sun card and the umbrella); the settings panel; and, when someone takes one, a photo of the Pi on a real screen.
 How: the browser tests already take pictures (`tests/visual/baseline/*.png`, `h.shot` in `tests/lib/harness.mjs`) and the Pi program writes frames (`--sink ppm:DIR`, convert to PNG); write one script (for example `tools/screenshots.mjs`) that makes them all at fixed times and places so they can be refreshed, keep each picture small (a few hundred KB at most), put them in `docs/images/`, and refer to them from the README with alt text.
 
