@@ -1319,12 +1319,21 @@ vec3 shadeTerrain(int layer, vec3 d) {
       alb = mix(alb, vec3(0.8, 0.82, 0.86), snow);
       depthMix *= mix(1.3, 0.65, hz);
       if (abs(uLandType - 2.0) < 0.1) {
-        // city: dark blocks with lit windows after dusk
+        // city: dark facades, and after dusk lit windows. Each building (known by its height) has its own life: some are dark, some have whole floors lit, some a scatter of windows;
+        // a window is a lit cell of a grid with a gap round it; warm and cool lights; the tallest towers carry a slow red beacon on the roof.
         alb = vec3(0.14, 0.14, 0.15) * (0.7 + 0.6 * rr);
-        vec2 cell = floor(vec2(az * 2400.0, d.y * 2600.0));
-        float lit = step(0.80, hash12(cell)) * step(0.35, hz * 0.0 + hash12(cell + 9.0));
+        float bid = hash12(vec2(floor(ridgeTop * 3500.0), float(layer) + 0.5));
+        vec2 gridp = vec2(az * 2400.0, d.y * 2600.0);
+        vec2 cell = floor(gridp), inCell = fract(gridp);
+        float pane = step(inCell.x, 0.62) * step(inCell.y, 0.7);
+        float onFloor = step(0.4, hash12(vec2(cell.y, bid * 91.0)));
+        float style = step(0.35, bid) * mix(step(0.55, hash12(cell + 9.0)), onFloor * step(0.18, hash12(cell + 5.0)), step(0.5, fract(bid * 7.0)));
         float night = 1.0 - smoothstep(-0.14, 0.01, uSunA.z);
-        emit = vec3(1.0, 0.78, 0.45) * lit * night * 1.4 / expo * 0.35;
+        vec3 wcol = mix(vec3(1.0, 0.78, 0.45), vec3(0.72, 0.86, 1.0), step(0.82, hash12(cell + 3.0)));
+        emit = wcol * pane * style * night * 0.5 / expo;
+        float tower = step(0.05, ridgeTop) * float(layer == 2);
+        float beacon = tower * step(0.55, bid) * smoothstep(0.93, 1.0, hz) * step(0.5, fract(uTime * 0.45 + bid * 3.0));
+        emit += vec3(1.0, 0.08, 0.04) * beacon * (0.3 + 0.7 * night) * 3.0 / expo;
       }
     }
     vec3 lit = terrainLit(alb, n, sunIg, moonIg, ambLux) + emit;

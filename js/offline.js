@@ -75,9 +75,9 @@ if ('serviceWorker' in navigator) {
 // those is going on it waits (the banner offers the update by hand meanwhile) and applies the moment the last one is done. One automatic reload a minute at most, so a
 // copy that comes back old (a slow connection) cannot loop; the banner stays as the manual way.
 let pointerDown = false, waiting = 0;
-addEventListener('pointerdown', () => { pointerDown = true; }, true);
-addEventListener('pointerup', () => { pointerDown = false; }, true);
-addEventListener('pointercancel', () => { pointerDown = false; }, true);
+window.addEventListener('pointerdown', () => { pointerDown = true; }, true);
+window.addEventListener('pointerup', () => { pointerDown = false; }, true);
+window.addEventListener('pointercancel', () => { pointerDown = false; }, true);
 export function updateSafe() {
   const a = document.activeElement, shared = document.getElementById('sharedBanner');                 // (a shared setup waiting to be used or not is a decision half made too)
   return !document.querySelector('.modal:not([hidden])') && !pointerDown && !(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) && (!shared || shared.hidden);
