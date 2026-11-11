@@ -19,10 +19,11 @@ const SVG_SLICKER = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11a
 
 export function rainText(a) {
   const at = (ms) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', ...zoneOptions(), ...(use24h() ? { hour12: false, minute: '2-digit' } : { hour12: true }) });
-  const what = a.kind === 'snow' ? 'snow' : 'rain';
+  const what = a.what || (a.kind === 'snow' ? 'snow' : 'rain');           // (`what` names the odd kinds: sleet, freezing rain, hail)
   const amount = a.totalMm == null ? '' : tempUnit() === 'f' ? ` · ${(a.totalMm / 25.4).toFixed(a.totalMm / 25.4 < 1 ? 2 : 1)} in` : ` · ${a.totalMm < 10 ? a.totalMm.toFixed(1) : Math.round(a.totalMm)} mm`;
   const span = a.from == null ? '' : a.raining ? `, until ${at(a.to)}` : `, ${at(a.from)} to ${at(a.to)}`;
-  const lead = a.level === 'slicker' ? (a.kind === 'snow' ? 'Heavy snow: dress for it' : 'Slicker weather') : (a.kind === 'snow' ? 'Snow' : 'Umbrella');
+  const lead = a.what === 'freezing rain' ? 'Ice: stay in if you can' : a.what === 'hail' ? 'Hail: take cover' : a.what === 'sleet' ? 'Sleet: umbrella and boots'
+    : a.level === 'slicker' ? (a.kind === 'snow' ? 'Heavy snow: dress for it' : 'Slicker weather') : (a.kind === 'snow' ? 'Snow' : 'Umbrella');
   return `${lead}${a.raining ? `: ${what} now` : a.from != null ? `: ${what}` : ''}${span}${amount}`;
 }
 
@@ -35,6 +36,9 @@ export async function updateRain() {
     if (mode !== 'live') {
       const kind = mode === 'snow' ? 'snow' : 'rain';
       a = mode === 'storm' ? { level: 'slicker', kind, totalMm: null, from: null, to: null, raining: true }
+        : mode === 'freezing' ? { level: 'slicker', kind, what: 'freezing rain', totalMm: null, from: null, to: null, raining: true }
+        : mode === 'hail' ? { level: 'slicker', kind, what: 'hail', totalMm: null, from: null, to: null, raining: true }
+        : mode === 'sleet' ? { level: 'umbrella', kind, what: 'sleet', totalMm: null, from: null, to: null, raining: true }
         : (mode === 'rain' || mode === 'snow') ? { level: 'umbrella', kind, totalMm: null, from: null, to: null, raining: true } : { level: 'none' };
     } else {
       const d = now();

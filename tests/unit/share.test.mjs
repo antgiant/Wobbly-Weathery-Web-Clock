@@ -153,4 +153,19 @@ check('the readable form takes a city by name: ?preset=bedside&city=Chicago give
 })());
 check('a link by city number says the city in words', /place Chicago, United States/.test(describe({ settings: {}, place: { lat: 41.88, lon: -87.63 }, placeName: 'Chicago, United States', timeZone: 'America/Chicago' })) && /place 41\.85, -87\.65/.test(describe({ settings: {}, place: { lat: 41.85, lon: -87.65 }, placeName: 'Chicago' })));
 check('setupFromConf carries the name of a place set by hand', setupFromConf({ ...DEFAULTS, manualLocation: true, location_latitude: 41.88, location_longitude: -87.63, location_name: 'Chicago, United States' }).placeName === 'Chicago, United States' && setupFromConf({ ...DEFAULTS }).placeName === undefined);
+// ---- version 4: the six weather kinds added after version 3 ----
+{
+  const wxs = ['sleet', 'freezing', 'hail', 'dust', 'rime', 'windy'];
+  const opts = SETTINGS_V1.find((r) => r[0] === 'weatherMode')[3];
+  check('the first ten weather options are version 1\'s, in order, and there are 16 in all (still 4 bits)', opts.slice(0, 10).join() === 'live,clear,partly,cloudy,overcast,rain,storm,snow,fog,haze' && opts.slice(10).join() === wxs.join() && opts.length === 16);
+  check('every new weather kind round-trips in the short link, with and without a place and a zone', wxs.every((w) => [{}, { place: { lat: 41.88, lon: -87.63 } }, { place: { lat: 41.88, lon: -87.63 }, timeZone: 'America/Chicago' }, { timeZone: 'Asia/Tokyo' }].every((extra) => {
+    const d = decodeShort(encodeShort({ settings: { weatherMode: w }, ...extra }));
+    return d && d.settings.weatherMode === w && (!extra.place || (d.place && Math.abs(d.place.lat - 41.88) < 1e-3)) && (d.timeZone || '') === (extra.timeZone || '');
+  })));
+  check('a link with a new weather kind says version 4 (it starts with the bits 0100: the letter Q, where version 1 is E); one without keeps its old version', encodeShort({ settings: { weatherMode: 'hail' } })[0] === 'Q' && encodeShort({ settings: { weatherMode: 'storm' } })[0] === 'E');
+  check('a new weather kind never uses the city form (version 3 has no room for it), but keeps its place', (() => { const d = decodeShort(encodeShort({ settings: { weatherMode: 'sleet' }, place: { lat: 41.88, lon: -87.63 }, placeName: 'Chicago, United States', timeZone: 'America/Chicago' })); return d && d.settings.weatherMode === 'sleet' && Math.abs(d.place.lon + 87.63) < 1e-3 && d.timeZone === 'America/Chicago'; })());
+  check('the readable form writes v=4 for a new kind and reads it back; v=1 and v=2 still work', (() => { const q = encodeReadable({ settings: { weatherMode: 'rime' } }); return /^v=4&/.test(q) && decodeReadable('?' + q).settings.weatherMode === 'rime' && decodeReadable('?v=1&preset=standard&weatherMode=rain').settings.weatherMode === 'rain' && /^v=1&/.test(encodeReadable({ settings: {} })); })());
+  check('a made-up weather kind is cleaned to the default', clean('weatherMode', 'tornado') === 'live' && clean('weatherMode', 'dust') === 'dust');
+}
+
 done();

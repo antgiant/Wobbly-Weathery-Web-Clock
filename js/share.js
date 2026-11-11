@@ -22,6 +22,12 @@ export const VERSION_TZ = 2;
  *  The list is FROZEN in order: entries 0 to CITIES_FROZEN-1 never change or move (tests/unit/share.test.mjs pins them); new cities are only appended. */
 export const VERSION_CITY = 3;
 export const CITIES_FROZEN = 128;
+/** Version 4: the weather setting may name one of the six kinds added after version 3 (sleet, freezing rain, hail, dust storm, freezing fog, windy). The layout is version 2's
+ *  (the time zone field is always there, empty when there is none) and the place is always written as numbers. Only a link that uses one of those six says 4, so every link
+ *  made before is unchanged, and a page that does not know version 4 says "not understood" instead of showing the wrong weather. */
+export const VERSION_WX = 4;
+const WX_OLD = 10;                                  // the first ten weather options are version 1's; later ones need version 4
+const needsWx = (s) => SETTINGS_V1.find((r) => r[0] === 'weatherMode')[3].indexOf(s.weatherMode) >= WX_OLD;
 const ZONE = /^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+){0,2}$/;
 export const cleanZone = (z) => (typeof z === 'string' && z.length <= 40 && ZONE.test(z) ? z : '');
 
@@ -59,7 +65,7 @@ export const SETTINGS_V1 = [
   ['horizonInDigits', 'n', 0.3, 0, 0.8, 0.05],
   ['viewPitch', 'n', 12, -10, 80, 1],
   ['viewFov', 'n', 80, 30, 110, 1],
-  ['weatherMode', 'e', "live", ["live", "clear", "partly", "cloudy", "overcast", "rain", "storm", "snow", "fog", "haze"]],
+  ['weatherMode', 'e', "live", ["live", "clear", "partly", "cloudy", "overcast", "rain", "storm", "snow", "fog", "haze", "sleet", "freezing", "hail", "dust", "rime", "windy"]],     // (16 options: still 4 bits; the last six are version 4)
   ['tempUnit', 'e', "auto", ["auto", "c", "f"]],
   ['cloudMotion', 'e', 1, ["1", "0.25", "0"]],
   ['rainAlert', 'b', false],
@@ -177,18 +183,18 @@ export function encodeShort(setup) {
   const w = new Writer(); w.bits = best; return w.text();
 }
 function writeSetup(w, base, diffs, s, setup) {
-  const city = cityIndex(setup.placeName, setup.place), usable = city >= 0 && (!cleanZone(setup.timeZone) || setup.timeZone === CITIES[city][4]);
+  const wx = needsWx(s), city = wx ? -1 : cityIndex(setup.placeName, setup.place), usable = city >= 0 && (!cleanZone(setup.timeZone) || setup.timeZone === CITIES[city][4]);
   if (usable) {                                                        // version 3: the place is a city of the frozen list
     w.put(VERSION_CITY, 4); w.put(setup.kiosk ? 1 : 0, 1); w.put(1, 1); w.put(base, 4); w.put(diffs.length, 7);
     for (const i of diffs) { w.put(i, 7); putValue(w, SETTINGS_V1[i], s[SETTINGS_V1[i][0]]); }
     w.put(city, 8);
     return;
   }
-  w.put(cleanZone(setup.timeZone) ? VERSION_TZ : VERSION, 4); w.put(setup.kiosk ? 1 : 0, 1); w.put(setup.place ? 1 : 0, 1); w.put(base, 4); w.put(diffs.length, 7);
+  w.put(wx ? VERSION_WX : cleanZone(setup.timeZone) ? VERSION_TZ : VERSION, 4); w.put(setup.kiosk ? 1 : 0, 1); w.put(setup.place ? 1 : 0, 1); w.put(base, 4); w.put(diffs.length, 7);
   for (const i of diffs) { w.put(i, 7); putValue(w, SETTINGS_V1[i], s[SETTINGS_V1[i][0]]); }
   if (setup.place) { w.put(Math.round((Math.min(90, Math.max(-90, setup.place.lat)) + 90) / 180 * 4194303), 22); w.put(Math.round((Math.min(180, Math.max(-180, setup.place.lon)) + 180) / 360 * 8388607), 23); }
   const zone = cleanZone(setup.timeZone);
-  if (zone) { w.put(zone.length, 6); for (const ch of zone) w.put(ch.charCodeAt(0), 7); }
+  if (zone || wx) { w.put(zone.length, 6); for (const ch of zone) w.put(ch.charCodeAt(0), 7); }
 }
 
 /** @returns {{settings: object, place: object|null, kiosk: boolean, base: string}|null} null when it is not a link of ours. */
@@ -197,7 +203,7 @@ export function decodeShort(str) {
     if (typeof str !== 'string' || !str || str.length > 4000) return null;
     const rd = new Reader(str);
     const version = rd.get(4);
-    if (version !== VERSION && version !== VERSION_TZ && version !== VERSION_CITY) return null;  // a newer version than this page knows: not understood
+    if (version !== VERSION && version !== VERSION_TZ && version !== VERSION_CITY && version !== VERSION_WX) return null;  // a newer version than this page knows: not understood
     const kiosk = rd.get(1) === 1, hasPlace = rd.get(1) === 1, base = rd.get(4), count = rd.get(7);
     if (base >= BASES_V1.length) return null;
     const settings = baseSettings(base);
@@ -209,7 +215,7 @@ export function decodeShort(str) {
     }
     if (hasPlace) { const la = rd.get(22) / 4194303 * 180 - 90, lo = rd.get(23) / 8388607 * 360 - 180; place = { lat: Math.round(la * 1e4) / 1e4, lon: Math.round(lo * 1e4) / 1e4 }; }
     let timeZone = '';
-    if (version === VERSION_TZ) { const n = rd.get(6); let z = ''; for (let i = 0; i < n; i++) z += String.fromCharCode(rd.get(7)); timeZone = cleanZone(z); }
+    if (version === VERSION_TZ || version === VERSION_WX) { const n = rd.get(6); let z = ''; for (let i = 0; i < n; i++) z += String.fromCharCode(rd.get(7)); timeZone = cleanZone(z); }
     return { settings, place, kiosk, base: BASES_V1[base][0], timeZone };
   } catch (_) { return null; }
 }
@@ -224,7 +230,7 @@ export function encodeReadable(setup) {
   const s = normalise(setup.settings);
   let bi = 0, fewest = Infinity;
   BASES_V1.forEach((b, i) => { const base = baseSettings(i); const n = SETTINGS_V1.filter((r) => !same(s[r[0]], base[r[0]])).length; if (n < fewest) { fewest = n; bi = i; } });
-  const base = baseSettings(bi), zone = cleanZone(setup.timeZone), parts = [`v=${zone ? VERSION_TZ : VERSION}`, `preset=${BASES_V1[bi][0]}`];
+  const base = baseSettings(bi), zone = cleanZone(setup.timeZone), parts = [`v=${needsWx(s) ? VERSION_WX : zone ? VERSION_TZ : VERSION}`, `preset=${BASES_V1[bi][0]}`];
   for (const r of SETTINGS_V1) if (!same(s[r[0]], base[r[0]])) parts.push(`${r[0]}=${encodeURIComponent(showValue(r, s[r[0]]))}`);
   if (setup.place) parts.push(`place=${setup.place.lat},${setup.place.lon}`);
   if (zone) parts.push(`tz=${encodeURIComponent(zone)}`);
@@ -248,7 +254,7 @@ export function decodeReadable(search) {
   try {
     const q = withAliases(search);
     if (!q.has('preset') && !q.has('kiosk')) return null;
-    if (q.has('v') && Number(q.get('v')) !== VERSION && Number(q.get('v')) !== VERSION_TZ) return null;
+    if (q.has('v') && ![VERSION, VERSION_TZ, VERSION_WX].includes(Number(q.get('v')))) return null;
     let bi = BASES_V1.findIndex((b) => b[0] === q.get('preset'));
     if (bi < 0) bi = 0;
     const settings = baseSettings(bi);

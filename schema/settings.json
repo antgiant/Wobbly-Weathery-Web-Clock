@@ -516,14 +516,20 @@
     "storm",
     "snow",
     "fog",
-    "haze"
+    "haze",
+    "sleet",
+    "freezing",
+    "hail",
+    "dust",
+    "rime",
+    "windy"
    ],
    "tab": "weather",
    "advanced": false,
    "label": "Weather",
    "shareable": true,
    "preset": true,
-   "doc": "live | clear | partly | cloudy | overcast | rain | storm | snow | fog | haze"
+   "doc": "live | clear | partly | cloudy | overcast | rain | storm | snow | fog | haze | sleet | freezing | hail | dust | rime | windy: the weather to show: live, or one chosen (freezing = freezing rain, dust = dust storm, rime = freezing fog)"
   },
   {
    "key": "tempUnit",

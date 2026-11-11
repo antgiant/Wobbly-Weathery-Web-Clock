@@ -1,5 +1,5 @@
 // Historical weather mapping and weather-driven seasons. Run: node tests/unit/weather.mjs
-import { serviceFor, hoursOf, weatherFromDay, climateOf } from '../../js/sky/weather.js';
+import { serviceFor, hoursOf, weatherFromDay, climateOf, mapOpenMeteo, PRESETS, CLEAR, MODES } from '../../js/sky/weather.js';
 import { seasonFromClimate } from '../../js/sky/biome.js';
 import { unitFor, hour24 } from '../../js/units.js';
 let fails = 0;
@@ -33,6 +33,26 @@ check('warm January spell is spring, not summer', seasonFromClimate(jan, 45, nul
 check('tropics ignore it', seasonFromClimate(apr, 5, null, { t15: 0, tPrev: 0 }) === 'summer');
 check('southern hemisphere flips the calendar', seasonFromClimate(new Date('2026-10-10T00:00:00Z'), -35, null, null) === 'spring');
 check('climate needs a month of data', climateOf([1, 2, 3]) === null && climateOf(Array(30).fill(10)).t15 === 10);
+
+// ---- the wider weather model: sleet, freezing rain, hail, lightning, rime, dust, gusts ----
+{
+  const m = (cur, air) => mapOpenMeteo({ temperature_2m: 10, ...cur }, air);
+  const fr = m({ weather_code: 67, rain: 2, precipitation: 2, temperature_2m: -2 }), dr = m({ weather_code: 56, precipitation: 0.5, rain: 0.5 });
+  check('freezing rain (67) and drizzle (56, 57) are marked', fr.freezing === 1 && dr.freezing === 0.4 && m({ weather_code: 57, rain: 1, precipitation: 1 }).freezing === 0.7 && m({ weather_code: 66, rain: 1, precipitation: 1 }).freezing === 0.7 && m({ weather_code: 61, rain: 1, precipitation: 1 }).freezing === 0);
+  check('hail comes with thunderstorm codes 96 and 99 only', m({ weather_code: 99, rain: 4, precipitation: 4 }).hail === 1 && m({ weather_code: 96, rain: 4, precipitation: 4 }).hail === 0.5 && m({ weather_code: 95, rain: 4, precipitation: 4 }).hail === 0);
+  const mixed = m({ rain: 1, snowfall: 0.8333333, precipitation: 2 }), pure = m({ rain: 2, precipitation: 2 }), snowy = m({ snowfall: 2, precipitation: 2.4 });
+  check('sleet is rain and snow together: equal parts give 1, none of one kind gives 0', Math.abs(mixed.sleet - 1) < 1e-3 && pure.sleet === 0 && snowy.sleet === 0, `${mixed.sleet}`);
+  check('lightning: 95 half, 96 0.7, 99 all; none in fair weather', m({ weather_code: 95 }).lightning === 0.5 && m({ weather_code: 96 }).lightning === 0.7 && m({ weather_code: 99 }).lightning === 1 && m({ weather_code: 1 }).lightning === 0);
+  check('lightning from CAPE needs rain as well (energy alone is a hot dry day)', m({ cape: 3500, rain: 0, precipitation: 0 }).lightning === 0 && m({ cape: 3500, rain: 4, precipitation: 4 }).lightning > 0.5 && m({ cape: 300, rain: 4, precipitation: 4 }).lightning === 0);
+  check('CAPE is kept (null when the forecast has none)', m({ cape: 1200 }).cape === 1200 && m({}).cape === null);
+  check('rime: weather code 48, or fog below freezing; plain fog is not rime', m({ weather_code: 48 }).rime === 1 && m({ visibility: 200, temperature_2m: -4 }).rime === 0.6 && m({ visibility: 200, temperature_2m: 8 }).rime === 0 && m({ weather_code: 48 }).fog >= 0.8);
+  check('dust from the air-quality service: 50 ug/m3 nothing, 500 a storm, in between scales', m({}, { dust: 50 }).dust === 0 && m({}, { dust: 500 }).dust === 1 && Math.abs(m({}, { dust: 275 }).dust - 0.5) < 1e-9 && m({}, null).dust === 0 && m({}, { dust: 9 }).dust === 0);
+  const g = m({ wind_speed_10m: 6, wind_gusts_10m: 15 });
+  check('wind: mean and gusts at the surface in m/s; gusts never below the mean; none given means calm', g.windMs === 6 && g.gust === 15 && m({ wind_speed_10m: 6 }).gust === 6 && m({}).windMs === 0 && m({ wind_speed_10m: 9, wind_gusts_10m: 4 }).gust === 9);
+  check('every preset has every field of the clear sky (nothing undefined for the renderer)', Object.entries(PRESETS).every(([, p]) => Object.keys(CLEAR).every((k) => k in p)));
+  check('the setting\'s manual choices are the presets, in the setting\'s own order, live first', MODES.join() === 'clear,partly,cloudy,overcast,rain,storm,snow,fog,haze,sleet,freezing,hail,dust,rime,windy');
+  check('the new presets say what they are', PRESETS.sleet.sleet > 0 && PRESETS.freezing.freezing === 1 && PRESETS.hail.hail > 0 && PRESETS.dust.dust > 0.5 && PRESETS.rime.rime === 1 && PRESETS.windy.gust > 15 && PRESETS.storm.lightning > 0);
+}
 
 const nav = (lang) => unitFor('auto', lang);
 check('en-US uses Fahrenheit', nav('en-US') === 'f');

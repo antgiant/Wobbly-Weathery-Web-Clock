@@ -18,6 +18,16 @@ export const CLEAR = {
   aod: 0.12,
   snowCover: 0,            // 0..1 snow on the ground
   tempC: null,
+  // kinds of precipitation and weather the renderer may draw (each 0..1, 0 = none); precip above is how much falls, these say what falls
+  sleet: 0,                // rain and snow mixed (the share of the lesser kind)
+  freezing: 0,             // freezing rain or drizzle: drops that freeze on contact
+  hail: 0,                 // hail stones
+  lightning: 0,            // how often it strikes: 0 none, 1 almost continuous
+  rime: 0,                 // freezing fog: ice crystals depositing on everything
+  dust: 0,                 // blowing dust or sand: 0 clear, 1 a dust storm
+  gust: 0,                 // wind gusts at the surface, m/s
+  windMs: 0,               // mean wind at the surface, m/s
+  cape: null,              // J/kg, how much energy a rising air parcel has (thunderstorms need some)
   label: 'Clear',
 };
 
@@ -27,11 +37,20 @@ export const PRESETS = {
   cloudy:   { ...CLEAR, cover: [0.7, 0.5, 0.4], cloudDark: 0.15, visKm: 25, label: 'Mostly cloudy' },
   overcast: { ...CLEAR, cover: [1, 0.8, 0.5], cloudDark: 0.45, visKm: 15, label: 'Overcast' },
   rain:     { ...CLEAR, cover: [1, 0.9, 0.6], cloudDark: 0.8, precip: 0.55, visKm: 6, wind: [0.008, 0.003], label: 'Rain' },
-  storm:    { ...CLEAR, cover: [1, 1, 0.7], cloudDark: 1, precip: 0.95, visKm: 4, wind: [0.02, 0.008], label: 'Thunderstorm' },
+  storm:    { ...CLEAR, cover: [1, 1, 0.7], cloudDark: 1, precip: 0.95, visKm: 4, wind: [0.02, 0.008], lightning: 0.6, gust: 16, windMs: 9, label: 'Thunderstorm' },
   snow:     { ...CLEAR, cover: [0.95, 0.8, 0.5], cloudDark: 0.3, precip: 0.5, snowfall: 1, visKm: 4, snowCover: 1, label: 'Snow' },
   fog:      { ...CLEAR, cover: [0, 0, 0], fog: 0.85, visKm: 0.6, label: 'Fog' },
   haze:     { ...CLEAR, cover: [0.1, 0.05, 0.1], aod: 0.9, visKm: 8, label: 'Smoky haze' },
+  sleet:    { ...CLEAR, cover: [1, 0.9, 0.5], cloudDark: 0.5, precip: 0.5, snowfall: 1, sleet: 0.6, visKm: 5, tempC: 0, label: 'Sleet' },
+  freezing: { ...CLEAR, cover: [1, 0.9, 0.4], cloudDark: 0.5, precip: 0.4, freezing: 1, visKm: 6, snowCover: 0.2, tempC: -2, label: 'Freezing rain' },
+  hail:     { ...CLEAR, cover: [1, 1, 0.7], cloudDark: 1, precip: 0.9, hail: 0.8, lightning: 0.5, visKm: 4, wind: [0.02, 0.008], gust: 18, windMs: 10, label: 'Hail' },
+  dust:     { ...CLEAR, cover: [0.05, 0, 0.1], dust: 0.8, aod: 1.2, visKm: 1.5, wind: [0.015, 0.004], gust: 14, windMs: 9, label: 'Dust storm' },
+  rime:     { ...CLEAR, cover: [0, 0, 0], fog: 0.8, visKm: 0.6, rime: 1, tempC: -6, label: 'Freezing fog' },
+  windy:    { ...CLEAR, cover: [0.3, 0.2, 0.3], wind: [0.025, 0.01], gust: 20, windMs: 12, label: 'Windy' },
 };
+
+/** The manual weather choices a setting can name (the keys of PRESETS, in the order of the setting's options). */
+export const MODES = Object.keys(PRESETS);
 
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 
@@ -51,6 +70,11 @@ export function mapOpenMeteo(cur, air) {
 
   const code = cur.weather_code;
   const stormy = code >= 95;
+  // what kind of precipitation (WMO codes: 56 57 freezing drizzle, 66 67 freezing rain, 96 99 thunderstorm with hail)
+  w.freezing = { 56: 0.4, 57: 0.7, 66: 0.7, 67: 1 }[code] || 0;
+  w.hail = { 96: 0.5, 99: 1 }[code] || 0;
+  const snowWater = snow * 1.2;                      // mm of water from cm of snow, as above
+  w.sleet = rain > 0 && snow > 0 ? clamp(Math.min(rain, snowWater) / Math.max(rain, snowWater), 0, 1) : 0;
   const wet = w.precip > 0.05;
   w.cloudDark = clamp((wet ? 0.35 : 0) + w.precip * 0.6 + (stormy ? 0.4 : 0) + w.cover[0] * 0.15, 0, 1);
 
@@ -60,6 +84,9 @@ export function mapOpenMeteo(cur, air) {
   w.fog = clamp(1 - (visKm - 0.3) / 6, 0, 1);
   w.fog = Math.pow(w.fog, 1.5);
   if (code === 45 || code === 48) w.fog = Math.max(w.fog, 0.7);
+  const tempC = cur.temperature_2m;
+  w.rime = code === 48 ? 1 : (w.fog > 0.5 && Number.isFinite(tempC) && tempC <= 0 ? 0.6 : 0);       // fog below freezing coats things with rime, 48 says so outright
+  if (code === 48) w.fog = Math.max(w.fog, 0.8);
 
   // wind blows *from* wind_direction_10m; clouds move ~2x faster than the surface wind
   if (Number.isFinite(cur.wind_speed_10m)) {
@@ -67,10 +94,19 @@ export function mapOpenMeteo(cur, air) {
     const dir = (cur.wind_direction_10m || 0) * Math.PI / 180;
     w.wind = [-Math.sin(dir) * sp, -Math.cos(dir) * sp];
   }
+  w.windMs = Number.isFinite(cur.wind_speed_10m) ? cur.wind_speed_10m : 0;
+  w.gust = Number.isFinite(cur.wind_gusts_10m) ? Math.max(cur.wind_gusts_10m, w.windMs) : w.windMs;          // (wind_speed_unit=ms is asked for)
+  w.cape = Number.isFinite(cur.cape) ? cur.cape : null;
+  // lightning: from the weather code, or (when the forecast carries none) from energy in the air plus rain: CAPE above about 500 J/kg is thunderstorm country, 3000 is violent
+  const byCode = { 95: 0.5, 96: 0.7, 99: 1 }[code] || 0;
+  const byCape = w.cape != null && w.precip > 0.15 ? clamp((w.cape - 500) / 3000, 0, 1) * 0.6 : 0;
+  w.lightning = Math.max(byCode, byCape);
   w.snowCover = clamp((cur.snow_depth || 0) / 0.03, 0, 1);
   w.tempC = cur.temperature_2m ?? null;
 
   if (air && Number.isFinite(air.aerosol_optical_depth)) w.aod = clamp(air.aerosol_optical_depth, 0.01, 3);
+  // dust in the air (ug/m3, the air-quality service's `dust`): 50 is a noticeable haze, 500 and more a dust storm
+  if (air && Number.isFinite(air.dust)) w.dust = clamp((air.dust - 50) / 450, 0, 1);
   w.label = 'Live';
   return w;
 }
@@ -80,7 +116,7 @@ export async function fetchLiveWeather(lat, lon, signal) {
   const vars = [
     'temperature_2m', 'precipitation', 'rain', 'showers', 'snowfall', 'snow_depth', 'weather_code',
     'cloud_cover', 'cloud_cover_low', 'cloud_cover_mid', 'cloud_cover_high',
-    'visibility', 'wind_speed_10m', 'wind_direction_10m',
+    'visibility', 'wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m', 'cape',
   ].join(',');
   const f = await fetch(`${base}?latitude=${lat}&longitude=${lon}&current=${vars}&wind_speed_unit=ms&timezone=auto`, { signal });
   if (!f.ok) throw new Error('weather HTTP ' + f.status);
@@ -88,7 +124,7 @@ export async function fetchLiveWeather(lat, lon, signal) {
 
   let air = null;
   try {
-    const a = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=aerosol_optical_depth`, { signal });
+    const a = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=aerosol_optical_depth,dust`, { signal });
     if (a.ok) air = (await a.json()).current;
   } catch (_) { /* aerosol data is optional */ }
 
@@ -128,8 +164,8 @@ export function mapMarine(c) {
 // older dates come from its ERA5 archive (which has no visibility or showers).
 
 const HOURLY_FORECAST = ['temperature_2m', 'precipitation', 'rain', 'showers', 'snowfall', 'snow_depth', 'weather_code',
-  'cloud_cover', 'cloud_cover_low', 'cloud_cover_mid', 'cloud_cover_high', 'visibility', 'wind_speed_10m', 'wind_direction_10m'];
-const HOURLY_ARCHIVE = HOURLY_FORECAST.filter(v => v !== 'visibility' && v !== 'showers');
+  'cloud_cover', 'cloud_cover_low', 'cloud_cover_mid', 'cloud_cover_high', 'visibility', 'wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m', 'cape'];
+const HOURLY_ARCHIVE = HOURLY_FORECAST.filter(v => v !== 'visibility' && v !== 'showers' && v !== 'cape');
 const DAY = 86400e3;
 const ymd = (d) => d.toISOString().slice(0, 10);
 
