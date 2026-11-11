@@ -4,6 +4,7 @@ import './polyfills.js';
 import { parseDocument, Element, Evt, EventTarget_, Node_, Text, Doc, setLayoutHook, setCanvasFactory, computedStyle, rect } from './dom.js';
 import { layoutClock } from 'js/clocklayout.js';
 import { setPill, pillsVisible, paintPills } from './pills.js';
+import { confFromFile } from './confile.js';
 import { SETTINGS } from 'schema/settings.js';
 
 const G = globalThis, A = __args, W = A.w, H = A.h;
@@ -72,23 +73,11 @@ G.location = { search, hash: '', href: doc.baseURI + search, origin: 'file://', 
   const mem = {}; G.sessionStorage = { getItem: (k) => (k in mem ? mem[k] : null), setItem(k, v) { mem[k] = String(v); }, removeItem(k) { delete mem[k]; }, clear() { for (const k in mem) delete mem[k]; }, key: (i) => Object.keys(mem)[i] || null, get length() { return Object.keys(mem).length; } };
 }
 
-if (A.conf) localStorage.setItem('conf', String(A.conf));
 if (A.config !== undefined && A.config !== '' || A.present) {
-  // the settings file (`key = value`, the page's own names) becomes the page's saved settings, coerced by the schema's types
-  const specs = Object.fromEntries(SETTINGS.map((x) => [x.key, x]));
-  const conf = JSON.parse(localStorage.getItem('conf') || '{}');
-  for (const raw of String(A.config || '').split('\n')) {
-    const line = raw.replace(/#.*/, '').trim(); const i = line.indexOf('='); if (i < 1) continue;
-    const k = line.slice(0, i).trim(), v = line.slice(i + 1).trim(), sp = specs[k];
-    if (/^(on|true|yes|1)$/i.test(v) && (!sp || sp.type === 'bool')) conf[k] = true;
-    else if (/^(off|false|no|0)$/i.test(v) && (!sp || sp.type === 'bool')) conf[k] = false;
-    else if (sp && sp.type === 'number' || (!sp && v !== '' && !Number.isNaN(Number(v)))) conf[k] = Number(v);
-    else conf[k] = v;
-  }
-  if ('location_latitude' in conf && 'location_longitude' in conf) { conf.locationChoice = 'manual'; conf.manualLocation = true; conf.preciseLocation = false; }
-  if (A.ledCols) { conf.screenMode = 'led'; conf.ledCols = A.ledCols; conf.ledRows = A.ledRows; }
-  localStorage.setItem('conf', JSON.stringify(conf));
-}
+  // the settings file (`key = value`, the page's own names) becomes the page's saved settings, built from nothing each start (confile.js): the file is the only source
+  let base = {}; try { if (A.conf) base = JSON.parse(String(A.conf)); } catch (_) { /* a bad --conf is ignored */ }
+  localStorage.setItem('conf', JSON.stringify(confFromFile(A.config, SETTINGS, base, { ledCols: A.ledCols, ledRows: A.ledRows })));
+} else if (A.conf) localStorage.setItem('conf', String(A.conf));
 
 // ---- fetch: local files, and the network through curl ----
 G.fetch = (url, init = {}) => new Promise((resolve, reject) => {

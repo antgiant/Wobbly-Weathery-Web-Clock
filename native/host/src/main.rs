@@ -50,7 +50,7 @@ fn start_watchdog() {
 const EMBED: &[(&str, &str)] = &[
     ("host/host.js", include_str!("../js/host.js")), ("host/dom.js", include_str!("../js/dom.js")),
     ("host/polyfills.js", include_str!("../js/polyfills.js")), ("host/boot.js", include_str!("../js/boot.js")),
-    ("host/gputest.js", include_str!("../js/gputest.js")), ("host/pills.js", include_str!("../js/pills.js")),
+    ("host/gputest.js", include_str!("../js/gputest.js")), ("host/pills.js", include_str!("../js/pills.js")), ("host/confile.js", include_str!("../js/confile.js")),
 ];
 fn embedded(name: &str) -> Option<String> {
     let (n, _) = EMBED.iter().find(|(k, _)| *k == name)?.clone();
