@@ -25,4 +25,5 @@ const rows = [{ time_tag: '2026-11-10T18:00:00', kp: 2.33 }, { time_tag: '2026-1
 check('Kp: the latest entry that is not in the future', kpFromForecast(rows, now) === 4.67);
 check('Kp: old data (more than 12 hours) is not used, rubbish gives null', kpFromForecast(rows, now + 30 * 3600e3) === null && kpFromForecast(null) === null && kpFromForecast([{ time_tag: 'x', kp: 'y' }], now) === null);
 check('Kp: the older file format (Kp with a capital) is read too', kpFromForecast([{ time_tag: '2026-11-10T21:00:00', Kp: 3.33 }], now) === 3.33);
+check('a bright moon high in the sky dims it by up to 40%, a new moon or one below the horizon does not', (() => { const base = auroraView({ ...fb, kp: 3 }).strength, full = auroraView({ ...fb, kp: 3, moonAlt: 50, moonFraction: 1 }).strength, newm = auroraView({ ...fb, kp: 3, moonAlt: 50, moonFraction: 0 }).strength, set = auroraView({ ...fb, kp: 3, moonAlt: -20, moonFraction: 1 }).strength; return Math.abs(full - base * 0.6) < 1e-9 && newm === base && set === base; })());
 done();

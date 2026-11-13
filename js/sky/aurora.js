@@ -31,15 +31,16 @@ export const ovalEdge = (kp) => 66 - 2 * clamp(kp, 0, 9);
 
 /**
  * How visible an aurora is, 0..1, and where in the sky: `height` 0 = on the horizon toward the pole, 1 = overhead.
- * @param {{lat:number, lon:number, kp:number|null, sunAlt:number, cover?:number[], fog?:number}} o  sunAlt in degrees
+ * @param {{lat:number, lon:number, kp:number|null, sunAlt:number, cover?:number[], fog?:number, moonAlt?:number, moonFraction?:number}} o  altitudes in degrees; moonFraction 0 new .. 1 full
  */
-export function auroraView({ lat, lon, kp, sunAlt, cover = [0, 0, 0], fog = 0 }) {
+export function auroraView({ lat, lon, kp, sunAlt, cover = [0, 0, 0], fog = 0, moonAlt = -90, moonFraction = 0 }) {
   if (!Number.isFinite(kp) || !Number.isFinite(lat) || !Number.isFinite(lon)) return { strength: 0, height: 0, bearing: 0 };
   const mlat = Math.abs(geomagneticLatitude(lat, lon)), inside = mlat - ovalEdge(kp);             // degrees poleward of the edge: > 0 means the oval is overhead or nearer the pole than the edge
   const near = smooth(inside, -4, 6);                                                              // a little south of the edge you still see it low in the north; deep inside it is strong
   const dark = smooth(-sunAlt, 12, 18);                                                            // twilight over: astronomical night is best
   const clear = 1 - clamp(Math.max(cover[0], cover[1] * 0.9, cover[2] * 0.5), 0, 1) * 0.95;      // cloud hides it; high thin cloud only a little
-  const strength = near * dark * clear * (1 - clamp(fog, 0, 1));
+  const moon = 1 - 0.4 * smooth(moonAlt, -2, 12) * clamp(moonFraction, 0, 1);                       // a bright moon washes the faint ones out (up to 40% at a full moon high in the sky)
+  const strength = near * dark * clear * moon * (1 - clamp(fog, 0, 1));
   return { strength, height: smooth(inside, 0, 5), bearing: poleBearing(lat, lon) };               // just inside the edge it hugs the horizon, 5 degrees in the oval is overhead
 }
 

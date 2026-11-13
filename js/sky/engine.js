@@ -857,7 +857,7 @@ export class SkyEngine {
     this._1f('uSleet', !K || K.weather ? (w.sleet || 0) : 0);
     this._1f('uHail', !K || K.weather ? (w.hail || 0) : 0);
     {                                                                                        // aurora (js/sky/aurora.js): where the place is in the magnetic field, Kp now, how dark and clear it is
-      const a = s.aurora, v = a && (!K || K.weather) ? auroraView({ lat: a.lat, lon: a.lon, kp: a.kp, sunAlt: sky.sun.alt, cover: w.cover, fog: w.fog }) : null;
+      const a = s.aurora, v = a && (!K || K.weather) ? auroraView({ lat: a.lat, lon: a.lon, kp: a.kp, sunAlt: sky.sun.alt, cover: w.cover, fog: w.fog, moonAlt: sky.moon.alt, moonFraction: sky.moon.fraction }) : null;
       this._aur = v ? v.strength : 0;
       this._4f('uAur', v ? v.strength : 0, v ? v.height : 0, v ? v.bearing * Math.PI / 180 : 0, 0);
     }
