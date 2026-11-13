@@ -166,4 +166,15 @@ const sitting = (x, y, r = 3) => ({ x, y, r, vy: 0, run: false, y0: y, hang: 0, 
   check('when the hail stops the last stones fall away', (() => { const t = hailRun(1, 3).t; t.hail = 0; for (let k = 0; k < 300; k++) t.step(0.02, 0); return t.stones.length === 0; })());
 }
 
+
+// ---- ice beads are sent to the shader with fade 2 (a bead that is ice, not water), water as before ----
+{
+  const { dropGeometry } = await import('../../js/sky/drops.js');
+  const t = make(31); t.freeze = 1; run(t, 20, 1);
+  const g = dropGeometry(t, [-0.5, 0.8]);
+  const fadeOf = (arr) => { const out = []; for (let i = 0; i < arr.length; i += 48) out.push(arr[i + 5]); return out; };       // (a quad is 6 corners of 8 numbers: x, y, then the drop's x, y, radius, fade, light)
+  check('with freezing rain the beads on the glass are sent as ice (fade 2)', t.drops.some((d) => d.ice) && fadeOf(g.drops).some((f) => f === 2), JSON.stringify(fadeOf(g.drops).slice(0, 6)));
+  const w = make(32); run(w, 20, 1); const gw = dropGeometry(w, [-0.5, 0.8]);
+  check('without it every drop is water (fade at most 1)', w.drops.length > 0 && fadeOf(gw.drops).every((f) => f <= 1 && f >= 0));
+}
 done();

@@ -222,6 +222,7 @@ export function drawDrops(ctx, sim, light = [-0.5, 0.8]) {
     const hi = ctx.createRadialGradient(gx, gy, 0, gx, gy, r * 0.5);
     hi.addColorStop(0, `rgba(0,${Math.round(255 * fade)},0,1)`); hi.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = hi; ctx.beginPath(); ctx.arc(gx, gy, r * 0.5, 0, 6.2832); ctx.fill();                                      // the glint
+    if (d.ice) { ctx.fillStyle = hi; ctx.beginPath(); ctx.arc(gx, gy, r * 0.4, 0, 6.2832); ctx.fill(); ctx.beginPath(); ctx.arc(x - light[0] * r * 0.3, y + light[1] * r * 0.3, r * 0.25, 0, 6.2832); ctx.fill(); }      // ice: a second glint, brighter
   }
   ctx.globalCompositeOperation = 'source-over';
   void S;
@@ -246,7 +247,7 @@ export function dropGeometry(sim, light = [-0.5, 0.8]) {
       }
     }
     const r = Math.max(1, d.r), m = r * 1.1 + 2;
-    quad(drops, d.x - m, d.y - m, d.x + m, d.y + m, [d.x, d.y, r, fade, light[0], light[1]]);
+    quad(drops, d.x - m, d.y - m, d.x + m, d.y + m, [d.x, d.y, r, d.ice && !d.dying ? 2 : fade, light[0], light[1]]);       // (fade 2 says: an ice bead, glsl-mask.js)
   }
   return { drops: new Float32Array(drops), trails: new Float32Array(trails) };
 }
