@@ -86,7 +86,7 @@ export const severeState = { alerts: [], t: 0, sel: null, busy: false, key: '', 
 const sevIcon = (type) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${SEV_ICON[type] || SEV_ICON.other}"/></svg>`;
 
 /** What the LED panel's corner shows: a severe weather notice if there is one, else the umbrella (the card draws either with its own icon). */
-const ledNotice = () => { const a = severeState.sel && severeState.sel.top; return a ? { level: 'sev' + a.level, text: pillText(severeState.sel) } : rainState.a; };
+const ledNotice = () => { const a = severeState.sel && severeState.sel.top; return a ? { level: 'sev' + a.level, hazard: a.type, text: pillText(severeState.sel) } : rainState.a; };
 
 /** Decide what the notice shows from the alerts we hold, and show it (page pill, Pi pill, status line). */
 export function updateSevere() {

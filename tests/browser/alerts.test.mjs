@@ -195,7 +195,7 @@ export async function run(t) {
   ledSev.net.alerts = [feat('Tornado Warning', { severity: 'Extreme' })];
   await ledSev.page.goto(ledSev.url); await ledSev.ready(); await ledSev.settle(4500);
   const redLit = await ledSev.page.evaluate(() => { const c = window.__ledCard, d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let red = 0, blue = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 250) { if (d[i] > 200 && d[i + 1] < 120 && d[i + 2] < 120) red++; else if (d[i + 2] > 200 && d[i] < 160) blue++; } return { red, blue }; });
-  t.check('LED panel: a tornado warning takes the umbrella\'s corner as a red triangle (the blue umbrella is not drawn)', redLit.red >= 15 && redLit.blue === 0, JSON.stringify(redLit));
+  t.check('LED panel: a tornado warning takes the umbrella\'s corner as a red picture of a tornado (the blue umbrella is not drawn)', redLit.red >= 15 && redLit.blue === 0, JSON.stringify(redLit));
   await ledSev.close();
 
   // ---- Environment Canada: a place in Canada is asked of that service, not the NWS ----
