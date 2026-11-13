@@ -25,6 +25,7 @@ export function makeNet() {
     weather: { temperature_2m: 12, cloud_cover_low: 30, cloud_cover_mid: 10, cloud_cover_high: 10, precipitation: 0, rain: 0, weather_code: 2, wind_speed_10m: 4, wind_direction_10m: 200, visibility: 24000 },
     now: null,                                                          // the page's pretended "now", when a test fixes it
     rainHours: (hour) => (hour >= 15 && hour <= 17 ? 1.2 : 0),         // mm per UTC hour: a 3-hour afternoon shower by default
+    ecAlerts: [],                                                        // Environment Canada alert features
     alerts: [],                                                         // NWS alert features (severe weather notices): see tests/browser/alerts.test.mjs
     calls: [],
   };
@@ -51,6 +52,7 @@ async function installMocks(ctx, net) {
     return r.fulfill(json({ elevation: 30, current: net.weather }));
   });
   await ctx.route(/api\.weather\.gov/, (r) => { net.calls.push(r.request().url()); return net.up ? r.fulfill(json({ type: 'FeatureCollection', features: net.alerts })) : r.abort('internetdisconnected'); });
+  await ctx.route(/api\.weather\.gc\.ca/, (r) => { net.calls.push(r.request().url()); return net.up ? r.fulfill(json({ type: 'FeatureCollection', features: net.ecAlerts || [] })) : r.abort('internetdisconnected'); });
   await ctx.route(/services\.swpc\.noaa\.gov/, (r) => (net.up ? r.fulfill(json([])) : r.abort('internetdisconnected')));          // the planetary K index: none, so no aurora
   await ctx.route(/overpass/, (r) => (net.up
     ? r.fulfill(json({ elements: [{ type: 'node', lat: 40.71, lon: -74.0, tags: { place: 'city', name: 'Testville', population: '8000000' } }] }))

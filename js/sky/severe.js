@@ -1,7 +1,8 @@
 // Severe weather notices: official watches and warnings for the clock's place, shown like the umbrella notice. Pure logic (parsing, classifying, choosing) plus one fetch.
 //
-// Source: the US National Weather Service, `alerts/active?point=lat,lon` (free, no key, open to web pages: CORS is `*`; it wants a User-Agent, which a browser sends
-// itself and the Pi program sets). Other countries' services (Environment Canada, MeteoAlarm, ...) can be added as more `parse*` functions that return the same shape.
+// Sources: the US National Weather Service, `alerts/active?point=lat,lon` (free, no key, open to web pages: CORS is `*`; it wants a User-Agent, which a browser sends
+// itself and the Pi program sets), and Environment Canada's `weather-alerts` collection (OGC API, also CORS `*`, asked by a small box round the place). Other countries' services
+// (MeteoAlarm, ...) can be added as more `parse*` functions that return the same shape.
 //
 // An alert is { id, event, level, type, severity, urgency, headline, area, expires, other }:
 //   level  'warning' (act now: a Warning or an Emergency) | 'watch' (conditions are right for it) | 'advisory' (be aware)
@@ -16,7 +17,7 @@ const TYPES = [
   [/tsunami/i, 'tsunami'],
   [/hurricane|typhoon|tropical (storm|cyclone|depression)|storm surge/i, 'hurricane'],
   [/severe thunderstorm|special marine|thunderstorm/i, 'thunderstorm'],
-  [/flash flood|flood|coastal flood|lakeshore flood|river flood|dam break/i, 'flood'],
+  [/flash flood|flood|coastal flood|lakeshore flood|river flood|dam break|rainfall|heavy rain/i, 'flood'],
   [/blizzard|winter storm|ice storm|freezing rain|winter weather|snow squall|lake effect snow|heavy snow|sleet|snow/i, 'winter'],
   [/extreme cold|wind chill|hard freeze|freeze|frost/i, 'cold'],
   [/excessive heat|extreme heat|heat/i, 'heat'],
@@ -88,9 +89,65 @@ export function pillText(sel, nowMs = Date.now()) {
   return `${a.event}${until}${sel.count > 1 ? ` (+${sel.count - 1} more)` : ''}`;
 }
 
+// ---- Environment Canada (api.weather.gc.ca, collection weather-alerts) ----
+const EC_COLOUR = { red: 4, orange: 3, yellow: 2 };
+const titleCase = (t) => clean(t).replace(/\b([a-z])/g, (m) => m.toUpperCase());
+
+/** Alerts from an Environment Canada `weather-alerts/items` answer: warning / watch / advisory / statement, red / orange / yellow / grey risk, until the event ends. An alert whose status says it ended is cancelled. */
+export function parseEc(json) {
+  const feats = json && Array.isArray(json.features) ? json.features : [];
+  const out = [];
+  for (const f of feats) {
+    const p = f && f.properties; if (!p) continue;
+    const name = clean(p.alert_name_en); if (!name) continue;
+    const event = titleCase(name), kind = clean(p.alert_type).toLowerCase();
+    const end = Date.parse(p.event_end_datetime || p.expiration_datetime || ''), exp = Date.parse(p.expiration_datetime || ''), onset = Date.parse(p.validity_datetime || p.publication_datetime || '');
+    const level = kind === 'warning' ? 'warning' : kind === 'watch' ? 'watch' : 'advisory';           // advisories, statements and endings
+    const text = clean(p.alert_text_en);
+    out.push({
+      id: clean(p.feature_id) || `${event}|${p.publication_datetime || ''}`, event, level, type: typeOf(name), other: false,
+      severity: EC_COLOUR[clean(p.risk_colour_en).toLowerCase()] ?? (level === 'warning' ? 3 : level === 'watch' ? 2 : 1), urgency: level === 'warning' ? 3 : 2,
+      headline: `${event}${p.feature_name_en ? ' for ' + clean(p.feature_name_en) : ''}`, area: clean(p.feature_name_en), text,
+      expires: Number.isFinite(end) ? end : Number.isFinite(exp) ? exp : null, onset: Number.isFinite(onset) ? onset : null,
+      cancelled: /^ended$|cancel/i.test(clean(p.status_en)) || kind === 'ended',
+    });
+  }
+  return out;
+}
+
+/** Canada, with the United States' border region (a rough box, to save requests that cannot work). */
+export function inEcArea(lat, lon) { return lat >= 41.6 && lat <= 83.5 && lon >= -141.1 && lon <= -52; }
+
+/** Environment Canada's active alerts for a point (a box of 0.02 degree round it: the answer holds every alert whose area touches it). */
+export async function fetchEc(lat, lon, signal) {
+  const d = 0.01, bbox = [lon - d, lat - d, lon + d, lat + d].map((v) => v.toFixed(4)).join(',');
+  const r = await fetch(`https://api.weather.gc.ca/collections/weather-alerts/items?f=json&lang=en&limit=50&bbox=${bbox}`, { signal });
+  if (r.status === 404 || r.status === 400) return [];
+  if (!r.ok) throw new Error('alerts HTTP ' + r.status);
+  return parseEc(await r.json());
+}
+
+/** Anywhere a service is wired in. */
+export const inAlertArea = (lat, lon) => inNwsArea(lat, lon) || inEcArea(lat, lon);
+
+/** Alerts from every service that covers the point, together (a point near the border may be in two). One service failing does not hide the other's alerts unless both fail. */
+export async function fetchAlerts(lat, lon, signal) {
+  const jobs = [];
+  if (inNwsArea(lat, lon)) jobs.push(fetchNws(lat, lon, signal));
+  if (inEcArea(lat, lon)) jobs.push(fetchEc(lat, lon, signal));
+  const res = await Promise.allSettled(jobs);
+  if (res.length && res.every((r) => r.status === 'rejected')) throw res[0].reason;
+  return res.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
+}
+
 /** Where the NWS can answer: the United States and its territories (a point outside gets a 404). A rough box, to save requests that cannot work. */
 export function inNwsArea(lat, lon) {
-  return (lat >= 17.5 && lat <= 72 && lon >= -180 && lon <= -64.5) || (lat >= 13 && lat <= 21 && lon >= 144 && lon <= 146.5) || (lat >= -15 && lat <= -10 && lon >= -171.5 && lon <= -168);
+  return (lat >= 24 && lat <= 49.6 && lon >= -125 && lon <= -66.5)          // the 48 states
+    || (lat >= 51 && lat <= 72 && lon >= -180 && lon <= -141) || (lat >= 54.6 && lat <= 60.4 && lon > -141 && lon <= -130) || (lat >= 51 && lat <= 54 && lon >= 172 && lon <= 180)           // Alaska (with its panhandle) and the Aleutians
+    || (lat >= 18.5 && lat <= 22.5 && lon >= -161 && lon <= -154)             // Hawaii
+    || (lat >= 17.5 && lat <= 18.8 && lon >= -68 && lon <= -64.5)             // Puerto Rico and the Virgin Islands
+    || (lat >= 13 && lat <= 21 && lon >= 144 && lon <= 146.5)                 // Guam and the Marianas
+    || (lat >= -15 && lat <= -10 && lon >= -171.5 && lon <= -168);            // American Samoa
 }
 
 /** Active alerts at a point. Resolves to [] where the service has none or does not cover the point. */

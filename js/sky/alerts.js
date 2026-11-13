@@ -6,7 +6,7 @@ import { now, getSim } from '../simtime.js';
 import { zoneOptions } from '../timezone.js';
 import { countdownState } from './sunpath.js';
 import { assessRain, fetchRainHours } from './rain.js';
-import { choose, pillText, fetchNws, inNwsArea } from './severe.js';
+import { choose, pillText, fetchAlerts, inAlertArea } from './severe.js';
 import { engine, state, ov, num, coarse, histActive, cachedFetch } from './core.js';
 import { getSunEvents } from './view.js';
 import { drawLedCard } from './ledcard.js';
@@ -125,8 +125,8 @@ export function updateSevere() {
   if (window.__pillSet) window.__pillSet('severe', a ? { level: a.level, type: a.type, text, headline: a.headline } : null);       // (the Raspberry Pi program draws the pills itself: native/host/js/pills.js)
   if (status) {
     const lat = num(ov.lat ?? conf.location_latitude, NaN), lon = num(ov.lon ?? conf.location_longitude, NaN);
-    status.textContent = conf.severeAlerts === 'off' ? '' : Number.isFinite(lat) && Number.isFinite(lon) && !inNwsArea(lat, lon) ? 'The National Weather Service covers the United States and its territories only.'
-      : severeState.error && !severeState.t ? 'Could not reach the National Weather Service.' : a ? `${a.headline}${sel.count > 1 ? ` (+${sel.count - 1} more)` : ''}` : severeState.t ? 'No alerts for your place.' : 'Checking for alerts…';
+    status.textContent = conf.severeAlerts === 'off' ? '' : Number.isFinite(lat) && Number.isFinite(lon) && !inAlertArea(lat, lon) ? 'Alerts come from the US National Weather Service and Environment Canada: this place is outside both.'
+      : severeState.error && !severeState.t ? 'Could not reach the weather alert service.' : a ? `${a.headline}${sel.count > 1 ? ` (+${sel.count - 1} more)` : ''}` : severeState.t ? 'No alerts for your place.' : 'Checking for alerts…';
   }
   if (changed) updateRain();                                                    // the umbrella steps aside, or comes back
   if (conf.screenMode === 'led') updateCountdown();                             // the LED panel draws the notice itself
@@ -137,9 +137,9 @@ export async function loadSevere() {
   if (!engine || severeState.busy) return;
   if (conf.severeAlerts === 'off' || histActive()) { severeState.alerts = []; updateSevere(); return; }
   const lat0 = num(ov.lat ?? conf.location_latitude, NaN), lon0 = num(ov.lon ?? conf.location_longitude, NaN);
-  if (!Number.isFinite(lat0) || !Number.isFinite(lon0) || (lat0 === -1 && lon0 === -1) || !inNwsArea(lat0, lon0)) { severeState.alerts = []; severeState.t = 0; updateSevere(); return; }
+  if (!Number.isFinite(lat0) || !Number.isFinite(lon0) || (lat0 === -1 && lon0 === -1) || !inAlertArea(lat0, lon0)) { severeState.alerts = []; severeState.t = 0; updateSevere(); return; }
   severeState.busy = true;
-  try { severeState.alerts = await fetchNws(coarse(lat0, 0.05), coarse(lon0, 0.05)); severeState.t = Date.now(); severeState.error = false; }
+  try { severeState.alerts = await fetchAlerts(coarse(lat0, 0.05), coarse(lon0, 0.05)); severeState.t = Date.now(); severeState.error = false; }
   catch (e) { console.info('[sky] severe weather lookup failed:', e.message); severeState.error = true; if (Date.now() - severeState.t > 15 * 60000) { severeState.alerts = []; severeState.t = 0; } }
   severeState.busy = false;
   updateSevere();

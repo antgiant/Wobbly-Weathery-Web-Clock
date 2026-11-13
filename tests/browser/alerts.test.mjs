@@ -180,7 +180,7 @@ export async function run(t) {
   abroad.net.alerts = [feat('Tornado Warning')];
   await abroad.page.goto(abroad.url); await abroad.ready(); await abroad.settle(3500);
   const abroadText = await abroad.page.evaluate(() => document.getElementById('severeStatus').textContent);
-  t.check('severe notice: outside the United States the service is not asked, and the settings panel says why', (await sevPill(abroad.page)) === null && !abroad.net.calls.some((u) => /api\.weather\.gov/.test(u)) && /United States/.test(abroadText), JSON.stringify([abroadText, abroad.net.calls.filter((u) => /weather\.gov/.test(u))]));
+  t.check('severe notice: outside the United States the service is not asked, and the settings panel says why', (await sevPill(abroad.page)) === null && !abroad.net.calls.some((u) => /api\.weather\.gov/.test(u)) && /outside both/.test(abroadText), JSON.stringify([abroadText, abroad.net.calls.filter((u) => /weather\.gov/.test(u))]));
   await abroad.close();
 
   const advisory = await t.open({ ...sevOpen, load: false, conf: { ...sevOpen.conf, severeAlerts: 'all' } });
@@ -197,4 +197,13 @@ export async function run(t) {
   const redLit = await ledSev.page.evaluate(() => { const c = window.__ledCard, d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let red = 0, blue = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 250) { if (d[i] > 200 && d[i + 1] < 120 && d[i + 2] < 120) red++; else if (d[i + 2] > 200 && d[i] < 160) blue++; } return { red, blue }; });
   t.check('LED panel: a tornado warning takes the umbrella\'s corner as a red triangle (the blue umbrella is not drawn)', redLit.red >= 15 && redLit.blue === 0, JSON.stringify(redLit));
   await ledSev.close();
+
+  // ---- Environment Canada: a place in Canada is asked of that service, not the NWS ----
+  const ca = await t.open({ ...sevOpen, load: false, query: 'lat=51.05&lon=-114.07' });
+  ca.net.ecAlerts = [{ properties: { alert_type: 'warning', alert_name_en: 'blizzard warning', alert_code: 'WW', risk_colour_en: 'red', status_en: 'active', feature_name_en: 'Calgary', feature_id: 'ec1', validity_datetime: '2026-06-21T10:00:00.000Z', expiration_datetime: '2026-06-21T22:00:00.000Z', event_end_datetime: '2026-06-21T20:00:00.000Z' } }];
+  await ca.page.goto(ca.url); await ca.ready(); await ca.settle(4500);
+  const cp = await sevPill(ca.page);
+  t.check('Canada: a blizzard warning from Environment Canada shows as a red notice naming the event', cp && cp.level === 'warning' && /^Blizzard Warning/.test(cp.text), JSON.stringify(cp));
+  t.check('Canada: the Canadian service was asked with a small box round the place (and the US one was not: it is not in that box)', ca.net.calls.some((u) => /api\.weather\.gc\.ca\/collections\/weather-alerts\/items\?.*bbox=-114\.0\d+,51\.0/.test(u)) && !ca.net.calls.some((u) => /api\.weather\.gov/.test(u)), JSON.stringify(ca.net.calls.filter((u) => /weather\.g/.test(u))));
+  await ca.close();
 }
