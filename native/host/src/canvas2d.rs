@@ -95,11 +95,69 @@ fn svg_path(d: &str) -> Vec<Value> {
             'V' => { let y = n(&mut k) + oy; out.push(serde_json::json!(["L", cx, y])); cy = y; }
             'C' => { let v: Vec<f64> = (0..6).map(|j| n(&mut k) + if j % 2 == 0 { ox } else { oy }).collect(); out.push(serde_json::json!(["C", v[0], v[1], v[2], v[3], v[4], v[5]])); cx = v[4]; cy = v[5]; }
             'Q' => { let v: Vec<f64> = (0..4).map(|j| n(&mut k) + if j % 2 == 0 { ox } else { oy }).collect(); out.push(serde_json::json!(["Q", v[0], v[1], v[2], v[3]])); cx = v[2]; cy = v[3]; }
+            'A' => {                       // an elliptical arc (x radius, y radius, rotation, large-arc flag, sweep flag, end point), as cubic segments
+                let (rx, ry, rot, fa, fs) = (n(&mut k), n(&mut k), n(&mut k), n(&mut k), n(&mut k));
+                let (x, y) = (n(&mut k) + ox, n(&mut k) + oy);
+                for c in arc_cubics(cx, cy, rx, ry, rot, fa != 0.0, fs != 0.0, x, y) { out.push(c); }
+                cx = x; cy = y;
+            }
             _ => { k += 1; }
         }
     }
     out
 }
+
+/// SVG's endpoint arc turned into cubic Beziers (W3C SVG 1.1 appendix F.6: the centre, then pieces of at most a quarter turn). A zero radius is a straight line.
+fn arc_cubics(x1: f64, y1: f64, rx: f64, ry: f64, phi_deg: f64, large: bool, sweep: bool, x2: f64, y2: f64) -> Vec<Value> {
+    let (mut rx, mut ry) = (rx.abs(), ry.abs());
+    if (x1 == x2 && y1 == y2) || rx == 0.0 || ry == 0.0 { return vec![serde_json::json!(["L", x2, y2])]; }
+    let phi = phi_deg.to_radians(); let (sp, cp) = (phi.sin(), phi.cos());
+    let (dx2, dy2) = ((x1 - x2) / 2.0, (y1 - y2) / 2.0);
+    let (x1p, y1p) = (cp * dx2 + sp * dy2, -sp * dx2 + cp * dy2);
+    let lam = x1p * x1p / (rx * rx) + y1p * y1p / (ry * ry);
+    if lam > 1.0 { let s = lam.sqrt(); rx *= s; ry *= s; }
+    let num = rx * rx * ry * ry - rx * rx * y1p * y1p - ry * ry * x1p * x1p;
+    let den = rx * rx * y1p * y1p + ry * ry * x1p * x1p;
+    let coef = (if large == sweep { -1.0 } else { 1.0 }) * (num / den).max(0.0).sqrt();
+    let (cxp, cyp) = (coef * rx * y1p / ry, -coef * ry * x1p / rx);
+    let (cx, cy) = (cp * cxp - sp * cyp + (x1 + x2) / 2.0, sp * cxp + cp * cyp + (y1 + y2) / 2.0);
+    let th1 = ((y1p - cyp) / ry).atan2((x1p - cxp) / rx);
+    let th2 = ((-y1p - cyp) / ry).atan2((-x1p - cxp) / rx);
+    let mut dth = th2 - th1;
+    if !sweep && dth > 0.0 { dth -= std::f64::consts::TAU; } else if sweep && dth < 0.0 { dth += std::f64::consts::TAU; }
+    let segs = (dth.abs() / (std::f64::consts::PI / 2.0)).ceil().max(1.0) as usize; let delta = dth / segs as f64;
+    let t = 4.0 / 3.0 * (delta / 4.0).tan();
+    let map = |x: f64, y: f64| (cx + cp * rx * x - sp * ry * y, cy + sp * rx * x + cp * ry * y);
+    let mut out = vec![];
+    for i in 0..segs {
+        let (a1, a2) = (th1 + i as f64 * delta, th1 + (i + 1) as f64 * delta);
+        let p1 = map(a1.cos() - t * a1.sin(), a1.sin() + t * a1.cos());
+        let p2 = map(a2.cos() + t * a2.sin(), a2.sin() - t * a2.cos());
+        let p3 = if i + 1 == segs { (x2, y2) } else { map(a2.cos(), a2.sin()) };
+        out.push(serde_json::json!(["C", p1.0, p1.1, p2.0, p2.1, p3.0, p3.1]));
+    }
+    out
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+    fn end(v: &[Value]) -> (f64, f64) { let c = v.last().unwrap(); let n = c.as_array().unwrap().len(); (c[n - 2].as_f64().unwrap(), c[n - 1].as_f64().unwrap()) }
+    #[test] fn arcs_end_where_they_say_and_bulge_the_right_way() {
+        let p = svg_path("M0 0a5 5 0 0 1 10 0");                                    // a half circle, clockwise: it bulges up (y negative)
+        assert!((end(&p).0 - 10.0).abs() < 1e-9 && end(&p).1.abs() < 1e-9);
+        let mid_y: f64 = p.iter().skip(1).flat_map(|c| [c[2].as_f64().unwrap(), c[4].as_f64().unwrap()]).fold(0.0, |a, b| if b.abs() > a.abs() { b } else { a });
+        assert!(mid_y < -4.0, "the arc should rise above the chord, control point at {mid_y}");
+        let q = svg_path("M0 0a5 5 0 0 0 10 0");                                    // the other sweep: it dips
+        assert!(q.iter().skip(1).any(|c| c[2].as_f64().unwrap() > 4.0));
+        let big = svg_path("M0 0A5 5 0 1 1 5 5");                                   // a large arc: three quarters of a circle: three segments
+        assert_eq!(big.len() - 1, 3); assert!((end(&big).0 - 5.0).abs() < 1e-9 && (end(&big).1 - 5.0).abs() < 1e-9);
+        let line = svg_path("M0 0a0 5 0 0 1 10 0"); assert_eq!(line.last().unwrap()[0], "L");   // no radius: a line
+        let wob = svg_path("M12 3c1 4 5 5 5 10a5 5 0 0 1-10 0z"); assert!(wob.iter().any(|c| c[0] == "Z"));   // after a curve, relative arcs start from the curve's end
+        assert!((end(&wob[..wob.len() - 1]).0 - 7.0).abs() < 1e-9 && (end(&wob[..wob.len() - 1]).1 - 13.0).abs() < 1e-9);
+    }
+}
+
 fn build(cmds: &[Value]) -> Option<Path> {
     let mut pb = PathBuilder::new();
     let f = |c: &Value, i: usize| c.get(i).and_then(|x| x.as_f64()).unwrap_or(0.0) as f32;

@@ -7,11 +7,13 @@ const mkCtx = () => {
   Object.defineProperty(ctx, 'font', { get() { return ctx._font; }, set(v) { ctx._font = v; } });
   ctx.measureText = (t) => ({ width: (+/(\d+(?:\.\d+)?)px/.exec(ctx._font)[1]) * 0.55 * String(t).length });
   ctx.fillText = (t) => { ctx.texts.push(t); };
-  for (const m of ['beginPath', 'moveTo', 'lineTo', 'arc', 'closePath', 'fill', 'stroke', 'roundRect', 'clearRect']) ctx[m] = () => {};
+  for (const m of ['beginPath', 'moveTo', 'lineTo', 'arc', 'closePath', 'fill', 'stroke', 'roundRect', 'clearRect', 'save', 'restore', 'translate', 'scale']) ctx[m] = (...a) => { if (m === 'stroke' || m === 'fill') ctx.paths.push([m, a[0] && a[0].d]); };
+  ctx.paths = [];
   return ctx;
 };
 let canvasCount = 0;
 globalThis.document = { createElement: () => { canvasCount++; const c = { width: 300, height: 150, _id: 1, _ensure() {} }; const x = mkCtx(); c.getContext = () => x; c.ctx = x; return c; } };
+globalThis.Path2D = class { constructor(d) { this.d = d; } };
 globalThis.__c2d_read = (id, x, y, w, h) => new ArrayBuffer(w * h * 4);
 
 const P = await import('../../native/host/js/pills.js');
@@ -72,4 +74,14 @@ check('painting reuses one canvas', canvasCount === 1, `${canvasCount} canvases`
   none();
 }
 
+
+// ---- each hazard has its own drawing, the page's (SEV_ICON, sent as `icon`), filled for a warning and an outline otherwise ----
+{
+  const { SEV_ICON } = await import('../../js/sky/severe.js');
+  check('every kind of hazard has a drawing of its own in the shared table', ['tornado', 'thunderstorm', 'flood', 'hurricane', 'winter', 'wind', 'heat', 'cold', 'fire', 'dust', 'smoke', 'fog', 'tsunami', 'marine', 'avalanche', 'earthquake', 'other'].every((t) => typeof SEV_ICON[t] === 'string' && SEV_ICON[t].length > 10) && new Set(Object.values(SEV_ICON)).size === Object.keys(SEV_ICON).length);
+  const run = (level, icon) => { none(); P.setPill('severe', { level, type: 't', icon, text: 'Tornado Warning' }); document.createElement('canvas'); return P.paintPills(1280, 720); };
+  const a = run('warning', SEV_ICON.tornado), b = run('warning', SEV_ICON.flood), c = run('warning', undefined);
+  check('a different hazard drawing is a different picture (the cache is keyed on the whole state); no drawing still paints the warning sign', a !== b && c && c.w === a.w);
+  none();
+}
 done();

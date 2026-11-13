@@ -9,6 +9,27 @@
 //   type   what icon to show: tornado thunderstorm flood hurricane winter wind heat cold fire dust smoke fog tsunami marine avalanche earthquake other
 //   other  true for emergencies that are not weather (civil emergency, evacuation, child abduction ...): off unless asked for
 
+/** One drawing (an SVG path in a 24 x 24 box, drawn with a 1.8 wide round stroke) for each kind of hazard: the page's pill and the Raspberry Pi's pill draw the same. */
+export const SEV_ICON = {
+  tornado: 'M3 4h18M5 8h14M8 12h9M10 16h5M12 20h1',
+  thunderstorm: 'M7 15a4 4 0 0 1 .8-7.9A5.2 5.2 0 0 1 17.6 8 3.6 3.6 0 0 1 17 15M13 11l-3 5h4l-2 5',
+  flood: 'M2 14c2-2 3-2 5 0c2 2 3 2 5 0c2-2 3-2 5 0c2 2 3 2 5 0M2 19c2-2 3-2 5 0c2 2 3 2 5 0c2-2 3-2 5 0c2 2 3 2 5 0M12 3v7M9 7l3 3 3-3',
+  hurricane: 'M12 9a3 3 0 1 0 .01 0M12 3a9 9 0 0 1 9 9M12 21a9 9 0 0 1-9-9',
+  winter: 'M12 2v20M3.4 7l17.2 10M3.4 17L20.6 7M9 4l3 2 3-2M9 20l3-2 3 2',
+  wind: 'M3 8h11a3 3 0 1 0-3-3M3 12h16a3 3 0 1 1-3 3M3 16h8',
+  heat: 'M12 8a4 4 0 1 0 .01 0M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2',
+  cold: 'M10 4a2 2 0 0 1 4 0v9a4 4 0 1 1-4 0zM12 8v7',
+  fire: 'M12 3c1 4 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-5 1-9z',
+  dust: 'M3 7h13a2.5 2.5 0 1 0-2.5-2.5M3 12h18M3 17h12a2.5 2.5 0 1 1-2.5 2.5',
+  smoke: 'M5 20c-2-3 1-5 0-8s2-4 2-7M12 20c-2-3 1-5 0-8s2-4 2-7M19 20c-2-3 1-5 0-8s2-4 2-7',
+  fog: 'M3 8h18M5 12h14M3 16h18M7 20h10',
+  tsunami: 'M2 19c3-8 7-12 12-12-2 3-1 6 3 7 2 .5 3 2 5 5M2 19h20',
+  marine: 'M3 15h18l-2 5H5zM12 3v12M12 4l6 9h-6',
+  avalanche: 'M2 20L9 7l4 6 3-4 6 11z',
+  earthquake: 'M2 12h4l2-6 4 12 3-9 2 3h5',
+  other: 'M12 3L2 21h20zM12 10v5M12 18v.5',
+};
+
 const clean = (v) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
 
 /** What an event name means: [pattern, type]. The first pattern that matches wins, so the order is the priority. */

@@ -71,15 +71,14 @@ function umbrellaIcon(ctx, x, y, box, level, color) {       // the page's own dr
   if (level === 'slicker') for (const [a, b, c, d] of [[5, 15, -1, 2.5], [9, 17, -1, 2.5], [18, 17, -1, 2.5], [7, 21, -0.6, 1.5]]) { ctx.beginPath(); ctx.moveTo(x + a * k, y + b * k); ctx.lineTo(x + (a + c) * k, y + (b + d) * k); ctx.stroke(); }
 }
 
-/** A warning triangle with an exclamation mark: an outline for a watch or an advisory, solid for a warning (the page draws a picture for each kind of hazard; here one sign serves all). */
-function severeIcon(ctx, x, y, box, level, color) {
-  const k = box / 24;
-  ctx.lineWidth = 1.8 * k; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = level === 'warning' ? '#fff' : color; ctx.fillStyle = color;
-  ctx.beginPath(); ctx.moveTo(x + 12 * k, y + 3 * k); ctx.lineTo(x + 22 * k, y + 21 * k); ctx.lineTo(x + 2 * k, y + 21 * k); ctx.closePath();
-  if (level === 'warning') ctx.fill(); ctx.stroke();
-  ctx.strokeStyle = level === 'warning' ? '#fff' : color;
-  ctx.beginPath(); ctx.moveTo(x + 12 * k, y + 10 * k); ctx.lineTo(x + 12 * k, y + 15 * k); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(x + 12 * k, y + 18 * k); ctx.lineTo(x + 12 * k, y + 18.1 * k); ctx.stroke();
+/** The hazard's own drawing (the page sends the SVG path of js/sky/severe.js SEV_ICON in a 24 box, `icon`; without one, a warning sign): an outline for a watch or an advisory, filled for a warning, as the page does it. */
+function severeIcon(ctx, x, y, box, level, color, d) {
+  const k = box / 24, path = new Path2D(d || 'M12 3L2 21h20zM12 10v5M12 18v.5');
+  ctx.save(); ctx.translate(x, y); ctx.scale(k, k);
+  ctx.lineWidth = 1.8; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (level === 'warning') { ctx.fillStyle = color; ctx.fill(path); ctx.strokeStyle = '#fff'; } else ctx.strokeStyle = color;
+  ctx.stroke(path);
+  ctx.restore();
 }
 
 /** The pills as pictures: [{ w, h, border, bg, paint(ctx, x, y) }] in the page's order (sun, rain, timer), laid out for a screen of W x H. */
@@ -95,7 +94,7 @@ function build(ctx, W, H) {
     out.push({
       w, h, border: true, borderColor: col, borderWidth: 2, bg: v.level === 'warning' ? 'rgba(60,10,10,0.7)' : BG,
       paint(c, x, y) {
-        severeIcon(c, x + padL, y + (h - box) / 2, box, v.level, col);
+        severeIcon(c, x + padL, y + (h - box) / 2, box, v.level, col, v.icon);
         font(c, fs); c.textAlign = 'left';
         lines.forEach((l, i) => shadowText(c, l, x + padL + box + gap + (tw - width(c, fs, l)) / 2, y + (h - lines.length * lh) / 2 + lh * i + fs * 0.98, '#fff'));
       },

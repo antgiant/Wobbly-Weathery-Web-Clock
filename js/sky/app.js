@@ -95,6 +95,7 @@ function init() {
   //   ?t=2026-06-21T20:30:00Z&speed=60&az=280&pitch=10&weather=storm&landscape=ocean&lat=40.7&lon=-74
   const q = new URLSearchParams(location.search);
   if (q.has('weather')) ov.weather = q.get('weather');
+  if (q.has('severe')) ov.severe = q.get('severe');                // ?severe=tornado:warning (a hazard type and a level): shows a pretend notice, for screenshots and tests
   if (q.has('kp')) ov.kp = num(q.get('kp'), NaN);                 // force the planetary K index (0 to 9): the aurora a place would see in that storm
   if (q.has('landscape')) ov.landscape = q.get('landscape');
   if (q.has('az')) ov.az = num(q.get('az'), 180);
