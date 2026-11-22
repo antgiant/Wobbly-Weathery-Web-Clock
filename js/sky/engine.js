@@ -993,7 +993,7 @@ export class SkyEngine {
       const w = this.s.weather, on = this.s.digitWeather !== false && !this.s.reducedMotion && (!this.knobs || this.knobs.weather);
       const mixed = (w.sleet || 0) > 0.15;                                                          // sleet: both, half each
       const snowRate = mixed ? (w.precip || 0) * 0.5 : (w.precip || 0) * (w.snowfall || 0), rainRate = mixed ? (w.precip || 0) * 0.5 : (w.precip || 0) * (1 - (w.snowfall || 0));
-      this.wx = { snow: on ? Math.min(1, snowRate * 1.4) : 0, rain: on ? Math.min(1, rainRate * 1.3) : 0, freeze: on ? (this._iceLevel || 0) : 0, hail: on ? (w.hail || 0) : 0 };       // (read by the tests)
+      this.wx = { snow: on ? Math.min(1, Math.max(snowRate * 1.4, (this.snowPile || 0) * 0.8)) : 0, rain: on ? Math.min(1, rainRate * 1.3) : 0, freeze: on ? (this._iceLevel || 0) : 0, hail: on ? (w.hail || 0) : 0 };       // (read by the tests)
     }
     // An ES 2 GPU gets the glass as small programs, each reading what the ones before made (a Pi Zero's driver could not fit the whole glass in one: it drew nothing): the height field and
     // slope (ggeo), the shadow and halo (gaura), for stained glass the tube's colours (gemit, ghalo), the body (gbody), snow and rain when there are any (gwx), the outline (gout).
@@ -1552,7 +1552,7 @@ export class SkyEngine {
     this._1f('uFogDens', w.fog * 0.025 + 1 / (Math.max(w.visKm, 0.3) * 1000));
     this._3f('uLeaf', pal.leaf); this._3f('uConifer', pal.conifer); this._3f('uGrass', pal.grass);
     this._3f('uDry', pal.dry); this._3f('uRock', pal.rock);
-    this._1f('uSnowCover', Math.max(pal.snow || 0, w.snowCover));
+    this._1f('uSnowCover', Math.max(pal.snow || 0, w.snowCover, this.snowPile || 0));
     this._1f('uRime', !K || K.weather ? (w.rime || 0) : 0);
     this._1f('uSand', this._sandLevel || 0);
     this._1f('uLeafCover', pal.leafCover == null ? 1 : pal.leafCover);

@@ -14,7 +14,7 @@ import { applyLadderUi } from './ladderui.js';
 import { Controls } from './controls.js';
 import { initGlass } from './glass.js';
 import { canvas, engine, controls, setEngine, setControls, setGlass, ov, num, toast, state } from './core.js';
-import { applyQuality, applyLocation, applyWeather, applyLandscape, applyPlants, applyTree, syncTimeData, scheduleLiveData, loadLiveData, dayLoad } from './data.js';
+import { applyQuality, applyLocation, applyWeather, applyLandscape, applyPlants, applyTree, syncTimeData, scheduleLiveData, loadLiveData, dayLoad, stepSnowPile } from './data.js';
 import { applyView, atDefault, followActive, updateHud, updateVrReadout, updateHomeButton, returnToDefaultView } from './view.js';
 import { markReady, startFallback, updateClockColor, updateFavicon } from './appearance.js';
 import { updateCountdown, updateRain, countdownPeriod, loadSevere } from './alerts.js';
@@ -142,6 +142,7 @@ function init() {
     if ((window.__frames >= 1 && engine.assetsDone && (solid || engine.glass.hasMask)) || performance.now() - t0 > 8000) { ready = true; markReady(); }
   }, () => (ready ? Infinity : 80));
   every('severe', loadSevere, () => (conf.severeAlerts === 'off' ? Infinity : 60000));                 // official alerts: once a minute (a notice must not linger)
+  every('snowpile', stepSnowPile, 15000);                                     // snow builds up on the ground while it falls and melts after
   every('live', loadLiveData, 15 * 60000);                                 // weather, terrain, land cover
   every('live-retry', loadLiveData, () => (state.needRetry && navigator.onLine !== false ? 60000 : Infinity));   // a lookup failed: try again soon
   // the connection came back: bring in everything that could not be fetched, at once
