@@ -180,7 +180,7 @@ export async function run(t) {
   abroad.net.alerts = [feat('Tornado Warning')];
   await abroad.page.goto(abroad.url); await abroad.ready(); await abroad.settle(3500);
   const abroadText = await abroad.page.evaluate(() => document.getElementById('severeStatus').textContent);
-  t.check('severe notice: outside the United States the service is not asked, and the settings panel says why', (await sevPill(abroad.page)) === null && !abroad.net.calls.some((u) => /api\.weather\.gov/.test(u)) && /outside both/.test(abroadText), JSON.stringify([abroadText, abroad.net.calls.filter((u) => /weather\.gov/.test(u))]));
+  t.check('severe notice: outside the United States the service is not asked, and the settings panel says why', (await sevPill(abroad.page)) === null && !abroad.net.calls.some((u) => /api\.weather\.gov/.test(u)) && /outside all three/.test(abroadText), JSON.stringify([abroadText, abroad.net.calls.filter((u) => /weather\.gov/.test(u))]));
   await abroad.close();
 
   const advisory = await t.open({ ...sevOpen, load: false, conf: { ...sevOpen.conf, severeAlerts: 'all' } });
@@ -206,4 +206,12 @@ export async function run(t) {
   t.check('Canada: a blizzard warning from Environment Canada shows as a red notice naming the event', cp && cp.level === 'warning' && /^Blizzard Warning/.test(cp.text), JSON.stringify(cp));
   t.check('Canada: the Canadian service was asked with a small box round the place (and the US one was not: it is not in that box)', ca.net.calls.some((u) => /api\.weather\.gc\.ca\/collections\/weather-alerts\/items\?.*bbox=-114\.0\d+,51\.0/.test(u)) && !ca.net.calls.some((u) => /api\.weather\.gov/.test(u)), JSON.stringify(ca.net.calls.filter((u) => /weather\.g/.test(u))));
   await ca.close();
+
+  // ---- Germany: the DWD through Bright Sky ----
+  const de = await t.open({ ...sevOpen, load: false, query: 'lat=52.52&lon=13.4' });
+  de.net.dwdAlerts = [{ id: 7, alert_id: 'dwd-1', onset: '2026-06-21T10:00:00+00:00', expires: '2026-06-21T22:00:00+00:00', urgency: 'immediate', severity: 'severe', event_en: 'thunderstorm', event_de: 'GEWITTER', headline_en: 'Official WARNING of THUNDERSTORMS', status: 'actual' }];
+  await de.page.goto(de.url); await de.ready(); await de.settle(4500);
+  const dp = await sevPill(de.page);
+  t.check('Germany: a severe thunderstorm warning from the DWD shows as a red notice, and only the German service was asked', dp && dp.level === 'warning' && /^Thunderstorm Warning/.test(dp.text) && de.net.calls.some((u) => /api\.brightsky\.dev\/alerts\?lat=52\.5\d+&lon=13\.4/.test(u)) && !de.net.calls.some((u) => /api\.weather\.gov|api\.weather\.gc\.ca/.test(u)), JSON.stringify([dp, de.net.calls.filter((u) => /weather\.g|brightsky/.test(u))]));
+  await de.close();
 }

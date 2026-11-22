@@ -1,6 +1,6 @@
 // Severe weather notices: official watches and warnings for the clock's place, shown like the umbrella notice. Pure logic (parsing, classifying, choosing) plus one fetch.
 //
-// Sources: the US National Weather Service, `alerts/active?point=lat,lon` (free, no key, open to web pages: CORS is `*`; it wants a User-Agent, which a browser sends
+// Sources: Germany's DWD (through Bright Sky), the US National Weather Service, `alerts/active?point=lat,lon` (free, no key, open to web pages: CORS is `*`; it wants a User-Agent, which a browser sends
 // itself and the Pi program sets), and Environment Canada's `weather-alerts` collection (OGC API, also CORS `*`, asked by a small box round the place). Other countries' services
 // (MeteoAlarm, ...) can be added as more `parse*` functions that return the same shape.
 //
@@ -39,11 +39,11 @@ const TYPES = [
   [/hurricane|typhoon|tropical (storm|cyclone|depression)|storm surge/i, 'hurricane'],
   [/severe thunderstorm|special marine|thunderstorm/i, 'thunderstorm'],
   [/flash flood|flood|coastal flood|lakeshore flood|river flood|dam break|rainfall|heavy rain/i, 'flood'],
-  [/blizzard|winter storm|ice storm|freezing rain|winter weather|snow squall|lake effect snow|heavy snow|sleet|snow/i, 'winter'],
+  [/blizzard|winter storm|ice storm|freezing rain|winter weather|snow squall|lake effect snow|heavy snow|sleet|snow|black ice|slippery|glaze/i, 'winter'],
   [/extreme cold|wind chill|hard freeze|freeze|frost/i, 'cold'],
   [/excessive heat|extreme heat|heat/i, 'heat'],
   [/dust storm|blowing dust|dust advisory/i, 'dust'],
-  [/high wind|extreme wind|wind advisory|lake wind|brisk wind|gale|storm warning|hurricane force/i, 'wind'],
+  [/high wind|extreme wind|wind advisory|lake wind|brisk wind|gale|gust|storm warning|hurricane force/i, 'wind'],
   [/red flag|fire weather|fire warning|wildfire/i, 'fire'],
   [/smoke|air quality|air stagnation|ashfall|volcano/i, 'smoke'],
   [/dense fog|dense smoke|freezing fog|fog/i, 'fog'],
@@ -136,6 +136,35 @@ export function parseEc(json) {
   return out;
 }
 
+// ---- Germany: the DWD's warnings through Bright Sky (api.brightsky.dev/alerts?lat&lon: free, no key, CORS open, answers for the point itself) ----
+const DWD_SEVERITY = { minor: 1, moderate: 2, severe: 3, extreme: 4 };
+/** Alerts from a Bright Sky `alerts` answer. The DWD's four levels: minor is an advisory (weather to be aware of), moderate a watch (marked weather: prepare), severe and extreme (Unwetter) a warning. A pre-information ("Vorabinformation") is a watch at most. Only status "actual" counts. */
+export function parseDwd(json) {
+  const list = json && Array.isArray(json.alerts) ? json.alerts : [];
+  const out = [];
+  for (const p of list) {
+    if (!p) continue;
+    const name = clean(p.event_en || p.event_de); if (!name) continue;
+    const sev = DWD_SEVERITY[clean(p.severity).toLowerCase()] ?? 1, pre = /preliminary|vorab/i.test(`${p.headline_en} ${p.headline_de}`);
+    const level = sev >= 3 && !pre ? 'warning' : sev === 2 || pre && sev >= 2 ? 'watch' : 'advisory';
+    const exp = Date.parse(p.expires || ''), onset = Date.parse(p.onset || p.effective || '');
+    out.push({
+      id: String(p.alert_id || p.id || name), event: `${titleCase(name)} ${level === 'warning' ? 'Warning' : level === 'watch' ? 'Watch' : 'Advisory'}`, level, type: typeOf(name), other: false,
+      severity: sev, urgency: /immediate/i.test(clean(p.urgency)) ? 3 : 2, headline: clean(p.headline_en || p.headline_de) || name, area: '', text: clean(p.description_en || p.description_de),
+      expires: Number.isFinite(exp) ? exp : null, onset: Number.isFinite(onset) ? onset : null, cancelled: clean(p.status).toLowerCase() !== 'actual',
+    });
+  }
+  return out;
+}
+/** Germany (a rough box: the answer for a point outside is empty). */
+export function inDwdArea(lat, lon) { return lat >= 47.2 && lat <= 55.1 && lon >= 5.8 && lon <= 15.1; }
+export async function fetchDwd(lat, lon, signal) {
+  const r = await fetch(`https://api.brightsky.dev/alerts?lat=${lat.toFixed(3)}&lon=${lon.toFixed(3)}`, { signal });
+  if (r.status === 404 || r.status === 400) return [];
+  if (!r.ok) throw new Error('alerts HTTP ' + r.status);
+  return parseDwd(await r.json());
+}
+
 /** Canada, with the United States' border region (a rough box, to save requests that cannot work). */
 export function inEcArea(lat, lon) { return lat >= 41.6 && lat <= 83.5 && lon >= -141.1 && lon <= -52; }
 
@@ -149,13 +178,14 @@ export async function fetchEc(lat, lon, signal) {
 }
 
 /** Anywhere a service is wired in. */
-export const inAlertArea = (lat, lon) => inNwsArea(lat, lon) || inEcArea(lat, lon);
+export const inAlertArea = (lat, lon) => inNwsArea(lat, lon) || inEcArea(lat, lon) || inDwdArea(lat, lon);
 
 /** Alerts from every service that covers the point, together (a point near the border may be in two). One service failing does not hide the other's alerts unless both fail. */
 export async function fetchAlerts(lat, lon, signal) {
   const jobs = [];
   if (inNwsArea(lat, lon)) jobs.push(fetchNws(lat, lon, signal));
   if (inEcArea(lat, lon)) jobs.push(fetchEc(lat, lon, signal));
+  if (inDwdArea(lat, lon)) jobs.push(fetchDwd(lat, lon, signal));
   const res = await Promise.allSettled(jobs);
   if (res.length && res.every((r) => r.status === 'rejected')) throw res[0].reason;
   return res.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));

@@ -106,7 +106,7 @@ export function updateSevere() {
   if (window.__pillSet) window.__pillSet('severe', a ? { level: a.level, type: a.type, icon: SEV_ICON[a.type] || SEV_ICON.other, text, headline: a.headline } : null);       // (the Raspberry Pi program draws the pills itself: native/host/js/pills.js)
   if (status) {
     const lat = num(ov.lat ?? conf.location_latitude, NaN), lon = num(ov.lon ?? conf.location_longitude, NaN);
-    status.textContent = conf.severeAlerts === 'off' ? '' : Number.isFinite(lat) && Number.isFinite(lon) && !inAlertArea(lat, lon) ? 'Alerts come from the US National Weather Service and Environment Canada: this place is outside both.'
+    status.textContent = conf.severeAlerts === 'off' ? '' : Number.isFinite(lat) && Number.isFinite(lon) && !inAlertArea(lat, lon) ? 'Alerts come from the US National Weather Service, Environment Canada and the German DWD: this place is outside all three.'
       : severeState.error && !severeState.t ? 'Could not reach the weather alert service.' : a ? `${a.headline}${sel.count > 1 ? ` (+${sel.count - 1} more)` : ''}` : severeState.t ? 'No alerts for your place.' : 'Checking for alerts…';
   }
   if (changed) updateRain();                                                    // the umbrella steps aside, or comes back

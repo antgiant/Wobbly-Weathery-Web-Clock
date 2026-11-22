@@ -1,6 +1,6 @@
 // Severe weather notices: classifying, parsing and choosing (js/sky/severe.js). Run: node tests/unit/severe.test.mjs
 import { check, done } from '../lib/check.mjs';
-const { typeOf, levelOf, isOther, parseNws, parseEc, choose, pillText, inNwsArea, inEcArea, inAlertArea, LEVELS } = await import('../../js/sky/severe.js');
+const { typeOf, levelOf, isOther, parseNws, parseEc, parseDwd, inDwdArea, choose, pillText, inNwsArea, inEcArea, inAlertArea, LEVELS } = await import('../../js/sky/severe.js');
 
 check('levels: Warning and Emergency are warnings, Watch a watch, the rest advisories', levelOf('Tornado Warning') === 'warning' && levelOf('Tornado Emergency') === 'warning' && levelOf('Flash Flood Emergency') === 'warning' && levelOf('Flood Watch') === 'watch' && levelOf('Wind Advisory') === 'advisory' && levelOf('Special Weather Statement') === 'advisory' && levelOf('Air Quality Alert') === 'advisory');
 const t = (e) => typeOf(e);
@@ -39,4 +39,14 @@ check('Canada: an alert that has ended is cancelled and is not chosen', ecs[5].c
 check('Canada: by default watches and warnings: the blizzard first, then the rest by colour; advisories and statements stay out', (() => { const c = choose(ecs, {}, now2); return c.count === 3 && c.top.event === 'Blizzard Warning' && c.all[2].level === 'watch'; })());
 check('Canada: rubbish gives nothing', parseEc(null).length === 0 && parseEc({ features: [null, {}, { properties: {} }] }).length === 0);
 check('the Canadian box: Calgary, Toronto, Whitehorse in; London and Sydney out; a place on the border (Seattle is under 48.5 N: the NWS) is in the US box', inEcArea(51.05, -114.07) && inEcArea(43.65, -79.38) && inEcArea(60.7, -135.05) && !inEcArea(51.5, -0.1) && !inEcArea(-33.9, 151.2) && inAlertArea(51.05, -114.07) && inAlertArea(41.9, -87.6) && !inAlertArea(51.5, -0.1));
+
+// ---- Germany (the DWD through Bright Sky) ----
+const dw = (ev, sev, extra = {}) => ({ id: 1, alert_id: `dwd-${ev}-${sev}`, effective: '2026-11-21T11:31:00+00:00', onset: '2026-11-21T23:00:00+00:00', expires: '2026-11-22T08:00:00+00:00', category: 'met', urgency: 'immediate', severity: sev, certainty: 'likely', event_en: ev, event_de: ev.toUpperCase(), headline_en: `Official WARNING of ${ev.toUpperCase()}`, description_en: 'There is a risk.', status: 'actual', ...extra });
+const nowD = Date.parse('2026-11-22T02:00:00Z');
+const dwds = parseDwd({ alerts: [dw('frost', 'minor'), dw('strong gusts', 'moderate'), dw('thunderstorm', 'severe'), dw('heavy snowfall', 'extreme'), dw('frost', 'moderate', { headline_en: 'PRELIMINARY INFORMATION: frost' }), dw('fog', 'minor', { status: 'test' })] });
+check('Germany: minor is an advisory, moderate a watch, severe and extreme a warning, with a hazard type and a plain name', dwds[0].level === 'advisory' && dwds[0].event === 'Frost Advisory' && dwds[0].type === 'cold' && dwds[1].level === 'watch' && dwds[1].type === 'wind' && dwds[2].level === 'warning' && dwds[2].event === 'Thunderstorm Warning' && dwds[2].type === 'thunderstorm' && dwds[3].level === 'warning' && dwds[3].type === 'winter' && dwds[3].severity === 4);
+check('Germany: a pre-information is a watch at most; a test is cancelled; times are read', dwds[4].level === 'watch' && dwds[5].cancelled === true && dwds[0].expires === Date.parse('2026-11-22T08:00:00+00:00') && dwds[0].onset === Date.parse('2026-11-21T23:00:00+00:00'));
+check('Germany: by default watches and warnings, the heavy snowfall (extreme) first', (() => { const c = choose(dwds, {}, nowD); return c.top.event === 'Heavy Snowfall Warning' && c.count === 4 && c.all.every((a) => a.level !== 'advisory'); })());
+check('Germany: rubbish gives nothing, and the German box has Berlin, Munich and Hamburg, not Paris or Vienna-east', parseDwd(null).length === 0 && parseDwd({ alerts: [null, {}] }).length === 0 && inDwdArea(52.52, 13.4) && inDwdArea(48.14, 11.58) && inDwdArea(53.55, 9.99) && !inDwdArea(48.85, 2.35) && !inDwdArea(51.5, -0.1) && inAlertArea(52.52, 13.4));
+check('more hazard words: gusts are wind, black ice is winter', typeOf('Strong gusts') === 'wind' && typeOf('Black ice') === 'winter' && typeOf('Slippery roads') === 'winter');
 done();
