@@ -990,7 +990,7 @@ export class SkyEngine {
     const solid = glassOn && this.knobs && this.knobs.glass === false;       // the capability ladder: solid digits, one cheap pass (no glass: no tables of the scene or the mask)
     const kind = !glassOn ? 'off' : solid || g.mode > 2.5 ? 'ink' : 'glass';
     const stained = g.mode > 1.5 && g.mode <= 2.5;
-    const passes = this.es2 && kind === 'glass' ? ['ggeo', 'gaura', ...(stained ? ['gemit', 'ghalo'] : []), 'gbody', ...(this.wx.snow > 0.01 || this.wx.rain > 0.01 ? ['gwx'] : []), 'gout'] : [kind];
+    const passes = this.es2 && kind === 'glass' ? ['ggeo', 'gaura', ...(stained ? ['gemit', 'ghalo'] : []), 'gbody', ...(this.wx.snow > 0.01 || this.wx.rain > 0.01 || this.wx.freeze > 0.01 ? ['gwx'] : []), 'gout'] : [kind];
     if (passes.length > 1) { this._ensurePing(cw, ch); this._ensureGlassT(cw, ch); }
     const dpr = cw / Math.max(1, this.canvas.clientWidth);
     // The digits are a sixth of the picture: with a governor the glass passes (the expensive ones) run only over their rectangle (and a margin for the halo and the frosting), after one
@@ -1063,7 +1063,7 @@ export class SkyEngine {
     this._3f('uGlowCol', g.glowCol);
     this._3f('uInk', g.ink);
     this._1f('uContrast', g.contrast);
-    this._4f('uWx', this.wx.snow, this.wx.rain, 0, (performance.now() / 1000) % 3600);
+    this._4f('uWx', this.wx.snow, this.wx.rain, this.wx.freeze || 0, (performance.now() / 1000) % 3600);
     this._1i('uDrops', 4); this._bind(4, this.dropsTex);
     this._1f('uDropsOn', g.dropsOn ? 1 : 0);
     this._1i('uFull', 3); this._bind(3, this.overlayFullTex);

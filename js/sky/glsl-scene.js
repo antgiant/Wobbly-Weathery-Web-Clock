@@ -327,7 +327,7 @@ uniform vec3 uInk;         // flat ink colour (solid clock style while the LED p
 uniform sampler2D uFull;       // full-size overlay (the pills on panels the tuned layout does not cover), straight alpha
 uniform float uFullOn;
 uniform float uContrast;   // strength of the readability outline and tone, 0 off .. 1
-uniform vec4 uWx;          // weather on the digits: x snow settled on them 0..1, y rain on the glass 0..1, w time in seconds
+uniform vec4 uWx;          // weather on the digits: x snow settled on them 0..1, y rain on the glass 0..1, z ice (freezing rain) 0..1, w time in seconds
 uniform sampler2D uDrops;  // raindrops from drops.js, in the mask's place: r dark rim, g glint, b water
 uniform float uDropsOn;
 uniform sampler2D uGeo;    // (the ES 2 glass's passes)
@@ -396,6 +396,16 @@ vec3 bodyTone(vec3 c, float stroke) {
 // and drops bounce off the top edges as tiny splashes. All of it is thin and stays on the edges or in small spots, and it goes
 // on before the readability outline, so the outline still frames every digit.
 float vnoise(float x) { float i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(hash21(vec2(i, 7.1)), hash21(vec2(i + 1.0, 7.1)), f); }
+
+// Freezing rain glazes the digits: a clear sheet of ice that clouds the glass a little, patchy like frost, with crystals that catch the light.
+vec3 iceOn(vec3 glass, float stroke, float amount) {
+  float n = vnoise(gl_FragCoord.x / (stroke * 0.14) + 3.1 * vnoise(gl_FragCoord.y / (stroke * 0.14)));
+  float n2 = vnoise(gl_FragCoord.y / (stroke * 0.05) + gl_FragCoord.x / (stroke * 0.09));
+  float sheet = amount * (0.30 + 0.55 * n);
+  vec3 ice = mix(glass, vec3(0.84, 0.93, 1.0), 0.40 * sheet);
+  float sparkle = step(0.82, n2) * smoothstep(0.3, 0.9, n) * amount;
+  return ice + vec3(0.7, 0.85, 1.0) * sparkle * 0.22;
+}
 
 float snowCap(float stroke, float amount) {
   float lump = 0.7 + 0.6 * vnoise(gl_FragCoord.x / (stroke * 0.30));
@@ -479,6 +489,7 @@ void bodyInk() {                                             // flat ink: the LE
     vec3 ink = uInk, bs = base;
     float stk = uGlass.z;
     if (cv > 0.02 && uWx.x > 0.01) ink = snowOn(ink, snowCap(stk, uWx.x), base);
+    if (cv > 0.02 && uWx.z > 0.01) ink = iceOn(ink, stk, uWx.z);
     if (uWx.y > 0.01 && stk > 0.0) {
       if (cv > 0.02) {
         if (uDropsOn > 0.5) { vec4 dr = texture(uDrops, (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw); ink = rainOn(ink, vec4(dr.r * 0.7, dr.g * 0.8, dr.b, 0.0), uLightCol, base); }
@@ -577,6 +588,7 @@ void bodyGlass() {
   vec3 glass = min(c, vec3(1.6));
   if (cover > 0.02) {                                                  // snow and rain on the digits
     if (uWx.x > 0.01) glass = snowOn(glass, snowCap(stroke, uWx.x), base);
+    if (uWx.z > 0.01) glass = iceOn(glass, stroke, uWx.z);
     if (uWx.y > 0.01) {
       if (uDropsOn > 0.5) {                                              // drops that run, merge and are shed with the digit (drops.js)
         vec4 dr = texture(uDrops, (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw);
@@ -716,6 +728,7 @@ void bodyWx() {
   if (cover > 0.02) {
     vec3 glass = comp;
     if (uWx.x > 0.01) glass = snowOn(glass, snowCap(stroke, uWx.x), texture(uTex, vUv).rgb);
+    if (uWx.z > 0.01) glass = iceOn(glass, stroke, uWx.z);
     if (uWx.y > 0.01 && uDropsOn > 0.5) {
       vec4 dr = texture(uDrops, (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw);
       glass = rainOn(glass, vec4(dr.r, dr.g, dr.b, 0.0), uLightCol, sceneAtL(vUv + vec2(0.0, stroke * 0.3) / uRes, sceneLv(1.0)));
