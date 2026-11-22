@@ -324,7 +324,7 @@ export async function loadLiveData() {
 export function applyAurora() {
   if (!engine) return;
   const lat = num(ov.lat ?? conf.location_latitude, NaN), lon = num(ov.lon ?? conf.location_longitude, NaN);
-  engine.set({ aurora: Number.isFinite(state.kp) && Number.isFinite(lat) && Number.isFinite(lon) && (!histActive() || Number.isFinite(ov.kp)) ? { lat, lon, kp: state.kp } : null });
+  engine.set({ aurora: conf.aurora !== false && Number.isFinite(state.kp) && Number.isFinite(lat) && Number.isFinite(lon) && (!histActive() || Number.isFinite(ov.kp)) ? { lat, lon, kp: state.kp } : null });
 }
 async function loadKp(signal) {
   if (Number.isFinite(ov.kp)) { state.kp = Math.min(9, Math.max(0, ov.kp)); return; }

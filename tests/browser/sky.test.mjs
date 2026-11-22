@@ -44,4 +44,10 @@ export async function run(t) {
   const sun = hud.find((l) => /Sun/.test(l.t));
   t.check('labels: at night the sun (below the horizon) is labelled as such and sits low on the screen, never high in the sky', !sun || (/below horizon/.test(sun.t) && sun.top > sun.h * 0.45), JSON.stringify(sun));
   await n.close();
+
+  // ---- the aurora: from the planetary K index (forced here with ?kp=), a place near enough to the magnetic pole, a dark sky; the setting switches it off ----
+  const aur = async (conf) => { const h = await t.open({ fast: true, query: 't=2026-12-10T08:00:00Z&speed=0&lat=41.9&lon=-87.6&kp=8&az=4&pitch=12', conf: { clockStyle: 'solid', weatherMode: 'clear', plants: false, ...conf }, width: 600, height: 360 }); await h.settle(2500); const r = await h.page.evaluate(() => ({ set: !!window.__sky.s.aurora, kp: window.__sky.s.aurora && window.__sky.s.aurora.kp, strength: window.__sky._aur })); await h.close(); return r; };
+  const on = await aur({}), off = await aur({ aurora: false });
+  t.check('the aurora: with a storm (Kp 8) at Chicago on a clear night it is on and strong enough to draw', on.set && on.kp === 8 && on.strength > 0.3, JSON.stringify(on));
+  t.check('and the Aurora setting switches it off', !off.set && !off.strength, JSON.stringify(off));
 }

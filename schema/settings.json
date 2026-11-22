@@ -584,6 +584,17 @@
    "doc": "show an umbrella / slicker indicator when enough rain is coming today"
   },
   {
+   "key": "aurora",
+   "type": "bool",
+   "default": true,
+   "tab": "weather",
+   "advanced": true,
+   "label": "Aurora",
+   "shareable": false,
+   "preset": false,
+   "doc": "show the aurora when the real conditions allow it: a place near enough to the magnetic pole for the current planetary K index, a dark and clear sky (the index is read from NOAA every 30 minutes)"
+  },
+  {
    "key": "severeAlerts",
    "type": "enum",
    "default": "watch",
