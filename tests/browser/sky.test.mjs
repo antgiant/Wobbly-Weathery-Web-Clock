@@ -50,4 +50,14 @@ export async function run(t) {
   const on = await aur({}), off = await aur({ aurora: false });
   t.check('the aurora: with a storm (Kp 8) at Chicago on a clear night it is on and strong enough to draw', on.set && on.kp === 8 && on.strength > 0.3, JSON.stringify(on));
   t.check('and the Aurora setting switches it off', !off.set && !off.strength, JSON.stringify(off));
+
+  // ---- snow piles up while it snows (and a dust storm is worse in a desert than over the sea) ----
+  const sn = await t.open({ fast: true, fixedTime: '2026-12-10T17:08:25Z', query: 'speed=0&lat=40.7&lon=-74&az=0', conf: { clockStyle: 'solid', weatherMode: 'snow', plants: true }, width: 600, height: 360 });
+  await sn.settle(2500);
+  const pile = await sn.page.evaluate(async () => { const m = await import('/js/sky/data.js'); m.stepSnowPile(); const a = window.__sky.snowPile; return { first: a, wx: window.__sky.wx && window.__sky.wx.snow }; });
+  t.check('snow: the pile on the ground starts part way and the digits\' caps follow it', pile.first > 0.1 && pile.first < 0.6, JSON.stringify(pile));
+  await sn.close();
+  const dd = async (landscape) => { const h = await t.open({ fast: true, query: `t=2026-06-21T17:00:00Z&speed=0&lat=40.7&lon=-74&az=0&landscape=${landscape}`, conf: { clockStyle: 'solid', weatherMode: 'dust', plants: false, landscape }, width: 500, height: 300 }); await h.settle(2500); const v = await h.page.evaluate(() => window.__sky.s.weather.dust); await h.close(); return v; };
+  const dDesert = await dd('desert'), dOcean = await dd('ocean');
+  t.check('a dust storm shows more over a desert than over the open sea', dDesert > dOcean && dDesert > 0.7 && dOcean < 0.4, `${dDesert} vs ${dOcean}`);
 }

@@ -1,5 +1,5 @@
 // Historical weather mapping and weather-driven seasons. Run: node tests/unit/weather.mjs
-import { serviceFor, hoursOf, weatherFromDay, climateOf, mapOpenMeteo, PRESETS, CLEAR, MODES } from '../../js/sky/weather.js';
+import { serviceFor, hoursOf, weatherFromDay, climateOf, mapOpenMeteo, dustFactor, PRESETS, CLEAR, MODES } from '../../js/sky/weather.js';
 import { seasonFromClimate } from '../../js/sky/biome.js';
 import { unitFor, hour24 } from '../../js/units.js';
 let fails = 0;
@@ -49,6 +49,8 @@ check('climate needs a month of data', climateOf([1, 2, 3]) === null && climateO
   check('dust from the air-quality service: 50 ug/m3 nothing, 500 a storm, in between scales', m({}, { dust: 50 }).dust === 0 && m({}, { dust: 500 }).dust === 1 && Math.abs(m({}, { dust: 275 }).dust - 0.5) < 1e-9 && m({}, null).dust === 0 && m({}, { dust: 9 }).dust === 0);
   check('a dust storm is thick brown haze: less to see, more aerosol; clean air changes nothing', (() => { const d = m({}, { dust: 500, aerosol_optical_depth: 0.1 }), c = m({}, { dust: 9, aerosol_optical_depth: 0.1 }); return d.visKm <= 2 && d.aod >= 1.4 && c.visKm >= 25 && Math.abs(c.aod - 0.1) < 1e-9; })());
   check('recent rain: millimetres in the last hours, 3 mm an hour or more is 1, nothing is 0, rubbish is 0', mapOpenMeteo({}, null, 1.5).recent === 0.5 && mapOpenMeteo({}, null, 9).recent === 1 && mapOpenMeteo({}, null, 0).recent === 0 && mapOpenMeteo({}, null).recent === 0 && mapOpenMeteo({}, null, NaN).recent === 0);
+  check('a dust storm is worst in a desert and least over the open sea: desert > steppe > flat > hills > city > mountains > ocean', (() => { const f = (t, b) => dustFactor(t, b); return f('desert') > f('flat') && f('flat') > f('hills') && f('hills') > f('city') && f('city') > f('mountains') && f('mountains') > f('ocean') && f('auto', 'desert') > f('auto', 'steppe') && f('auto', 'steppe') > f('auto', 'grass') && f('auto', 'grass') > f('auto', 'forest'); })());
+  check('the automatic landscape and a flat one follow the land cover; a chosen one wins; an unknown one is middling', dustFactor('auto', 'desert') === 1.3 && dustFactor('flat', 'desert') === 1.3 && dustFactor('hills', 'desert') === 0.75 && dustFactor('ocean', 'desert') === 0.35 && dustFactor(undefined, undefined) === 0.9 && dustFactor('auto', undefined) === 0.9);
   const g = m({ wind_speed_10m: 6, wind_gusts_10m: 15 });
   check('wind: mean and gusts at the surface in m/s; gusts never below the mean; none given means calm', g.windMs === 6 && g.gust === 15 && m({ wind_speed_10m: 6 }).gust === 6 && m({}).windMs === 0 && m({ wind_speed_10m: 9, wind_gusts_10m: 4 }).gust === 9);
   check('every preset has every field of the clear sky (nothing undefined for the renderer)', Object.entries(PRESETS).every(([, p]) => Object.keys(CLEAR).every((k) => k in p)));

@@ -4,7 +4,8 @@
 import { conf, formatTemp, lowPower } from '../config.js';
 import { now } from '../simtime.js';
 import { fetchKp } from './aurora.js';
-import { PRESETS, fetchLiveWeather, fetchMarine, CLEAR, fetchWeatherDay, weatherFromDay, fetchClimate } from './weather.js';
+import { Accumulator } from './accumulate.js';
+import { dustFactor, PRESETS, fetchLiveWeather, fetchMarine, CLEAR, fetchWeatherDay, weatherFromDay, fetchClimate } from './weather.js';
 import { fetchDem, demSkyline, LANDSCAPES } from './landscape.js';
 import Virgo from '../virgo/virgo.js';
 import { fetchBiome, fallbackBiome, seasonFromClimate, paletteFor, foliage } from './biome.js';
@@ -56,6 +57,7 @@ export function applyWeather() {
     w = PRESETS[mode] || CLEAR;
     setStatus('weather', `Manual: ${w.label}`);
   }
+  if (w.dust > 0) { const k = dustFactor(engine.s.landscape.type, currentBiome().kind); if (k !== 1) w = { ...w, dust: Math.min(1, w.dust * k) }; }          // a desert shows a dust storm in full, the open sea hardly
   // aerosol optical depth -> Mie multiplier (the model's clean-air baseline is ~0.01 AOD)
   const mie = Math.min(12, 1 + 12 * (w.aod ?? 0.12));
   engine.set({ weather: w, mie });
@@ -176,6 +178,20 @@ export function applyTree() {
   engine.setTree({ on, az: (lat >= 0 ? 180 : 0) + (lat >= 0 ? 24 : -24), dist: 30, h: 10 });
 }
 
+// ---- snow piles up while it snows and melts after: the ground, the plants and the caps on the digits follow (js/sky/accumulate.js) ----
+export const snowPile = new Accumulator({ rise: 1 / 1200, fall: 1 / 5400, start: 0.5 });
+let snowAt = 0, snowShown = 0;
+/** Moves the pile on (the scheduler calls this every 15 s) and refreshes the ground and plants when it has changed enough to see. Melts three times as fast above freezing. */
+export function stepSnowPile() {
+  if (!engine) return;
+  const w = engine.s.weather, now0 = performance.now(), dt = snowAt ? (now0 - snowAt) / 1000 : 0;
+  snowAt = now0;
+  const falling = !histActive() && w.snowfall && w.precip > 0.05 ? w.precip : 0;
+  const warm = Number.isFinite(w.tempC) && w.tempC > 2;
+  const level = snowPile.step(falling, warm && !falling ? dt * 3 : dt);
+  engine.snowPile = level;
+  if (Math.abs(level - snowShown) > 0.04 || (level === 0) !== (snowShown === 0)) { snowShown = level; applyPlants(); }
+}
 export function applyPlants() {
   if (!engine) return;
   applyTree();
@@ -184,7 +200,7 @@ export function applyPlants() {
   const on = !!conf.plants && !water && type !== 'city' && b.kind !== 'water';
   const season = seasonFromClimate(now(), b.lat ?? num(conf.location_latitude, DEFAULT_LAT), b, state.climate);
   const w = engine.s.weather;
-  const pal = paletteFor(b, season, w.snowCover || 0, b.rgb, foliage(now(), b.lat ?? num(conf.location_latitude, DEFAULT_LAT), b, state.climate));
+  const pal = paletteFor(b, season, Math.max(w.snowCover || 0, snowPile.level), b.rgb, foliage(now(), b.lat ?? num(conf.location_latitude, DEFAULT_LAT), b, state.climate));
   // ground colours follow the biome too (the ocean keeps its own water shading)
   if (!water && type !== 'city') engine.set({ ground: { g1: pal.ground, g2: pal.ground2 } });
   else engine.set({ ground: null });

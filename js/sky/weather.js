@@ -55,6 +55,17 @@ export const MODES = Object.keys(PRESETS);
 
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 
+/**
+ * How much of a dust storm a landscape shows: a desert is where it is worst (more than the air alone says: bare sand to lift), steppe and flat plains next, hills and a city
+ * less (buildings and slopes break the wind), mountains and above all the open sea least (nothing to lift). `biomeKind` (desert, steppe, ...) counts when the landscape is
+ * the automatic one.
+ */
+export function dustFactor(landscapeType, biomeKind) {
+  const byLand = { desert: 1.3, flat: 0.9, hills: 0.75, mountains: 0.6, city: 0.7, ocean: 0.35 }[landscapeType];
+  const byBiome = { desert: 1.3, steppe: 1.0, grass: 0.8, tundra: 0.7, forest: 0.5, snow: 0.4, urban: 0.7, water: 0.35 }[biomeKind];
+  return byLand != null && landscapeType !== 'auto' && landscapeType !== 'flat' ? byLand : (byBiome ?? byLand ?? 0.9);
+}
+
 /** Map an Open-Meteo `current` block (+ optional air-quality block) to renderer params. */
 export function mapOpenMeteo(cur, air, recentMm = 0) {
   const w = { ...CLEAR, cover: [0, 0, 0], wind: [...CLEAR.wind], label: 'Live' };

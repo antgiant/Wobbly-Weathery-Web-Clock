@@ -1350,6 +1350,12 @@ vec3 shadeTerrain(int layer, vec3 d) {
         float night = 1.0 - smoothstep(-0.14, 0.01, uSunA.z);
         vec3 wcol = mix(vec3(1.0, 0.78, 0.45), vec3(0.72, 0.86, 1.0), step(0.82, hash12(cell + 3.0)));
         emit = wcol * pane * style * night * 0.5 / expo;
+        // by day the glass reflects the sky: a ray off a facade that faces the viewer goes back toward the sky behind the viewer at the same height; each building is glassier or plainer, the panes
+        // reflect and the frames between them do not, and a lit window shows through instead
+        vec3 fnorm = normalize(vec3(-hdir.x, 0.0, -hdir.z));
+        vec3 refl = d - 2.0 * dot(d, fnorm) * fnorm;
+        float glassy = 0.12 + 0.6 * fract(bid * 13.7);
+        emit += skyLum(refl) * glassy * (0.25 + 0.75 * pane) * (1.0 - 0.8 * pane * style * night) * 0.55;
         float tower = step(0.05, ridgeTop) * float(layer == 2);
         float beacon = tower * step(0.55, bid) * smoothstep(0.93, 1.0, hz) * step(0.5, fract(uTime * 0.45 + bid * 3.0));
         emit += vec3(1.0, 0.08, 0.04) * beacon * (0.3 + 0.7 * night) * 3.0 / expo;
