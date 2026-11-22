@@ -90,3 +90,6 @@ How: the browser tests already take pictures (`tests/visual/baseline/*.png`, `h.
 ## 6. CI
 
 Shares are dealt by `FULL_COST` in `tests/run.mjs` (the average of runs 207 and 217; runner speed varies up to 40% between runs, so read several runs and adjust). Still to do: cut page opens (about half of browser time), shorter settles, protect `main` with required checks (a repository setting only the owner can change), the impact map. See `docs/TESTS.md` and `TODO.md`.
+
+
+**Released 2026-11-22: `native-v0.2.5`** (run 45035702024 from `main` at `fd90ff9`, signed; the armhf .deb and the armv6 program checked against SHA256SUMS). It carries everything since 0.2.4: the DWD and MeteoAlarm alerts, per-hazard pictures, ice and sand that build up, the aurora switch, rainbows after rain, the freezing-rain glaze on the digits.
