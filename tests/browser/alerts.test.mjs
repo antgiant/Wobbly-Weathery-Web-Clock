@@ -180,7 +180,7 @@ export async function run(t) {
   abroad.net.alerts = [feat('Tornado Warning')];
   await abroad.page.goto(abroad.url); await abroad.ready(); await abroad.settle(3500);
   const abroadText = await abroad.page.evaluate(() => document.getElementById('severeStatus').textContent);
-  t.check('severe notice: outside the United States the service is not asked, and the settings panel says why', (await sevPill(abroad.page)) === null && !abroad.net.calls.some((u) => /api\.weather\.gov/.test(u)) && /outside all three/.test(abroadText), JSON.stringify([abroadText, abroad.net.calls.filter((u) => /weather\.gov/.test(u))]));
+  t.check('severe notice: outside the United States the service is not asked, and the settings panel says why', (await sevPill(abroad.page)) === null && !abroad.net.calls.some((u) => /api\.weather\.gov|meteoalarm/.test(u)) && /outside all three/.test(abroadText), JSON.stringify([abroadText, abroad.net.calls.filter((u) => /weather\.gov/.test(u))]));
   await abroad.close();
 
   const advisory = await t.open({ ...sevOpen, load: false, conf: { ...sevOpen.conf, severeAlerts: 'all' } });

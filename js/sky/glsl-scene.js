@@ -979,6 +979,7 @@ uniform float uSleet;         // 0..1: rain and snow falling together (both are 
 uniform float uGlaze;         // 0..1 freezing rain: the rain is ice-clear, the ground is coated with ice
 uniform vec4  uAur;           // aurora: how visible 0..1, how high 0 (low in the pole's direction) .. 1 (overhead), the pole's azimuth (radians from north, clockwise), -
 uniform float uBow;           // 0..1 rainbow (js/sky/rainbow.js): a ring 42 degrees from the point opposite the sun
+uniform float uSand;          // 0..1 sand drifted over the ground by a dust storm
 uniform float uRime;          // 0..1 freezing fog: frost on the ground, glitter in the air
 uniform float uDust;          // 0..1 dust storm: a brown veil and sand blowing along
 uniform float uHail;          // 0..1: hail (stones in the air, a litter of them on the ground)
@@ -1301,7 +1302,8 @@ vec3 shadeTerrain(int layer, vec3 d) {
       alb *= mix(1.0, 0.62 + 0.9 * sp, sm);
       alb = mix(alb, vec3(0.30, 0.28, 0.25), step(0.985, hash12(floor(gp * 7.0))) * sm * 0.55);   // pebbles
       alb = mix(alb, vec3(0.86, 0.9, 0.95), step(0.9, hash12(floor(gp * 11.0 + 3.0))) * sm * uHail * 0.85);
-      alb = mix(alb, vec3(0.88, 0.94, 1.0), uRime * (0.45 + 0.4 * sp));                                           // rime: the ground is white with frost, the more where the grass would be   // hail stones lying on the ground
+      alb = mix(alb, vec3(0.88, 0.94, 1.0), uRime * (0.45 + 0.4 * sp));
+      alb = mix(alb, vec3(0.66, 0.52, 0.31) * (0.85 + 0.3 * sp), uSand * (0.5 + 0.4 * smoothstep(0.35, 0.65, pb)));        // sand: drifted over the grass and the pebbles, thickest in the hollows                                           // rime: the ground is white with frost, the more where the grass would be   // hail stones lying on the ground
       // wet ground: darker, with a sky-reflecting sheen that grows toward grazing angles and in puddles
       float pud = smoothstep(0.55, 0.72, pb) * uWet;
       alb *= 1.0 - 0.35 * uWet;

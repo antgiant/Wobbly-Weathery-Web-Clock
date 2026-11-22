@@ -123,7 +123,7 @@ in vec3 vSunL, vAmbL, vHaze;
 in vec2 vSunSide;
 in float vFog, vExpo;
 uniform vec3 uLeaf, uConifer, uGrass, uDry, uRock;
-uniform float uSnowCover, uWet, uTime, uOcean, uRime, uLeafCover;
+uniform float uSnowCover, uWet, uTime, uOcean, uRime, uLeafCover, uSand;
 out vec4 oColor;
 
 float hh(float a, float b) { return fract(sin(a * 127.1 + b * 311.7) * 43758.5453); }
@@ -294,6 +294,7 @@ void main() {
   col = mix(col, vec3(0.82, 0.85, 0.9), snow);
   col *= 1.0 - 0.3 * uWet;
   col = mix(col, vec3(0.86, 0.93, 1.0), uRime * (0.35 + 0.35 * hh(seed, 5.0)) * (0.5 + 0.5 * smoothstep(0.0, 0.5, uv.y)));       // rime: a white frost on every blade and leaf
+  col = mix(col, vec3(0.66, 0.52, 0.31), uSand * 0.65 * (1.0 - smoothstep(0.0, 0.55, uv.y)));       // sand piled round the foot of every plant
 
   // lighting: the lit side faces the sun on screen; plants against the sun are mostly silhouettes
   float side = clamp(0.5 + 0.5 * vSunSide.x * (uv.x * 2.0 - 1.0) * 1.8, 0.0, 1.0);

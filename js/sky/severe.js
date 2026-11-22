@@ -156,6 +156,65 @@ export function parseDwd(json) {
   }
   return out;
 }
+// ---- MeteoAlarm (feeds.meteoalarm.org: the European warning feeds, one per country) ----
+// Only for the countries whose feed carries the areas as polygons (the United Kingdom, the Netherlands, Norway, Sweden, Estonia, Luxembourg, Slovenia, Iceland): the others name
+// their areas by a code only (EMMA_ID, NUTS), and turning a code into a place needs a boundary data set we do not have. The feeds send no CORS headers, so only the Raspberry Pi's
+// program (which fetches through curl) can read them: a web page leaves them out.
+export const MA_COUNTRIES = [
+  ['united-kingdom', 49.8, 60.9, -8.7, 1.8], ['netherlands', 50.7, 53.6, 3.3, 7.3], ['norway', 57.9, 71.3, 4.4, 31.3], ['sweden', 55.3, 69.1, 10.9, 24.2],
+  ['estonia', 57.5, 59.7, 21.7, 28.3], ['luxembourg', 49.4, 50.2, 5.7, 6.6], ['slovenia', 45.4, 46.9, 13.3, 16.6], ['iceland', 63.3, 66.6, -24.6, -13.4],
+];
+export const maCountries = (lat, lon) => MA_COUNTRIES.filter((c) => lat >= c[1] && lat <= c[2] && lon >= c[3] && lon <= c[4]).map((c) => c[0]);
+/** The Raspberry Pi's program says so by having `__pillSet`; a web page has not (and its browser would refuse the feeds). */
+export const maUsable = () => typeof globalThis.__pillSet === 'function';
+
+/** Is the point inside a polygon given as the feed writes it: "lat,lon lat,lon ..."? (Ray casting.) */
+export function inPolygon(lat, lon, poly) {
+  const pts = String(poly || '').trim().split(/\s+/).map((p) => p.split(',').map(Number)).filter((q) => q.length === 2 && q.every(Number.isFinite));
+  if (pts.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [yi, xi] = pts[i], [yj, xj] = pts[j];
+    if ((xi > lon) !== (xj > lon) && lat < ((yj - yi) * (lon - xi)) / (xj - xi) + yi) inside = !inside;
+  }
+  return inside;
+}
+const MA_TYPES = { 1: 'wind', 2: 'winter', 3: 'thunderstorm', 4: 'fog', 5: 'heat', 6: 'cold', 7: 'marine', 8: 'fire', 9: 'avalanche', 10: 'flood', 11: 'flood', 12: 'flood', 13: 'flood' };
+const MA_LEVEL = { 2: 'advisory', 3: 'watch', 4: 'warning' };       // yellow: be aware; orange: be prepared; red: take action
+const maParam = (info, name) => { const ps = Array.isArray(info.parameter) ? info.parameter : info.parameter ? [info.parameter] : []; const p = ps.find((x) => x && x.valueName === name); return p ? String(p.value) : ''; };
+
+/** Alerts at a point from a MeteoAlarm country feed (`{warnings: [{alert: {status, info: [...]}}]}`): the warnings whose polygon holds the point. Yellow is an advisory, orange a watch, red a warning. */
+export function parseMeteoAlarm(json, lat, lon) {
+  const out = [];
+  for (const w of json && Array.isArray(json.warnings) ? json.warnings : []) {
+    const al = w && w.alert; if (!al || clean(al.status).toLowerCase() !== 'actual') continue;
+    const infos = Array.isArray(al.info) ? al.info : al.info ? [al.info] : [];
+    const info = infos.find((i) => /^en/i.test(clean(i.language))) || infos[0]; if (!info) continue;
+    const areas = Array.isArray(info.area) ? info.area : info.area ? [info.area] : [];
+    const hit = areas.find((a) => (Array.isArray(a.polygon) ? a.polygon : a.polygon ? [a.polygon] : []).some((poly) => inPolygon(lat, lon, poly)));
+    if (!hit) continue;
+    const lv = Number((maParam(info, 'awareness_level').match(/^\s*(\d)/) || [])[1]), kind = Number((maParam(info, 'awareness_type').match(/^\s*(\d+)/) || [])[1]);
+    const level = MA_LEVEL[lv]; if (!level) continue;                                    // green (1) is not a warning
+    const exp = Date.parse(info.expires || ''), onset = Date.parse(info.onset || info.effective || '');
+    const label = clean(maParam(info, 'awareness_type').split(';')[1]) || clean(info.event) || 'Weather';
+    out.push({
+      id: String(al.identifier || al.sent || label), event: `${titleCase(label)} ${level === 'warning' ? 'Warning' : level === 'watch' ? 'Watch' : 'Advisory'}`, level, type: MA_TYPES[kind] || typeOf(label), other: false,
+      severity: lv, urgency: /immediate/i.test(clean(info.urgency)) ? 3 : 2, headline: clean(info.headline) || label, area: clean(hit.areaDesc), text: clean(info.description),
+      expires: Number.isFinite(exp) ? exp : null, onset: Number.isFinite(onset) ? onset : null, cancelled: /cancel/i.test(clean(al.msgType)),
+    });
+  }
+  return out;
+}
+export async function fetchMeteoAlarm(lat, lon, signal) {
+  const res = await Promise.allSettled(maCountries(lat, lon).map(async (c) => {
+    const r = await fetch(`https://feeds.meteoalarm.org/api/v1/warnings/feeds-${c}`, { signal });
+    if (!r.ok) throw new Error('alerts HTTP ' + r.status);
+    return parseMeteoAlarm(await r.json(), lat, lon);
+  }));
+  if (res.length && res.every((r) => r.status === 'rejected')) throw res[0].reason;
+  return res.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
+}
+
 /** Germany (a rough box: the answer for a point outside is empty). */
 export function inDwdArea(lat, lon) { return lat >= 47.2 && lat <= 55.1 && lon >= 5.8 && lon <= 15.1; }
 export async function fetchDwd(lat, lon, signal) {
@@ -178,7 +237,7 @@ export async function fetchEc(lat, lon, signal) {
 }
 
 /** Anywhere a service is wired in. */
-export const inAlertArea = (lat, lon) => inNwsArea(lat, lon) || inEcArea(lat, lon) || inDwdArea(lat, lon);
+export const inAlertArea = (lat, lon) => inNwsArea(lat, lon) || inEcArea(lat, lon) || inDwdArea(lat, lon) || (maUsable() && maCountries(lat, lon).length > 0);
 
 /** Alerts from every service that covers the point, together (a point near the border may be in two). One service failing does not hide the other's alerts unless both fail. */
 export async function fetchAlerts(lat, lon, signal) {
@@ -186,6 +245,7 @@ export async function fetchAlerts(lat, lon, signal) {
   if (inNwsArea(lat, lon)) jobs.push(fetchNws(lat, lon, signal));
   if (inEcArea(lat, lon)) jobs.push(fetchEc(lat, lon, signal));
   if (inDwdArea(lat, lon)) jobs.push(fetchDwd(lat, lon, signal));
+  if (maUsable() && maCountries(lat, lon).length) jobs.push(fetchMeteoAlarm(lat, lon, signal));
   const res = await Promise.allSettled(jobs);
   if (res.length && res.every((r) => r.status === 'rejected')) throw res[0].reason;
   return res.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));

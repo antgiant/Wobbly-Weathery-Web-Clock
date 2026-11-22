@@ -12,6 +12,7 @@
 // the display rate with the render scale adapting to hold the frame rate.
 
 import { Lightning } from './lightning.js';
+import { Accumulator } from './accumulate.js';
 import { rainbowStrength } from './rainbow.js';
 import { auroraView } from './aurora.js';
 import { Capability, RUNG_OF, quietFor } from './capability.js';
@@ -864,7 +865,16 @@ export class SkyEngine {
     this._1f('uBow', !K || K.weather ? (typeof s.bow === 'number' ? s.bow : rainbowStrength(sky.sun.alt, w)) : 0);          // (s.bow: a number forces it, for tests and screenshots)
     this._1f('uRime', !K || K.weather ? (w.rime || 0) : 0);
     this._1f('uDust', !K || K.weather ? (w.dust || 0) : 0);
-    this._1f('uGlaze', !K || K.weather ? (w.freezing || 0) : 0);
+    {                                                                                        // ice and sand build up while the weather makes them and fade after (js/sky/accumulate.js)
+      const accOn = !K || K.weather, dtA = this._accT ? (perfNow - this._accT) / 1000 : 0;
+      this._accT = perfNow;
+      this._iceAcc = this._iceAcc || new Accumulator({ rise: 1 / 900, fall: 1 / 1500, start: 0.6 });
+      this._sandAcc = this._sandAcc || new Accumulator({ rise: 1 / 600, fall: 1 / 1800, start: 0.5 });
+      this._iceLevel = this._iceAcc.step(accOn ? (w.freezing || 0) : 0, dtA);
+      this._sandLevel = this._sandAcc.step(accOn ? (w.dust || 0) : 0, dtA);
+      this._1f('uGlaze', this._iceLevel);
+      this._1f('uSand', this._sandLevel);
+    }
     // sea state: real marine data when we have it, otherwise grown from the wind (fully developed sea, damped for fetch)
     if (land.ocean) {
       const m = s.sea, U = Math.hypot(w.wind[0], w.wind[1]) * 500, wl = Math.hypot(w.wind[0], w.wind[1]) || 1;
@@ -983,7 +993,7 @@ export class SkyEngine {
       const w = this.s.weather, on = this.s.digitWeather !== false && !this.s.reducedMotion && (!this.knobs || this.knobs.weather);
       const mixed = (w.sleet || 0) > 0.15;                                                          // sleet: both, half each
       const snowRate = mixed ? (w.precip || 0) * 0.5 : (w.precip || 0) * (w.snowfall || 0), rainRate = mixed ? (w.precip || 0) * 0.5 : (w.precip || 0) * (1 - (w.snowfall || 0));
-      this.wx = { snow: on ? Math.min(1, snowRate * 1.4) : 0, rain: on ? Math.min(1, rainRate * 1.3) : 0, freeze: on ? (w.freezing || 0) : 0, hail: on ? (w.hail || 0) : 0 };       // (read by the tests)
+      this.wx = { snow: on ? Math.min(1, snowRate * 1.4) : 0, rain: on ? Math.min(1, rainRate * 1.3) : 0, freeze: on ? (this._iceLevel || 0) : 0, hail: on ? (w.hail || 0) : 0 };       // (read by the tests)
     }
     // An ES 2 GPU gets the glass as small programs, each reading what the ones before made (a Pi Zero's driver could not fit the whole glass in one: it drew nothing): the height field and
     // slope (ggeo), the shadow and halo (gaura), for stained glass the tube's colours (gemit, ghalo), the body (gbody), snow and rain when there are any (gwx), the outline (gout).
@@ -1544,6 +1554,7 @@ export class SkyEngine {
     this._3f('uDry', pal.dry); this._3f('uRock', pal.rock);
     this._1f('uSnowCover', Math.max(pal.snow || 0, w.snowCover));
     this._1f('uRime', !K || K.weather ? (w.rime || 0) : 0);
+    this._1f('uSand', this._sandLevel || 0);
     this._1f('uLeafCover', pal.leafCover == null ? 1 : pal.leafCover);
     this._1f('uOcean', s.landscape.ocean ? 1 : 0);
     this._2f('uResPx', this.sceneTarget.w, this.sceneTarget.h);
