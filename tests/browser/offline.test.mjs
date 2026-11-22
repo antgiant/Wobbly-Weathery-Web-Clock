@@ -58,15 +58,20 @@ export async function run(t) {
   const fresh = await g.page.evaluate(async () => { const k = (await caches.keys()).find((x) => x.startsWith('wwwc-')); const c = await caches.open(k); return (await (await c.match('/js/wind.js')).text()).length; });
   t.check('pressing it re-fetched the stale file from the server and reloaded the page', fresh > 1000, `${fresh} bytes`);
 
-  // a newer version on the server than the saved one: the page offers to update (and never reloads by itself)
+  // a newer version on the server than the saved one: the page updates itself, but never while a settings screen is open (nothing half-made is lost): it offers the banner, and applies the moment the screen is closed
   t.check('(set up) no update banner while the saved copy matches the server', await g.page.evaluate(() => document.getElementById('updateBanner').hidden));
+  await g.page.evaluate(() => { document.getElementById('settings').dispatchEvent(new MouseEvent('click', { bubbles: true })); window.__beforeReload = 1; });
+  await g.page.waitForFunction(() => !document.getElementById('settingsModal').hidden, null, { timeout: 5000 }).catch(() => {});
   await g.page.evaluate(async () => { const k = (await caches.keys()).find((x) => x.startsWith('wwwc-')); const c = await caches.open(k); await c.put('/js/wind.js', new Response('// the old version', { headers: { 'content-type': 'text/javascript', etag: '"an-older-version"' } })); });
   await g.page.evaluate(() => fetch('/js/wind.js').then((r) => r.text()));          // the page asks for a file: the saved copy is answered, the server's is fetched behind it
   await g.page.waitForFunction(() => !document.getElementById('updateBanner').hidden, null, { timeout: 15000 }).catch(() => {});
   t.check('when the server has a different copy of a file, the page shows "A new version is ready: tap to update"', await g.page.evaluate(() => { const b = document.getElementById('updateBanner'); return !b.hidden && /new version/i.test(b.textContent); }));
-  const url0 = g.page.url();
-  await g.page.waitForTimeout(1500);
-  t.check('and it did not reload by itself', g.page.url() === url0 && await g.page.evaluate(() => !document.getElementById('updateBanner').hidden));
+  await g.page.waitForTimeout(3500);
+  t.check('and, with the settings screen open, it does not reload by itself (nothing half-made is lost)', await g.page.evaluate(() => window.__beforeReload === 1 && !document.getElementById('updateBanner').hidden));
+  await g.page.evaluate(() => { document.getElementById('settingsModal').hidden = true; });          // the screen is closed
+  await g.page.waitForFunction(() => window.__beforeReload === undefined, null, { timeout: 30000 }).catch(() => {});
+  await g.page.waitForFunction(() => document.body.classList.contains('ready'), null, { timeout: 60000 }).catch(() => {});
+  t.check('the moment it is closed the update is applied by itself (the page reloaded, no tap)', await g.page.evaluate(() => window.__beforeReload === undefined));
 
   // the version: one definite answer to "which copy is this?"
   const ver = await g.page.evaluate(async () => { const m = await import('/js/version.js').catch(() => null); void m; return { v: window.__version, line: document.getElementById('versionLine').textContent, dataset: document.documentElement.dataset.version }; });

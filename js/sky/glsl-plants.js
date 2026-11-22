@@ -123,7 +123,7 @@ in vec3 vSunL, vAmbL, vHaze;
 in vec2 vSunSide;
 in float vFog, vExpo;
 uniform vec3 uLeaf, uConifer, uGrass, uDry, uRock;
-uniform float uSnowCover, uWet, uTime, uOcean;
+uniform float uSnowCover, uWet, uTime, uOcean, uRime, uLeafCover, uSand;
 out vec4 oColor;
 
 float hh(float a, float b) { return fract(sin(a * 127.1 + b * 311.7) * 43758.5453); }
@@ -204,10 +204,17 @@ void main() {
     float trunk = step(abs(uv.x - 0.5 - (type == 8 ? 0.06 * (uv.y - 0.3) : 0.0)), type == 8 ? 0.028 : (type == 9 ? 0.03 : 0.04)) * step(uv.y, type == 9 ? 0.72 : 0.5);
     float crown = 0.0;
     vec3 leaf = mix(uLeaf, uGrass, 0.25 * vari);
+    float twigs = 0.0;
     if (type == 2) {
       crown = max(blob(uv, vec2(0.5, 0.68), vec2(0.34, 0.30), seed, aa),
               max(blob(uv, vec2(0.33, 0.58), vec2(0.22, 0.2), seed + 2.0, aa), blob(uv, vec2(0.67, 0.6), vec2(0.22, 0.2), seed + 5.0, aa)));
       leaf *= 0.7 + 0.6 * vn(uv * 11.0 + seed * 9.0);
+      if (uLeafCover < 0.98) {                              // a season without full leaf: the crown thins to holes, and bare twigs show where it was
+        float env = crown;
+        crown *= step(1.0 - uLeafCover * 1.02, vn(uv * 17.0 + seed * 7.0));
+        float fk = fract(uv.x * 5.0 + uv.y * 2.3 + seed * 3.0);
+        twigs = env * (1.0 - uLeafCover) * smoothstep(0.07, 0.02, abs(fk - 0.5)) * step(0.34, uv.y);
+      }
     } else if (type == 9) {
       crown = max(blob(uv, vec2(0.5, 0.82), vec2(0.5, 0.11), seed, aa), blob(uv, vec2(0.3, 0.74), vec2(0.26, 0.07), seed + 4.0, aa));
       leaf *= 0.8 + 0.4 * vn(uv * 12.0 + seed * 9.0);
@@ -227,7 +234,7 @@ void main() {
       crown = max(crown, cover(abs(q.x) - 0.02, aa) * step(0.0, q.y) * step(q.y, 0.1));
       leaf = mix(uLeaf, vec3(0.2, 0.5, 0.15), 0.5);
     }
-    a = max(crown, trunk);
+    a = max(max(crown, trunk), twigs);
     col = crown > 0.0 ? leaf : vec3(0.20, 0.14, 0.09);
     shadeLow = 0.35;
   } else if (type == 3) {                                 // conifer: ragged stacked cones
@@ -286,6 +293,8 @@ void main() {
   float snow = uSnowCover * smoothstep(0.1, 0.55, uv.y + 0.2 * (hh(seed, 3.0) - 0.5)) * (type == 3 ? 0.55 : 0.9);
   col = mix(col, vec3(0.82, 0.85, 0.9), snow);
   col *= 1.0 - 0.3 * uWet;
+  col = mix(col, vec3(0.86, 0.93, 1.0), uRime * (0.35 + 0.35 * hh(seed, 5.0)) * (0.5 + 0.5 * smoothstep(0.0, 0.5, uv.y)));       // rime: a white frost on every blade and leaf
+  col = mix(col, vec3(0.66, 0.52, 0.31), uSand * 0.65 * (1.0 - smoothstep(0.0, 0.55, uv.y)));       // sand piled round the foot of every plant
 
   // lighting: the lit side faces the sun on screen; plants against the sun are mostly silhouettes
   float side = clamp(0.5 + 0.5 * vSunSide.x * (uv.x * 2.0 - 1.0) * 1.8, 0.0, 1.0);

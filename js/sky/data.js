@@ -3,10 +3,11 @@
 
 import { conf, formatTemp, lowPower } from '../config.js';
 import { now } from '../simtime.js';
+import { fetchKp } from './aurora.js';
 import { PRESETS, fetchLiveWeather, fetchMarine, CLEAR, fetchWeatherDay, weatherFromDay, fetchClimate } from './weather.js';
 import { fetchDem, demSkyline, LANDSCAPES } from './landscape.js';
 import Virgo from '../virgo/virgo.js';
-import { fetchBiome, fallbackBiome, seasonFromClimate, paletteFor } from './biome.js';
+import { fetchBiome, fallbackBiome, seasonFromClimate, paletteFor, foliage } from './biome.js';
 import { generatePlants } from './plants.js';
 import { estimateBortle, fetchPlaces } from './lightpollution.js';
 import { isChristmasSeason } from '../season.js';
@@ -183,14 +184,14 @@ export function applyPlants() {
   const on = !!conf.plants && !water && type !== 'city' && b.kind !== 'water';
   const season = seasonFromClimate(now(), b.lat ?? num(conf.location_latitude, DEFAULT_LAT), b, state.climate);
   const w = engine.s.weather;
-  const pal = paletteFor(b, season, w.snowCover || 0, b.rgb);
+  const pal = paletteFor(b, season, w.snowCover || 0, b.rgb, foliage(now(), b.lat ?? num(conf.location_latitude, DEFAULT_LAT), b, state.climate));
   // ground colours follow the biome too (the ocean keeps its own water shading)
   if (!water && type !== 'city') engine.set({ ground: { g1: pal.ground, g2: pal.ground2 } });
   else engine.set({ ground: null });
   const q = engine.s.quality;
   const count = q === 'low' ? 450 : q === 'high' ? 1500 : 1000;
   const seed = seedFromLocation();
-  const key = `${b.kind}|${b.conifer}|${b.tropical}|${b.region}|${season}|${count}|${seed}`;
+  const key = `${b.kind}|${b.conifer}|${b.tropical}|${b.region}|${b.alpine}|${b.mediterranean}|${b.savanna}|${season}|${count}|${seed}`;
   if (on && key !== state.plantKey) {
     state.plantKey = key;
     engine.setPlants({ ...generatePlants(b, { count, seed, season }), palette: pal, on });
@@ -200,7 +201,7 @@ export function applyPlants() {
 export function statusText() {
   const b = currentBiome(), t = engine?.s.landscape.type;
   const base = (document.getElementById('terrainStatus')?.dataset.base) || '';
-  const bio = state.biome ? `Land cover: ${b.kind}${b.conifer ? ' (conifer)' : b.tropical ? ' (tropical)' : ''}` : 'Land cover: estimated from latitude';
+  const bio = state.biome ? `Land cover: ${b.kind}${b.alpine ? ' (above the trees)' : b.conifer ? ' (conifer)' : b.tropical ? ' (tropical)' : b.savanna ? ' (savanna)' : b.mediterranean ? ' (Mediterranean)' : ''}` : 'Land cover: estimated from latitude';
   return [base, t === 'ocean' || t === 'city' ? (t === 'ocean' ? state.seaText : '') : bio].filter(Boolean).join(' · ');
 }
 
@@ -316,6 +317,19 @@ export async function loadLiveData() {
     applyWeather();
     applyLandscape();
   }
+  await loadKp(signal);
+  applyAurora();
+}
+/** The aurora: the place and the planetary K index now (NOAA; cached 30 minutes; `?kp=6` forces one). Not drawn for a past or future date (Kp is only known for now), unless one is forced. */
+export function applyAurora() {
+  if (!engine) return;
+  const lat = num(ov.lat ?? conf.location_latitude, NaN), lon = num(ov.lon ?? conf.location_longitude, NaN);
+  engine.set({ aurora: conf.aurora !== false && Number.isFinite(state.kp) && Number.isFinite(lat) && Number.isFinite(lon) && (!histActive() || Number.isFinite(ov.kp)) ? { lat, lon, kp: state.kp } : null });
+}
+async function loadKp(signal) {
+  if (Number.isFinite(ov.kp)) { state.kp = Math.min(9, Math.max(0, ov.kp)); return; }
+  try { state.kp = await cachedFetch('kp', 30 * 60000, () => fetchKp(signal)); }
+  catch (e) { if (e.name !== 'AbortError') console.info('[sky] Kp fetch failed:', e.message); }               // (the last value is kept: Kp changes slowly)
 }
 /** Fetch weather, terrain and land cover now (app.js repeats this every 15 minutes through the scheduler). */
 export function scheduleLiveData() {

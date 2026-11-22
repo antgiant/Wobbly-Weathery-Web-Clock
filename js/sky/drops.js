@@ -19,6 +19,10 @@ export class DropSim {
     this.drops = [];
     this.gw = 0; this.gh = 0; this.grid = null; this.w = 1; this.h = 1; this.inkCells = 0;
     this.stroke = 30;
+    this.hail = 0;                      // 0..1: hail stones fall on the glass and bounce off the ink
+    this.stones = [];                   // the stones in the air: {x, y, r, vx, vy, bounces}
+    this.freeze = 0;                    // 0..1, freezing rain: drops freeze where they land (they grow into larger beads and sheets and do not run)
+    this.wind = 0;                      // sideways push on a drop in the air, -0.75..0.75 (engine.lean): the wind across the view
     this.maxDrops = MAX_DROPS;          // the quality governor lowers this on a slow machine
     this.wet = null;                    // water left on the glass by running drops (0..1 per cell of the ink grid); later drops are drawn along it
   }
@@ -82,6 +86,24 @@ export class DropSim {
     return Math.min(this.maxDrops, Math.round(rain * ink / (Math.PI * r * r) * 0.06));
   }
 
+  /** Hail: stones come down from above the digits, bounce off the ink (a bounce loses most of the speed and goes off to a side), and after two bounces are gone (melted, or off the edge). */
+  _stones(dt) {
+    const S = this.stroke, st = this.stones;
+    if (this.hail > 0.05 && this.inkCells && st.length < 30) {
+      const n = Math.floor(this.hail * 9 * dt + this.rand());
+      for (let k = 0; k < n; k++) { const p = this._spot(); if (p) st.push({ x: p[0] + (this.rand() - 0.5) * S * 0.3, y: Math.max(-S, p[1] - S * (3 + 3 * this.rand())), r: S * (0.05 + 0.04 * this.rand()), vx: (this.rand() - 0.5) * S * 0.6, vy: S * 3, bounces: 0 }); }
+    }
+    for (const q of st) {
+      q.vy += GRAVITY * S * dt * 3; q.y += q.vy * dt; q.x += q.vx * dt;
+      if (q.vy > 0 && this.inkAt(q.x, q.y) > 0.9) {
+        if (q.bounces >= 2) { q.gone = true; continue; }
+        q.vy = -q.vy * 0.45; q.vx += (this.rand() - 0.5) * S * 2.5; q.bounces++; q.y -= 1.5; q.r *= 0.88;
+      }
+      if (q.y > this.h + S || q.x < -S || q.x > this.w + S) q.gone = true;
+    }
+    this.stones = st.filter((q) => !q.gone);
+  }
+
   /**
    * Advance by dt seconds (at most 0.15 is taken at once: a slow frame must not teleport the drops).
    * @param {number} dt  seconds
@@ -89,6 +111,7 @@ export class DropSim {
    */
   step(dt, rain) {
     dt = Math.min(0.15, Math.max(0, dt));
+    this._stones(dt);
     const S = this.stroke, rRun = S * 0.15, drops = this.drops, beads = [];
     if (this.wet) { const k = Math.exp(-dt / 3); for (let i = 0; i < this.wet.length; i++) this.wet[i] *= k; }       // the water dries in a few seconds
     // new drops where there are fewer than the rain calls for
@@ -102,12 +125,14 @@ export class DropSim {
       d.age += dt;
       if (d.dying) {
         d.fall += dt; d.vy += GRAVITY * S * dt * 1.5; d.y += d.vy * dt;
+        if (this.wind) d.vx = (d.vx || 0) + this.wind * S * 9 * dt;            // wind carries a drop that has left the glass
         if (d.vx) { d.x += d.vx * dt; d.vx *= Math.exp(-dt * 1.5); }
         if (d.thrown && d.fall > 0.03 && this.inkAt(d.x, d.y) > 0.9) { d.dying = false; d.thrown = false; d.fall = 0; d.vx = 0; d.vy = 0; d.run = false; d.hang = 0; d.r *= 0.85; d.y0 = d.y; d.trail.length = 0; }   // it lands on other glass and sticks
         continue;
       }
       if (!d.run && !d.hang) {                                       // sitting: grows while it rains, until it is heavy enough to run
         d.r += dt * S * (0.004 + 0.03 * rain);
+        if (this.freeze > 0.5) { d.ice = true; d.r = Math.min(d.r, S * 0.2); continue; }            // frozen: it stays a bead (the big ones are sheets of ice) until the rain stops and it thaws away
         if (d.r >= rRun * (0.85 + 0.3 * ((d.age * 7.13) % 1))) { d.run = true; d.vy = S * 0.15; d.y0 = d.y; d.wait = 0; d.trail.length = 0; }
         continue;
       }
@@ -168,13 +193,16 @@ export class DropSim {
  * @param {DropSim} sim
  * @param {[number, number]} light  screen direction towards the light (y up), unit-ish
  */
+/** The drops and the hail stones in the air, all as drops (a stone is a small glassy ball, like a bead, until it has bounced away). */
+const shown = (sim) => (sim.stones && sim.stones.length ? sim.drops.concat(sim.stones.map((q) => ({ x: q.x, y: q.y, r: q.r, dying: false, run: false, trail: [], fall: 0, age: 0 }))) : sim.drops);
+
 export function drawDrops(ctx, sim, light = [-0.5, 0.8]) {
   const { width: w, height: h } = ctx.canvas;
   ctx.globalCompositeOperation = 'source-over';
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
   ctx.globalCompositeOperation = 'lighter';                          // channels add up where drops and trails overlap
   const S = sim.stroke;
-  for (const d of sim.drops) {
+  for (const d of shown(sim)) {
     const fade = d.dying ? Math.max(0, 1 - d.fall / 0.35) : 1;
     if (fade <= 0) continue;
     if (d.run && d.trail.length > 1) {                               // the wet line it leaves: thin, brightest by the drop, gone with age
@@ -194,6 +222,7 @@ export function drawDrops(ctx, sim, light = [-0.5, 0.8]) {
     const hi = ctx.createRadialGradient(gx, gy, 0, gx, gy, r * 0.5);
     hi.addColorStop(0, `rgba(0,${Math.round(255 * fade)},0,1)`); hi.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = hi; ctx.beginPath(); ctx.arc(gx, gy, r * 0.5, 0, 6.2832); ctx.fill();                                      // the glint
+    if (d.ice) { ctx.fillStyle = hi; ctx.beginPath(); ctx.arc(gx, gy, r * 0.4, 0, 6.2832); ctx.fill(); ctx.beginPath(); ctx.arc(x - light[0] * r * 0.3, y + light[1] * r * 0.3, r * 0.25, 0, 6.2832); ctx.fill(); }      // ice: a second glint, brighter
   }
   ctx.globalCompositeOperation = 'source-over';
   void S;
@@ -206,7 +235,7 @@ export function drawDrops(ctx, sim, light = [-0.5, 0.8]) {
 export function dropGeometry(sim, light = [-0.5, 0.8]) {
   const drops = [], trails = [];
   const quad = (out, x0, y0, x1, y1, tail) => { for (const [x, y] of [[x0, y0], [x1, y0], [x0, y1], [x1, y0], [x1, y1], [x0, y1]]) out.push(x, y, ...tail); };
-  for (const d of sim.drops) {
+  for (const d of shown(sim)) {
     const fade = d.dying ? Math.max(0, 1 - d.fall / 0.35) : 1;
     if (fade <= 0) continue;
     if (d.run && d.trail.length > 1) {
@@ -218,7 +247,7 @@ export function dropGeometry(sim, light = [-0.5, 0.8]) {
       }
     }
     const r = Math.max(1, d.r), m = r * 1.1 + 2;
-    quad(drops, d.x - m, d.y - m, d.x + m, d.y + m, [d.x, d.y, r, fade, light[0], light[1]]);
+    quad(drops, d.x - m, d.y - m, d.x + m, d.y + m, [d.x, d.y, r, d.ice && !d.dying ? 2 : fade, light[0], light[1]]);       // (fade 2 says: an ice bead, glsl-mask.js)
   }
   return { drops: new Float32Array(drops), trails: new Float32Array(trails) };
 }

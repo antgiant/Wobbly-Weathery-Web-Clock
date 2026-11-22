@@ -17,7 +17,7 @@ import { canvas, engine, controls, setEngine, setControls, setGlass, ov, num, to
 import { applyQuality, applyLocation, applyWeather, applyLandscape, applyPlants, applyTree, syncTimeData, scheduleLiveData, loadLiveData, dayLoad } from './data.js';
 import { applyView, atDefault, followActive, updateHud, updateVrReadout, updateHomeButton, returnToDefaultView } from './view.js';
 import { markReady, startFallback, updateClockColor, updateFavicon } from './appearance.js';
-import { updateCountdown, updateRain, countdownPeriod } from './alerts.js';
+import { updateCountdown, updateRain, countdownPeriod, loadSevere } from './alerts.js';
 import { bindSettings } from './bindings.js';
 import { initDim, updateDim, dimmingOn } from './dim.js';
 import { initPresets } from './presets.js';
@@ -71,7 +71,14 @@ function init() {
   window.__sky = engine;                         // handy for debugging / tests
   {                                                            // ?stats: frames a second and the picture's size, tap to copy (?stats=0 turns it off; once asked for, it comes back on this device's next visits)
     let want = false;
-    let mode = ''; try { const v = new URLSearchParams(location.search).get('stats'); if (v === '0') localStorage.removeItem('stats'); else if (v !== null) localStorage.setItem('stats', v || '1'); mode = localStorage.getItem('stats') || ''; want = !!mode; } catch (_) { mode = new URLSearchParams(location.search).get('stats'); want = mode !== null; }
+    let mode = '';
+    try {                                                                                   // the flag is kept as {m: mode, t: when} and lapses after a day (an installed app has no address bar to say ?stats=0 in); the box has a close button
+      const v = new URLSearchParams(location.search).get('stats');
+      if (v === '0') localStorage.removeItem('stats'); else if (v !== null) localStorage.setItem('stats', JSON.stringify({ m: v || '1', t: Date.now() }));
+      const raw = localStorage.getItem('stats');
+      if (raw) { let o = null; try { o = JSON.parse(raw); } catch (_) { /* an old flag: a plain word */ } if (o && typeof o === 'object' && o.m && Date.now() - o.t < 864e5) mode = String(o.m); else localStorage.removeItem('stats'); }
+      want = !!mode;
+    } catch (_) { mode = new URLSearchParams(location.search).get('stats'); want = mode !== null; }
     if (want) {
       const note = document.createElement('div');                // (shown at once, so a missing read-out says whether this code ran at all)
       note.style.cssText = 'position:fixed;left:6px;top:6px;z-index:99999;padding:4px 8px;border-radius:6px;background:rgba(0,0,0,.7);color:#9f9;font:11px ui-monospace,Menlo,monospace';
@@ -88,6 +95,8 @@ function init() {
   //   ?t=2026-06-21T20:30:00Z&speed=60&az=280&pitch=10&weather=storm&landscape=ocean&lat=40.7&lon=-74
   const q = new URLSearchParams(location.search);
   if (q.has('weather')) ov.weather = q.get('weather');
+  if (q.has('severe')) ov.severe = q.get('severe');                // ?severe=tornado:warning (a hazard type and a level): shows a pretend notice, for screenshots and tests
+  if (q.has('kp')) ov.kp = num(q.get('kp'), NaN);                 // force the planetary K index (0 to 9): the aurora a place would see in that storm
   if (q.has('landscape')) ov.landscape = q.get('landscape');
   if (q.has('az')) ov.az = num(q.get('az'), 180);
   if (q.has('pitch')) ov.pitch = num(q.get('pitch'), 12);
@@ -108,6 +117,7 @@ function init() {
   engine.start();
   engine.onFrame(() => { window.__frames = (window.__frames || 0) + 1; });
   scheduleLiveData();
+  loadSevere();
   if (simBase) { syncTimeData(); glassRef.apply(); }          // the clock style (and the season) follow the date being shown
 
   const finishSetup = () => {
@@ -131,10 +141,11 @@ function init() {
     const solid = clockStyleNow() === 'solid' && conf.screenMode !== 'led';
     if ((window.__frames >= 1 && engine.assetsDone && (solid || engine.glass.hasMask)) || performance.now() - t0 > 8000) { ready = true; markReady(); }
   }, () => (ready ? Infinity : 80));
+  every('severe', loadSevere, () => (conf.severeAlerts === 'off' ? Infinity : 60000));                 // official alerts: once a minute (a notice must not linger)
   every('live', loadLiveData, 15 * 60000);                                 // weather, terrain, land cover
   every('live-retry', loadLiveData, () => (state.needRetry && navigator.onLine !== false ? 60000 : Infinity));   // a lookup failed: try again soon
   // the connection came back: bring in everything that could not be fetched, at once
-  window.addEventListener('online', () => { dayLoad.key = ''; scheduleLiveData(); syncTimeData(); updateRain(); });
+  window.addEventListener('online', () => { dayLoad.key = ''; scheduleLiveData(); syncTimeData(); updateRain(); loadSevere(); });
   window.addEventListener('powerchange', () => { engine.set({ lowPower: lowPower() }); glassRef.apply(); });       // the battery ran low (or was plugged in): the automatic clock style follows
   window.addEventListener('offline', () => applyWeather());               // the status line says "offline"
   every('timedata', syncTimeData, () => (simActive() ? 4000 : 60000));     // history and seasons follow the (simulated) date

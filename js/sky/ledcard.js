@@ -61,7 +61,30 @@ const cardHeight = (sz, stacked) => 1 + (stacked ? sz.h + 1 + sz.h : sz.h) + 1 +
 const RAIN_ICON = {   // 9 x 7: an umbrella; the heavy-rain one has drops under the canopy
   umbrella: ['...###...', '.#######.', '#########', '....#....', '....#....', '....#....', '...##....'],
   slicker: ['...###...', '.#######.', '#########', '.#..#..#.', '....#....', '#..#..#..', '...##....'],
+  // a severe weather notice (js/sky/severe.js): a warning triangle, solid for a warning (red), an outline for a watch (amber) or an advisory (blue)
+  sevwarning: ['....#....', '...###...', '...#.#...', '..##.##..', '..##.##..', '.#######.', '#########'],
+  sevwatch: ['....#....', '...#.#...', '...#.#...', '..#.#.#..', '..#...#..', '.#..#..#.', '#########'],
 };
+// a picture for each kind of severe weather hazard, 9 x 7 LEDs (the level is the colour: red warning, amber watch, blue advisory); `other` is the warning triangle
+export const HAZARD_ICON = {
+  tornado:      ['#########', '.#######.', '..#####..', '...###...', '....#....', '....#....', '...#.....'],
+  thunderstorm: ['..####...', '.######..', '#########', '....##...', '...##....', '....#....', '...#.....'],
+  flood:        ['....#....', '....#....', '...###...', '.........', '.##.##.##', '#..#..#..', '.##.##.##'],
+  hurricane:    ['..#####..', '.#.....#.', '#..###..#', '#..#.#..#', '#..####.#', '.#......#', '..#####..'],
+  winter:       ['....#....', '.#..#..#.', '..#.#.#..', '#########', '..#.#.#..', '.#..#..#.', '....#....'],
+  wind:         ['.#####...', '......#..', '#########', '.......#.', '..#####..', '.........', '.###.....'],
+  heat:         ['....#....', '.#.###.#.', '..#####..', '#.#####.#', '..#####..', '.#.###.#.', '....#....'],
+  cold:         ['....#....', '....#....', '....#....', '....#....', '...###...', '..#####..', '...###...'],
+  fire:         ['....#....', '...##....', '..###.#..', '..#####..', '.#######.', '.#######.', '..#####..'],
+  dust:         ['.#######.', '.........', '#########', '.........', '.#####.#.', '.........', '..#####..'],
+  smoke:        ['.#...#...', '#...#...#', '.#...#...', '#...#...#', '.#...#...', '#...#...#', '.#...#...'],
+  fog:          ['#########', '.........', '.#######.', '.........', '#########', '.........', '..#####..'],
+  tsunami:      ['...###...', '..#####..', '.##...##.', '##.....#.', '#.......#', '#########', '.........'],
+  marine:       ['....#....', '...##....', '..###....', '....#....', '#########', '.#######.', '..#####..'],
+  avalanche:    ['....#....', '...###...', '..#####..', '.#######.', '#########', '#########', '.........'],
+  earthquake:   ['....#....', '...#.#...', '#..#.#..#', '#.#...#.#', '##.....##', '.........', '#########'],
+};
+const LED_RAIN_COLOR = { umbrella: '#7fd4ff', slicker: '#ffd24a', sevwarning: '#ff4a3d', sevwatch: '#ffb300', sevadvisory: '#7fd4ff' };
 
 const clearPixel = () => {
   if (!ledCardKey) return;
@@ -107,7 +130,7 @@ export function drawLedCard(st, leadMs, off = false, rain = null) {
     if (P.cardH + 2 > rows * 0.6 || P.tw + 2 > cols) P = null;                  // no room that would leave the clock readable
     if (P) filled = Math.round(Math.max(0, Math.min(1, st.msLeft / leadMs)) * (P.cardW - 2));
   }
-  const key = `${P ? `${st.kind}|${st.body}|${text}|${filled}|${P.sz.h}` : '-'}|${rain ? rain.level : '-'}|${cols}x${rows}`;
+  const key = `${P ? `${st.kind}|${st.body}|${text}|${filled}|${P.sz.h}` : '-'}|${rain ? rain.level + (rain.hazard || '') : '-'}|${cols}x${rows}`;
   if (key === ledCardKey) return;
   ledCardKey = key;
 
@@ -136,7 +159,7 @@ export function drawLedCard(st, leadMs, off = false, rain = null) {
     for (let i = 0; i < filled; i++) px(x0 + 1 + i, y0 + cardH - 2, sun);
   }
   if (rain) {                                                                    // the umbrella, bottom left
-    blit(RAIN_ICON[rain.level], 1, rows - 8, rain.level === 'slicker' ? '#ffd24a' : '#7fd4ff');
+    blit(HAZARD_ICON[rain.hazard] || RAIN_ICON[rain.level] || RAIN_ICON.sevwatch, 1, rows - 8, LED_RAIN_COLOR[rain.level] || '#ffb300');
   }
   c.fillStyle = 'rgba(0,0,0,0.82)';                                              // the outline first: every empty LED next to a lit one
   for (const k of lit.keys()) {
@@ -191,8 +214,8 @@ function drawFit(st, rain) {
     y = pill(c, W / 2, y, parts, s);
   }
   if (rain) {
-    const col = rain.level === 'slicker' ? '#ffd24a' : '#7fd4ff';
-    pill(c, W / 2, y, [{ t: '☂', color: col, font: f(18), size: 18 }, { t: rain.text || (rain.level === 'slicker' ? 'Slicker weather' : 'Umbrella'), color: '#fff', font: f(15), size: 15 }], s);
+    const col = LED_RAIN_COLOR[rain.level] || '#7fd4ff', sev = /^sev/.test(rain.level);
+    pill(c, W / 2, y, [{ t: sev ? '⚠' : '☂', color: col, font: f(18), size: 18 }, { t: rain.text || (rain.level === 'slicker' ? 'Slicker weather' : 'Umbrella'), color: '#fff', font: f(15), size: 15 }], s);
   }
   engine.setOverlayFull(fitCard);
 }

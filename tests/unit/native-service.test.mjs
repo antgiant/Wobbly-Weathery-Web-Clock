@@ -38,4 +38,8 @@ const b = io((log) => log.filter((x) => x === 'start').length > 1), r2 = await U
 check('a build that will not start is rolled back and the old one is started again', !r2.updated && r2.rolledBack && b.log.join() === 'install,start,restore backup,start' && /previous one is back/.test(r2.why));
 const c = io(() => true), r3 = await U.applyUpdate({ data: Buffer.from('tampered'), check: good.check, io: c });
 check('a tampered download never touches the installed program', !r3.updated && c.log.length === 0);
+
+// the rung the capability ladder is on, from the program's log
+check('the rung is read from the last ladder line of the log', S.rungFromLog('ladder: rung 0 (full), everything on\nother\nladder: rung 4 (seconds off), seconds are hidden (a second could be missed), sky scale 0.25\n') === 'rung 4 (seconds off)' && S.rungFromLog('') === '' && S.rungFromLog('nothing') === '' && S.rungFromLog(undefined) === '');
+check('status says the rung when it is known, and nothing when it is not', /detail     rung 3 \(tick\)/.test(S.status({ version: '1', output: 'hdmi', machine: 'Pi Zero', active: true, enabled: true, rung: 'rung 3 (tick)' })) && !/detail/.test(S.status({ version: '1', output: 'hdmi', machine: 'Pi Zero', active: true, enabled: true })));
 done();

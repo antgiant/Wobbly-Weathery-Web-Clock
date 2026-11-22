@@ -36,4 +36,11 @@ export async function run(t) {
   const hw = await hidden.page.evaluate(() => window.__w);
   t.check('a hidden page does (almost) nothing: under 3 wake-ups in 4 seconds', hw.t + hw.i + hw.r <= 3, JSON.stringify(hw));
   await hidden.close();
+
+  // the glass clock with the seconds hidden: the light timer and the layout events used to redraw the glass twice a second for nothing (the same digits in the same place)
+  const gl = await t.open({ query: 'speed=1', conf: { clockStyle: 'glass', hideSeconds: true, cloudMotion: 0, weatherMode: 'clear', plants: false }, width: 800, height: 450 });
+  await gl.ready(); await gl.page.waitForTimeout(3000);
+  const redraws = await gl.page.evaluate(() => new Promise((res) => { const e = window.__sky, c = { glass: 0, renders: 0 }, g = e.redrawGlass.bind(e), r = e.render.bind(e); e.redrawGlass = (...a) => { c.glass++; return g(...a); }; e.render = (...a) => { c.renders++; return r(...a); }; setTimeout(() => res(c), 6000); }));
+  t.check('a still glass clock with the seconds hidden redraws only its glass about as often as it redraws the sky (not twice as often)', redraws.glass <= redraws.renders + 2, JSON.stringify(redraws));
+  await gl.close();
 }

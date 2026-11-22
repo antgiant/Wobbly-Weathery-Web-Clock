@@ -21,7 +21,7 @@ const statusEls = {
 };
 export const setStatus = (k, t) => { if (statusEls[k]) { if (k === 'terrain' && !t.includes('Land cover') && !t.includes('Sea:')) statusEls[k].dataset.base = t; statusEls[k].textContent = t; } };
 
-export const state = { needRetry: false, weatherT: 0, seaText: '', liveWeather: null, elevation: null, dem: null, lpBortle: 3, lpLocal: null, biome: null };
+export const state = { needRetry: false, weatherT: 0, seaText: '', liveWeather: null, elevation: null, dem: null, lpBortle: 3, lpLocal: null, biome: null, kp: null };
 export const ov = {};                      // deep-link overrides (never written to localStorage)
 export const DEG = Math.PI / 180;
 export const num = (v, d) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : d);

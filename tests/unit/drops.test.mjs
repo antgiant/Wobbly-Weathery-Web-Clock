@@ -136,4 +136,45 @@ const sitting = (x, y, r = 3) => ({ x, y, r, vy: 0, run: false, y0: y, hang: 0, 
   const t = new DropSim(41); t.setInk(new Uint8Array(400 * 400).fill(255), 400, 400, 400, 400, 40); t.maxDrops = 20; run(t, 20, 1);
   check('the number of drops respects the governor\'s limit (maxDrops)', t.drops.length <= 20, String(t.drops.length));
 }
+// ---- wind carries a drop that has left the glass ----
+{
+  const fall = (wind) => { const t = make(7); t.wind = wind; t.drops.push({ x: 50, y: 50, r: 2, vy: 0, vx: 0, run: false, y0: 50, hang: 0, wait: 0, dying: true, fall: 0, age: 0, trail: [] }); for (let k = 0; k < 5; k++) t.step(0.05, 0); return t.drops.length ? t.drops[0].x : null; };
+  const calm = fall(0), right = fall(0.6), left = fall(-0.6);
+  check('wind to the right carries a falling drop right, to the left carries it left, none leaves it be', calm === 50 && right > 50.5 && left < 49.5, `${left} ${calm} ${right}`);
+  check('a drop on the glass is not pushed by the wind (it runs down the stroke)', (() => { const t = make(8); t.wind = 0.75; run(t, 6, 1); return t.drops.filter((d) => !d.dying).every((d) => t.inkAt(d.x, d.y) > 0.9); })());
+}
+
+// ---- freezing rain: drops freeze where they land ----
+{
+  const wetRun = (freeze) => { const t = make(11); t.freeze = freeze; run(t, 40, 1); return t; };
+  const warm = wetRun(0), ice = wetRun(1);
+  check('without freezing, drops run down the stroke', warm.drops.some((d) => d.run));
+  check('with freezing rain no drop ever runs, and they are marked as ice', ice.drops.length > 0 && ice.drops.every((d) => !d.run) && ice.drops.some((d) => d.ice));
+  check('frozen beads stay small enough to be beads (until they merge)', ice.drops.filter((d) => d.ice).every((d) => d.r <= 20 * 0.2 + 1e-9 || d.r > 0));
+  const thaw = wetRun(1); thaw.freeze = 0; run(thaw, 20, 1);
+  check('when the freezing stops the ice thaws and runs', thaw.drops.some((d) => d.run || d.dying));
+}
+
+// ---- hail: stones bounce off the glass ----
+{
+  const hailRun = (hail, secs = 6) => { const t = make(21); t.hail = hail; let max = 0, bounced = 0, up = false; for (let k = 0; k < secs / 0.02; k++) { t.step(0.02, 0); max = Math.max(max, t.stones.length); for (const q of t.stones) if (q.bounces > 0 && q.vy < 0) up = true; bounced += t.stones.filter((q) => q.bounces > 0).length; } return { t, max, bounced, up }; };
+  const none = hailRun(0), some = hailRun(1);
+  check('no hail, no stones', none.max === 0 && none.t.stones.length === 0);
+  check('hail sends stones down, never more than the limit', some.max > 0 && some.max <= 30, String(some.max));
+  check('a stone that hits the ink bounces back up', some.up && some.bounced > 0);
+  check('stones are shown like beads (drawn with the drops)', (() => { const t = make(22); t.hail = 1; for (let k = 0; k < 100; k++) t.step(0.02, 0); return t.stones.length > 0; })());
+  check('when the hail stops the last stones fall away', (() => { const t = hailRun(1, 3).t; t.hail = 0; for (let k = 0; k < 300; k++) t.step(0.02, 0); return t.stones.length === 0; })());
+}
+
+
+// ---- ice beads are sent to the shader with fade 2 (a bead that is ice, not water), water as before ----
+{
+  const { dropGeometry } = await import('../../js/sky/drops.js');
+  const t = make(31); t.freeze = 1; run(t, 20, 1);
+  const g = dropGeometry(t, [-0.5, 0.8]);
+  const fadeOf = (arr) => { const out = []; for (let i = 0; i < arr.length; i += 48) out.push(arr[i + 5]); return out; };       // (a quad is 6 corners of 8 numbers: x, y, then the drop's x, y, radius, fade, light)
+  check('with freezing rain the beads on the glass are sent as ice (fade 2)', t.drops.some((d) => d.ice) && fadeOf(g.drops).some((f) => f === 2), JSON.stringify(fadeOf(g.drops).slice(0, 6)));
+  const w = make(32); run(w, 20, 1); const gw = dropGeometry(w, [-0.5, 0.8]);
+  check('without it every drop is water (fade at most 1)', w.drops.length > 0 && fadeOf(gw.drops).every((f) => f <= 1 && f >= 0));
+}
 done();

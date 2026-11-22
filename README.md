@@ -7,6 +7,19 @@ sunsets, twilight, stars, the Milky Way, the moon with its real phase, planets, 
 and a landscape. Static files only, so it hosts on GitHub Pages as is. It is built to run
 on a phone, and has a **VR look-around mode** where you move the phone to look around the sky.
 
+## Gallery
+
+Made by `npm run screenshots` (`tools/screenshots.mjs`): the same fixed times and places each time, so they can be refreshed whenever the look changes. The weather in them is chosen by hand.
+
+| | |
+|---|---|
+| ![The glass clock by day](docs/images/day.jpg)<br>The glass clock by day | ![Dusk](docs/images/dusk.jpg)<br>Dusk |
+| ![Night, with stars](docs/images/night.jpg)<br>Night | ![Rain on the glass digits](docs/images/rain.jpg)<br>Rain, with the umbrella alert on |
+| ![Snow](docs/images/snow.jpg)<br>Snow | ![A thunderstorm with a bolt of lightning](docs/images/storm.jpg)<br>A thunderstorm |
+| ![A rainbow](docs/images/rainbow.jpg)<br>A rainbow (sun low and out, rain in the air) | ![An aurora over Fairbanks](docs/images/aurora.jpg)<br>An aurora, from the place's magnetic latitude and the planetary K index |
+| ![The solid style](docs/images/style-solid.jpg)<br>Solid digits | ![The stained-glass style](docs/images/style-stained.jpg)<br>Stained glass |
+| ![A 64 x 32 LED panel](docs/images/led-64x32.jpg)<br>A 64 x 32 LED panel (the countdown and the umbrella are whole LEDs) | ![The settings](docs/images/settings.jpg)<br>Settings |
+
 With thanks to
 [Bézier Clock](http://jackf.net/bezier-clock/) in [VanillaJS](http://vanilla-js.com) with some [easing options](http://www.robertpenner.com/easing/)
 
@@ -17,7 +30,9 @@ With thanks to
 | **Atmosphere** | Rayleigh + Mie + ozone scattering with multiple scattering and the planet's shadow, so the orange glow, the rising Earth shadow, the purple afterglow and dusk all come from physics, not from shifting the time. |
 | **Night** | 25 k stars (to magnitude 7.5) with colour, atmospheric extinction and a limiting-magnitude model, so stars fade in brightest first as the sky darkens; Milky Way; airglow; light pollution (Bortle scale, estimated from your time zone or set by hand); moonlight scattering. |
 | **Sun, moon, planets** | [astronomy-engine](https://github.com/cosinekitty/astronomy) positions for your location and time. Moon texture, phase, libration and earthshine. Sun and moon are drawn a little enlarged by default (a real 0.5° disc is tiny on a phone); there is a "Realistic" setting. |
-| **Weather** | Live from [Open-Meteo](https://open-meteo.com/): per-layer cloud cover, rain/snow, fog and visibility, wind (clouds drift at the real speed), aerosols (haze and smoke whiten the sky). Clouds are lit by the actual sunset colour. Or pick a preset (clear, partly, overcast, rain, storm, snow, fog, smoky haze). |
+| **Weather** | Live from [Open-Meteo](https://open-meteo.com/): per-layer cloud cover, rain/snow, fog and visibility, wind (clouds drift at the real speed), aerosols (haze and smoke whiten the sky). Clouds are lit by the actual sunset colour. Or pick a preset (clear, partly, overcast, rain, storm, snow, fog, smoky haze, sleet, freezing rain, hail, dust storm, freezing fog, windy). Rain leans and snow drifts with the real wind (gusts too, and the wind pushes drops off the glass digits); sleet draws rain and snow together; freezing rain is icy and glazes the ground; hail bounces off the digits; thunderstorms flash and strike (never more than two flashes a second, and none with reduced motion); freezing fog frosts the ground and plants; dust storms blow sand under a brown cast. |
+| **Rainbows and aurora** | A rainbow appears when the real conditions are right: the sun low and out (broken cloud), drops in the air that are not a downpour: a ring 42 degrees from the point opposite the sun with a faint second bow at 51. An aurora appears from the place's magnetic latitude, [NOAA's planetary K index](https://www.swpc.noaa.gov/products/planetary-k-index) (read every 30 minutes) and how dark and clear the sky is: low in the north from just inside the oval's edge, overhead deep inside it (`?kp=6` forces a storm). |
+| **Severe weather notices** | Official watches and warnings for your place from the US National Weather Service (the United States and its territories), polled every minute: a pill (amber watch, red warning, blue advisory, one icon per hazard) that takes the umbrella's place, a pill on the Raspberry Pi's screen, and a triangle on LED panels. Settings → Weather → Severe weather notices: off, warnings only, watches and warnings (the default), or everything. |
 | **Landscape** | "Real terrain around my location" samples a public elevation model in 32 directions out to 40 km and builds your actual skyline, so the sun really does set behind the hills to your west. Or choose flat, hills, mountains, desert, ocean (with sun glitter) or a city with lit windows. |
 | **Ocean waves** | Two wave trains (wind sea and swell), each five components from the peak wavelength down to chop, with real deep-water dispersion. Height, period and direction come from Open-Meteo's marine forecast where it covers your spot (a live status line shows e.g. "2.6 m waves every 10 s"), otherwise the sea grows from the live wind speed. The glitter path widens as the sea roughens, whitecaps and wind-blown foam streaks appear from about a fresh breeze, rain dimples the surface with rings, and far swell lifts and drops the horizon. Calm weather gives glass. |
 | **Plants & ground** | Grass, wildflowers, shrubs, broadleaf and conifer trees, palms, cacti, acacia and rocks, chosen to suit the place. One satellite tile around your location (Sentinel-2) is classified into forest / grassland / steppe / desert / tundra / urban / snow / water, then region rules pick species (cacti only in the Americas, acacia in Africa and Australia, palms in the tropics) and the date picks the season (spring green, autumn orange, bare winter). Wind sways them at the real wind speed, rain darkens and bows them, wets the ground with puddle sheen and ripples, and snow settles on them. Falls back to latitude rules offline; Settings → Weather & landscape turns it off. |

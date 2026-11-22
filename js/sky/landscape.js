@@ -68,6 +68,41 @@ function pack(near, mid, far) {
   return out;
 }
 
+
+/**
+ * A city's skyline, in degrees above the horizon for each of the N azimuth bins: the nearer layer is low and mid-rise (rows of ordinary buildings in uneven districts: ragged
+ * heights, gaps, the odd taller block), the farther layer is downtown: two to four clusters of towers that stand tallest at the middle of the cluster, a few with setbacks (the top
+ * narrower than the base) and a spire or antenna on some, with open sky between the clusters.
+ * Pure: the same `rand` gives the same city. Exported for tests.
+ * @returns {{near: Float32Array, far: Float32Array}}
+ */
+export function citySkyline(rand) {
+  const near = new Float32Array(N).fill(0.25), far = new Float32Array(N).fill(0.4);
+  const bin = (u) => Math.floor(((u % 1) + 1) % 1 * N);
+  const put = (arr, u0, u1, h) => { for (let i = bin(u0), n = Math.max(1, Math.round((u1 - u0) * N)); n > 0; n--, i = (i + 1) % N) if (arr[i] < h) arr[i] = h; };
+  const dens = fbm(rand, 7, 3);                                          // districts: dense mid-rise here, low-rise and open there
+  for (let u = 0; u < 1;) {
+    const w = 0.003 + rand() * 0.014, d = dens(u);
+    if (rand() < 0.1 + 0.3 * (1 - d)) { u += w * (0.5 + rand()); continue; }              // a gap: a street, a park, a car park
+    const h = 0.3 + (0.6 + 2.6 * d * d) * (0.3 + 0.7 * rand()) + (rand() < 0.06 ? 1.2 + 1.5 * rand() : 0);
+    put(near, u, u + w, h);
+    if (h > 1.6 && rand() < 0.3) put(near, u + w * 0.2, u + w * 0.8, h + 0.25 + 0.4 * rand());     // a plant room on the roof
+    u += w * (1 + 0.15 * rand());
+  }
+  const clusters = 2 + Math.floor(rand() * 3);
+  for (let c = 0; c < clusters; c++) {
+    const centre = rand(), spread = 0.025 + 0.05 * rand(), tall = 4.0 + 5.0 * rand(), count = 8 + Math.floor(rand() * 14);
+    for (let k = 0; k < count; k++) {
+      const off = (rand() + rand() + rand() - 1.5) * spread * 1.6, close = Math.exp(-(off * off) / (2 * (spread * 0.55) ** 2));      // taller toward the middle of the cluster
+      const w = 0.0025 + rand() * 0.006, u0 = centre + off - w / 2, h = 1.2 + tall * close * (0.45 + 0.55 * rand());
+      put(far, u0, u0 + w, h);
+      if (h > 4 && rand() < 0.45) { put(far, u0 + w * 0.18, u0 + w * 0.82, h + 0.35 + 0.35 * rand()); if (rand() < 0.5) put(far, u0 + w * 0.32, u0 + w * 0.68, h + 0.7 + 0.5 * rand()); }   // setbacks: the top steps in
+      if (h > 4.5 && rand() < 0.3) put(far, u0 + w * 0.47, u0 + w * 0.53 + 0.0004, h + 0.9 + 1.2 * rand());                                                                                   // a spire or an antenna
+    }
+  }
+  return { near, far };
+}
+
 /**
  * Procedural skyline for a landscape type.
  * @returns {{data: Float32Array, albedo: number[], haze: number[], ocean: boolean}}
@@ -104,16 +139,8 @@ export function proceduralSkyline(type, eyeKm, seed = 1) {
       break;
     }
     case 'city': {
-      // blocky buildings: piecewise-constant heights with random widths
-      const blocks = (maxH, minH) => {
-        const edges = [], heights = [];
-        let u = 0;
-        while (u < 1) { edges.push(u); heights.push((minH + rand() * rand() * maxH) * D); u += 0.004 + rand() * 0.02; }
-        edges.push(1);
-        return (x) => { let k = 0; while (k < edges.length - 2 && x >= edges[k + 1]) k++; return heights[k]; };
-      };
-      const b1 = blocks(4.5, 0.25), b2 = blocks(7.0, 0.6);
-      data = pack(ground, fill(b1), fill(b2));
+      const { near, far } = citySkyline(rand);
+      data = pack(ground, near.map((h) => h * D), far.map((h) => h * D));
       break;
     }
     default:

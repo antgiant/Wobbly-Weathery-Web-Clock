@@ -36,6 +36,30 @@ function setDigit(t, d, nowMs) {
   }
 }
 
+// The colon leans with the digits: its dots are bent like a digit's points (the top dot more than the bottom one, like the top of a 1 against its foot). The colons are the svgs
+// with no digit path in them; their two dots are paths of their own, read once as numbers and then written the way the digits are (the glass reads the numbers).
+var colonDots = null, colonsSwayed = false;
+function swayColons(nowMs) {
+  if (sway.mode === 'off' && !colonsSwayed) return;
+  if (!colonDots) {
+    colonDots = [];
+    var all = document.querySelectorAll('#clock svg');
+    for (var a = 0; a < all.length; a++) {
+      if (all[a].querySelector('path[id]')) continue;
+      var ps = all[a].querySelectorAll('path');
+      for (var b = 0; b < ps.length; b++) { var nums = (ps[b].getAttribute('d') || '').match(/-?\d+(\.\d+)?/g); if (nums && nums.length >= 8) colonDots.push({ el: ps[b], base: nums.slice(0, 8).map(Number), phase: 0.9 + 1.7 * colonDots.length }); }
+    }
+  }
+  for (var i = 0; i < colonDots.length; i++) {
+    var c = colonDots[i], pts = sway.mode === 'off' ? c.base : bend(c.base, topOffset(nowMs, c.phase) * 0.6), val = ci(pts, 0);
+    if (c.el.__d === val) continue;
+    c.el.__d = val; c.el.__c = pts; c.el.__ck = 0;
+    c.el.setAttribute('d', val);
+    clockChanged = true;
+  }
+  colonsSwayed = sway.mode !== 'off';
+}
+
 function ease(x, t, b, c, d) {
   if (typeof easing !== 'undefined' && typeof easing[conf.easing] === 'function') {
     return easing[conf.easing](x, t, b, c, d);
@@ -203,6 +227,7 @@ function clock() {
       setDigit(key, morph(dd[d], dd[nd], cStep), performance.now());   // gusts run on the real clock, even while time travel holds the time still
     }
   });
+  swayColons(performance.now());
   updateTimerPill(counting, left, done);
   if (layoutStale) {
     layoutStale = false;

@@ -17,7 +17,8 @@ export function updateWind() {
   if (mode !== 'off' && engine) {
     const w = engine.s.weather.wind || [0, 0];
     const v = windVector(w[0], w[1]);
-    v.speed = v.speed * 1000 / 2;                                           // km/s at cloud level -> m/s at the ground (clouds move about twice as fast as the surface wind)
+    const ms = engine.s.weather.windMs;
+    v.speed = ms > 0 ? ms : v.speed * 1000 / 2;                             // the surface wind when the weather knows it; else km/s at cloud level -> m/s at the ground (clouds move about twice as fast as the surface wind)
     const heading = controls?.lookDir?.az ?? 180;
     ({ lean, gust } = swayFor(v.speed, v.toAz, heading));
     flutter = mode === 'full' && cap.ambient && v.speed > 1.5 && !lowPower() && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;

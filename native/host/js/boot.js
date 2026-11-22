@@ -4,6 +4,7 @@ import './polyfills.js';
 import { parseDocument, Element, Evt, EventTarget_, Node_, Text, Doc, setLayoutHook, setCanvasFactory, computedStyle, rect } from './dom.js';
 import { layoutClock } from 'js/clocklayout.js';
 import { setPill, pillsVisible, paintPills } from './pills.js';
+import { confFromFile } from './confile.js';
 import { SETTINGS } from 'schema/settings.js';
 
 const G = globalThis, A = __args, W = A.w, H = A.h;
@@ -43,10 +44,13 @@ if (A.present) {
   // a clock that runs for years: every hour say how it is (uptime, memory, canvases, pictures), and restart if memory grows past a limit (systemd starts it again)
   const maxRss = A.maxrss || 0; let hourly = 0;
   setInterval(() => {
-    const rss = __rss(), line = 'health: up ' + (performance.now() / 3600000).toFixed(2) + ' h, rss ' + rss.toFixed(0) + ' MB, canvases ' + __c2d_count() + ', pictures ' + __presents() + (G.__sky && G.__sky.gov ? ', level ' + G.__sky.gov.level : '');
+    const rss = __rss(), cma = __cma_free(), line = 'health: up ' + (performance.now() / 3600000).toFixed(2) + ' h, rss ' + rss.toFixed(0) + ' MB' + (cma >= 0 ? ', gpu memory free ' + cma.toFixed(0) + ' MB' : '') + ', canvases ' + __c2d_count() + ', pictures ' + __presents() + (G.__sky && G.__sky.gov ? ', level ' + G.__sky.gov.level : '');
     if (A.health || ++hourly % 1 === 0) __print(line);
     if (maxRss && rss > maxRss) { __print('health: memory ' + rss.toFixed(0) + ' MB is over the limit of ' + maxRss + ' MB, restarting'); __exit(3); }
   }, A.health ? A.health * 1000 : 3600000);
+  setInterval(() => {
+    if (__gl('getError') === 0x505 || (A.mincma && __cma_free() >= 0 && __cma_free() < A.mincma)) { __print('health: the GPU is out of memory (' + (__cma_free() >= 0 ? __cma_free().toFixed(0) + ' MB free' : 'GL_OUT_OF_MEMORY') + '), restarting'); __exit(4); }       // (the VC4 driver: "Failed to allocate from GEM DMA helper"; a restart frees it all, and a dead picture helps nobody)
+  }, 30000);       // (looked at every 30 s, not hourly: the driver's errors came every few minutes)
   const renderer = String(__gl('getString', 0x1F01));
   const soft = /llvmpipe|softpipe|swrast/i.test(renderer);
   const q = new URLSearchParams(searchText);
@@ -69,23 +73,11 @@ G.location = { search, hash: '', href: doc.baseURI + search, origin: 'file://', 
   const mem = {}; G.sessionStorage = { getItem: (k) => (k in mem ? mem[k] : null), setItem(k, v) { mem[k] = String(v); }, removeItem(k) { delete mem[k]; }, clear() { for (const k in mem) delete mem[k]; }, key: (i) => Object.keys(mem)[i] || null, get length() { return Object.keys(mem).length; } };
 }
 
-if (A.conf) localStorage.setItem('conf', String(A.conf));
 if (A.config !== undefined && A.config !== '' || A.present) {
-  // the settings file (`key = value`, the page's own names) becomes the page's saved settings, coerced by the schema's types
-  const specs = Object.fromEntries(SETTINGS.map((x) => [x.key, x]));
-  const conf = JSON.parse(localStorage.getItem('conf') || '{}');
-  for (const raw of String(A.config || '').split('\n')) {
-    const line = raw.replace(/#.*/, '').trim(); const i = line.indexOf('='); if (i < 1) continue;
-    const k = line.slice(0, i).trim(), v = line.slice(i + 1).trim(), sp = specs[k];
-    if (/^(on|true|yes|1)$/i.test(v) && (!sp || sp.type === 'bool')) conf[k] = true;
-    else if (/^(off|false|no|0)$/i.test(v) && (!sp || sp.type === 'bool')) conf[k] = false;
-    else if (sp && sp.type === 'number' || (!sp && v !== '' && !Number.isNaN(Number(v)))) conf[k] = Number(v);
-    else conf[k] = v;
-  }
-  if ('location_latitude' in conf && 'location_longitude' in conf) { conf.locationChoice = 'manual'; conf.manualLocation = true; conf.preciseLocation = false; }
-  if (A.ledCols) { conf.screenMode = 'led'; conf.ledCols = A.ledCols; conf.ledRows = A.ledRows; }
-  localStorage.setItem('conf', JSON.stringify(conf));
-}
+  // the settings file (`key = value`, the page's own names) becomes the page's saved settings, built from nothing each start (confile.js): the file is the only source
+  let base = {}; try { if (A.conf) base = JSON.parse(String(A.conf)); } catch (_) { /* a bad --conf is ignored */ }
+  localStorage.setItem('conf', JSON.stringify(confFromFile(A.config, SETTINGS, base, { ledCols: A.ledCols, ledRows: A.ledRows })));
+} else if (A.conf) localStorage.setItem('conf', String(A.conf));
 
 // ---- fetch: local files, and the network through curl ----
 G.fetch = (url, init = {}) => new Promise((resolve, reject) => {

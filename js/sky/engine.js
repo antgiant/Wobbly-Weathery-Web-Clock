@@ -11,6 +11,10 @@
 // one (drifting clouds, water, twinkle) ~15 fps, and look-around modes run at
 // the display rate with the render scale adapting to hold the frame rate.
 
+import { Lightning } from './lightning.js';
+import { Accumulator } from './accumulate.js';
+import { rainbowStrength } from './rainbow.js';
+import { auroraView } from './aurora.js';
 import { Capability, RUNG_OF, quietFor } from './capability.js';
 import { VERT_STROKE, FRAG_STROKE, VERT_LIGHT, FRAG_LIGHT, VERT_DROP, FRAG_DROP, VERT_TRAIL, FRAG_TRAIL } from './glsl-mask.js';
 import {
@@ -537,8 +541,10 @@ export class SkyEngine {
   // ----------------------------------------------------------- astronomy ---
   _updateAstro(perfNow, force) {
     const s = this.s, sim = getSim(), scaled = sim && sim.scale > 1;
-    const interval = scaled ? 0 : 1000;
-    if (!force && perfNow - this.lastAstro < interval && this.sky) return false;
+    // The sun and moon move 0.004 degree a second: working the sky out every 4 s instead of every second is invisible (half a pixel) and saves most of the JavaScript the
+    // astronomy costs a slow machine (250 to 580 ms a time on a Pi Zero). A jump of the shown time (time travel, a changed date) is picked up at once.
+    const interval = scaled ? 0 : 4000;
+    if (!force && this.sky && perfNow - this.lastAstro < interval && Math.abs(+this.now - +this.sky.date) < interval + 2000) return false;
     const needPlanets = scaled || perfNow - this.lastPlanets > 10000 || !this.sky;
     const date = this.now;
     const sky = computeSky(date, s.lat, s.lon, s.elevM, { planets: needPlanets });
@@ -641,8 +647,8 @@ export class SkyEngine {
     const K = this.knobs, weatherOn = !K || K.weather, ambientOn = !K || K.ambient;      // (the capability ladder: what the hardware can handle outranks the settings)
     const clouds = ambientOn && s.cloudMotion > 0 && (w.cover[0] > 0.02 || w.cover[1] > 0.02 || w.cover[2] > 0.02);
     const water = ambientOn && s.landscape.ocean;
-    const rain = weatherOn && w.precip > 0.01;
-    const night = ambientOn && this.sky && this.sky.sun.alt < -6 && s.twinkle;
+    const rain = weatherOn && (w.precip > 0.01 || w.lightning > 0.01 || w.dust > 0.02 || w.rime > 0.02);      // (a storm flashes)
+    const night = (ambientOn && this.sky && this.sky.sun.alt < -6 && s.twinkle) || (weatherOn && this._aur > 0.02);      // (twinkling stars, or an aurora)
     const wind = ambientOn && s.plants.on && s.plants.count > 0 && s.cloudMotion > 0;      // plants sway
     const lights = ambientOn && this.s.tree.on;                    // the tree's bulbs twinkle
     return clouds || water || rain || night || wind || lights;
@@ -832,10 +838,43 @@ export class SkyEngine {
     this._1f('uFog', w.fog);
     this._1f('uPrecip', !K || K.weather ? w.precip : 0);
     this._1f('uSnow', !K || K.weather ? w.snowfall : 0);
+    {                                                                                        // wind leans the falling rain and carries the snow: the sideways part of the surface wind, across the view
+      const ws = w.windMs || 0, wl = Math.hypot(w.wind[0], w.wind[1]) || 1;
+      const sideways = ws > 0 ? (w.wind[0] / wl * cam.mat[0] + w.wind[1] / wl * cam.mat[2]) * ws : 0;           // m/s toward screen right (cam.mat columns: right, up, forward; x east, z north)
+      const t = (perfNow / 1000) % 100000 * (s.cloudMotion === 0 ? 0 : s.cloudMotion), gustiness = ws > 0 ? Math.max(0, (w.gust || ws) - ws) / Math.max(w.gust || ws, 1) : 0;
+      const gust = 1 + gustiness * (0.7 * Math.sin(t * 1.7) + 0.5 * Math.sin(t * 4.3 + 1));               // (gusts come and go; none in steady wind)
+      const lean = Math.max(-0.75, Math.min(0.75, sideways * 0.04 * gust));
+      this.lean = { on: ws > 0, v: lean };                                                                  // (the glass drops read it: glass.js)
+      this._1f('uLeanOn', ws > 0 ? 1 : 0); this._1f('uLean', lean);
+    }
+    {                                                                                        // lightning: a flash lifts the sky and a bolt shows (js/sky/lightning.js); none when the page asks for calm, or the hardware cannot afford weather
+      const lr = (!K || K.weather) && !s.reducedMotion ? (w.lightning || 0) : 0, lf = (this.lightning || (this.lightning = new Lightning(Math.floor(Math.random() * 1e6) + 1))).update(perfNow / 1000, lr), bolt = lf.bolt;
+      this._1f('uFlash', lf.flash); this._4f('uBolt', bolt ? bolt.x : 0, bolt ? bolt.bottom : 0, bolt ? bolt.seed : 0, bolt ? bolt.a : 0);
+    }
     this._1f('uDpr', T.h / Math.max(1, this.canvas.clientHeight));
     this._3f('uGround', ground);
     this._3f('uGround2', ground2);
     this._1f('uWet', Math.min(1, w.precip * (1 - w.snowfall)));
+    this._1f('uSleet', !K || K.weather ? (w.sleet || 0) : 0);
+    this._1f('uHail', !K || K.weather ? (w.hail || 0) : 0);
+    {                                                                                        // aurora (js/sky/aurora.js): where the place is in the magnetic field, Kp now, how dark and clear it is
+      const a = s.aurora, v = a && (!K || K.weather) ? auroraView({ lat: a.lat, lon: a.lon, kp: a.kp, sunAlt: sky.sun.alt, cover: w.cover, fog: w.fog, moonAlt: sky.moon.alt, moonFraction: sky.moon.fraction }) : null;
+      this._aur = v ? v.strength : 0;
+      this._4f('uAur', v ? v.strength : 0, v ? v.height : 0, v ? v.bearing * Math.PI / 180 : 0, 0);
+    }
+    this._1f('uBow', !K || K.weather ? (typeof s.bow === 'number' ? s.bow : rainbowStrength(sky.sun.alt, w)) : 0);          // (s.bow: a number forces it, for tests and screenshots)
+    this._1f('uRime', !K || K.weather ? (w.rime || 0) : 0);
+    this._1f('uDust', !K || K.weather ? (w.dust || 0) : 0);
+    {                                                                                        // ice and sand build up while the weather makes them and fade after (js/sky/accumulate.js)
+      const accOn = !K || K.weather, dtA = this._accT ? (perfNow - this._accT) / 1000 : 0;
+      this._accT = perfNow;
+      this._iceAcc = this._iceAcc || new Accumulator({ rise: 1 / 900, fall: 1 / 1500, start: 0.6 });
+      this._sandAcc = this._sandAcc || new Accumulator({ rise: 1 / 600, fall: 1 / 1800, start: 0.5 });
+      this._iceLevel = this._iceAcc.step(accOn ? (w.freezing || 0) : 0, dtA);
+      this._sandLevel = this._sandAcc.step(accOn ? (w.dust || 0) : 0, dtA);
+      this._1f('uGlaze', this._iceLevel);
+      this._1f('uSand', this._sandLevel);
+    }
     // sea state: real marine data when we have it, otherwise grown from the wind (fully developed sea, damped for fetch)
     if (land.ocean) {
       const m = s.sea, U = Math.hypot(w.wind[0], w.wind[1]) * 500, wl = Math.hypot(w.wind[0], w.wind[1]) || 1;
@@ -952,15 +991,16 @@ export class SkyEngine {
     if (led) this._ensureComp(cw, ch);
     {                                                                  // snow and rain on the digits: from the weather being drawn
       const w = this.s.weather, on = this.s.digitWeather !== false && !this.s.reducedMotion && (!this.knobs || this.knobs.weather);
-      const snowRate = (w.precip || 0) * (w.snowfall || 0), rainRate = (w.precip || 0) * (1 - (w.snowfall || 0));
-      this.wx = { snow: on ? Math.min(1, snowRate * 1.4) : 0, rain: on ? Math.min(1, rainRate * 1.3) : 0 };       // (read by the tests)
+      const mixed = (w.sleet || 0) > 0.15;                                                          // sleet: both, half each
+      const snowRate = mixed ? (w.precip || 0) * 0.5 : (w.precip || 0) * (w.snowfall || 0), rainRate = mixed ? (w.precip || 0) * 0.5 : (w.precip || 0) * (1 - (w.snowfall || 0));
+      this.wx = { snow: on ? Math.min(1, snowRate * 1.4) : 0, rain: on ? Math.min(1, rainRate * 1.3) : 0, freeze: on ? (this._iceLevel || 0) : 0, hail: on ? (w.hail || 0) : 0 };       // (read by the tests)
     }
     // An ES 2 GPU gets the glass as small programs, each reading what the ones before made (a Pi Zero's driver could not fit the whole glass in one: it drew nothing): the height field and
     // slope (ggeo), the shadow and halo (gaura), for stained glass the tube's colours (gemit, ghalo), the body (gbody), snow and rain when there are any (gwx), the outline (gout).
     const solid = glassOn && this.knobs && this.knobs.glass === false;       // the capability ladder: solid digits, one cheap pass (no glass: no tables of the scene or the mask)
     const kind = !glassOn ? 'off' : solid || g.mode > 2.5 ? 'ink' : 'glass';
     const stained = g.mode > 1.5 && g.mode <= 2.5;
-    const passes = this.es2 && kind === 'glass' ? ['ggeo', 'gaura', ...(stained ? ['gemit', 'ghalo'] : []), 'gbody', ...(this.wx.snow > 0.01 || this.wx.rain > 0.01 ? ['gwx'] : []), 'gout'] : [kind];
+    const passes = this.es2 && kind === 'glass' ? ['ggeo', 'gaura', ...(stained ? ['gemit', 'ghalo'] : []), 'gbody', ...(this.wx.snow > 0.01 || this.wx.rain > 0.01 || this.wx.freeze > 0.01 ? ['gwx'] : []), 'gout'] : [kind];
     if (passes.length > 1) { this._ensurePing(cw, ch); this._ensureGlassT(cw, ch); }
     const dpr = cw / Math.max(1, this.canvas.clientWidth);
     // The digits are a sixth of the picture: with a governor the glass passes (the expensive ones) run only over their rectangle (and a margin for the halo and the frosting), after one
@@ -1033,7 +1073,7 @@ export class SkyEngine {
     this._3f('uGlowCol', g.glowCol);
     this._3f('uInk', g.ink);
     this._1f('uContrast', g.contrast);
-    this._4f('uWx', this.wx.snow, this.wx.rain, 0, (performance.now() / 1000) % 3600);
+    this._4f('uWx', this.wx.snow, this.wx.rain, this.wx.freeze || 0, (performance.now() / 1000) % 3600);
     this._1i('uDrops', 4); this._bind(4, this.dropsTex);
     this._1f('uDropsOn', g.dropsOn ? 1 : 0);
     this._1i('uFull', 3); this._bind(3, this.overlayFullTex);
@@ -1335,6 +1375,9 @@ export class SkyEngine {
 
   /** Updates glass settings ({mode, frost, light, lightCol}) and redraws without re-rendering the sky. */
   setGlass(patch) {
+    let changed = false;                                                    // (the light timer says the same thing every second: no change, no redraw)
+    for (const k of Object.keys(patch)) if (this.glass[k] !== patch[k] && JSON.stringify(this.glass[k]) !== JSON.stringify(patch[k])) { changed = true; break; }
+    if (!changed) return;
     this.markWork();
     Object.assign(this.glass, patch);
     this.redrawGlass();
@@ -1363,7 +1406,7 @@ export class SkyEngine {
         }
       }
     } else {
-      if (!this._snap || this._snap.w !== w || this._snap.h !== h) this._snap = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE);
+      if (!this._snap || this._snap.w !== w || this._snap.h !== h) { if (this._snap) { gl.deleteTexture(this._snap.tex); gl.deleteFramebuffer(this._snap.fbo); } this._snap = this._target(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE); }
       gl.bindFramebuffer(gl.READ_FRAMEBUFFER, T.fbo);
       gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this._snap.fbo);
       gl.blitFramebuffer(0, 0, T.w, T.h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.LINEAR);
@@ -1510,6 +1553,9 @@ export class SkyEngine {
     this._3f('uLeaf', pal.leaf); this._3f('uConifer', pal.conifer); this._3f('uGrass', pal.grass);
     this._3f('uDry', pal.dry); this._3f('uRock', pal.rock);
     this._1f('uSnowCover', Math.max(pal.snow || 0, w.snowCover));
+    this._1f('uRime', !K || K.weather ? (w.rime || 0) : 0);
+    this._1f('uSand', this._sandLevel || 0);
+    this._1f('uLeafCover', pal.leafCover == null ? 1 : pal.leafCover);
     this._1f('uOcean', s.landscape.ocean ? 1 : 0);
     this._2f('uResPx', this.sceneTarget.w, this.sceneTarget.h);
     if (plantsOn) {

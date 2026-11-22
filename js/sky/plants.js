@@ -14,8 +14,12 @@ function rng(seed) {
 const T = { GRASS: 0, SHRUB: 1, BROAD: 2, CONIFER: 3, CACTUS: 4, DRY: 5, FLOWER: 6, ROCK: 7, PALM: 8, ACACIA: 9 };
 
 // [type, weight, rMin, rMax, hMin, hMax]
-function species(b, season) {
+export function species(b, season) {
   const flowers = season === 'spring' || season === 'summer';
+  const palms = Math.abs(b.lat || 0) < 32 && !b.alpine && (b.kind === 'urban' || b.kind === 'grass') ? [[T.PALM, .035, 30, 130, 6, 12]] : [];                   // palms along the warm coasts and in the warm cities
+  if (b.alpine) return [[T.GRASS, .30, 3, 35, .12, .3], [flowers ? T.FLOWER : T.GRASS, .14, 3, 30, .15, .35], [T.ROCK, .34, 5, 80, .2, .8], [T.DRY, .10, 3, 30, .1, .25], [T.SHRUB, .09, 5, 50, .2, .5], [T.CONIFER, .03, 40, 150, 2, 4]];    // above the trees
+  if (b.savanna) return [[T.ACACIA, .035, 30, 170, 4, 9], [T.DRY, .46, 3, 50, .25, .6], [T.GRASS, .26, 3, 40, .3, .7], [T.SHRUB, .10, 5, 90, .5, 1.1], [T.ROCK, .08, 6, 80, .2, .6], [T.BROAD, .02, 40, 170, 5, 9]];
+  if (b.mediterranean && b.kind !== 'urban') return [[T.CONIFER, .07, 30, 160, 8, 18], [T.BROAD, .05, 30, 150, 4, 8], [T.SHRUB, .26, 6, 90, .6, 1.4], [T.DRY, .30, 3, 40, .2, .4], [T.GRASS, .16, 3, 35, .2, .5], [T.ROCK, .12, 5, 60, .2, .6], [flowers ? T.FLOWER : T.DRY, .04, 3, 30, .3, .5]];   // cypress and pine, olive, scrub and dry grass
   switch (b.kind) {
     case 'forest':
       if (b.tropical) return [[T.PALM, .08, 30, 130, 6, 14], [T.BROAD, .16, 34, 150, 8, 18], [T.SHRUB, .12, 9, 70, .6, 1.4], [T.GRASS, .50, 3, 40, .35, .8], [T.ROCK, .02, 4, 50, .2, .5], [T.DRY, .12, 3, 30, .2, .4]];
@@ -30,11 +34,11 @@ function species(b, season) {
     case 'tundra':
       return [[T.DRY, .40, 3, 40, .1, .25], [T.GRASS, .20, 3, 40, .12, .3], [T.ROCK, .22, 8, 80, .15, .5], [T.SHRUB, .10, 5, 60, .3, .6]];
     case 'urban':
-      return [[T.GRASS, .55, 3, 35, .15, .35], [T.BROAD, .15, 25, 120, 6, 14], [T.SHRUB, .16, 4, 60, .6, 1.3], [T.CONIFER, .04, 20, 120, 6, 12], [T.ROCK, .02, 4, 40, .2, .4]];
+      return [[T.GRASS, .55, 3, 35, .15, .35], [T.BROAD, .15, 25, 120, 6, 14], [T.SHRUB, .16, 4, 60, .6, 1.3], [T.CONIFER, .04, 20, 120, 6, 12], [T.ROCK, .02, 4, 40, .2, .4], ...palms];
     case 'snow':
       return [[T.ROCK, .8, 6, 80, .2, .8], [T.DRY, .2, 3, 30, .1, .2]];
     default:                                                                                 // grass
-      return [[T.GRASS, .46, 3, 45, .25, .55], [flowers ? T.FLOWER : T.GRASS, .12, 3, 30, .3, .6], [T.DRY, .16, 3, 40, .2, .4], [T.SHRUB, .07, 9, 90, .6, 1.4], [T.BROAD, .06, 30, 150, 5, 13], [T.ROCK, .03, 4, 60, .2, .6], [T.DRY, .09, 3, 40, .2, .4]];
+      return [[T.GRASS, .46, 3, 45, .25, .55], [flowers ? T.FLOWER : T.GRASS, .12, 3, 30, .3, .6], [T.DRY, .16, 3, 40, .2, .4], [T.SHRUB, .07, 9, 90, .6, 1.4], [T.BROAD, .06, 30, 150, 5, 13], [T.ROCK, .03, 4, 60, .2, .6], [T.DRY, .09, 3, 40, .2, .4], ...palms];
   }
 }
 

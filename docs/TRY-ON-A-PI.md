@@ -8,8 +8,8 @@ by lowering the picture's size and detail as far as it must. If a Pi falls back 
 The first start on an ES 2 Pi takes a while (the GPU's shader compiler works through the big sky shader); after that frames are quick. Step 3 measures it.
 
 ## 1. Get the package
-On GitHub open the **Actions** tab, the newest green **Native** run on branch `claude/wobbly-clock-sky-simulator-njbc4r` (or `main`), and download the
-artifact **wobbly-clock-debs** (a zip with two files). Which one:
+Download the `.deb` from the newest release on GitHub (**Releases**, the ones named `Native x.y.z`; the Pi's own update timer and the `stellarium_clock` repository's `setup.sh` use the same files),
+or, to try an unreleased change, from the newest green **Native** run on the **Actions** tab (artifact **wobbly-clock-debs**, a zip with two files). Which one:
 
 | Your Pi and its OS | File |
 |---|---|
@@ -57,6 +57,26 @@ sudo nano /etc/wobbly-clock/wobbly-clock.conf     # your place, zone ... (names 
 sudo systemctl enable --now wobbly-clock
 journalctl -u wobbly-clock -f                      # what it says
 ```
+
+### Changing settings without editing a file
+`sudo wobbly-clock config` is the web Settings drawer in the terminal: numbered menus for the same tabs, a * on what you changed, "reset to the default" for each setting, a place search by name (or an estimate from the network address, only if you say yes), and an offer to restart the clock. It writes `/etc/wobbly-clock/wobbly-clock.conf`, which is the only source of the clock's settings.
+
+### The screen mode
+A screen that gives no mode list (`/sys/class/drm/card0-HDMI-A-1/edid` is 0 bytes) shows nothing, or the wrong size, until a mode is forced on the kernel command line.
+Add to the one line in `/boot/firmware/cmdline.txt` (or `/boot/cmdline.txt`): `video=HDMI-A-1:1280x720@60D` (the `D` forces the connector on). Use 1280x720 on a Pi Zero: at 1920x1080
+every frame is 8 MB to draw and copy, the GPU holds about 120 MB of buffers, and the clock gives up more of its detail. Also in `config.txt`: `dtoverlay=vc4-kms-v3d` and `hdmi_force_hotplug=1`.
+
+### Removing an old kiosk
+If this Pi ran a browser or Stellarium kiosk first, take it out so nothing else holds the screen or the GPU: remove `startx` from `~/.bash_profile`, delete `~/.xinitrc`
+and `~/.config/lxsession`, `crontab -e` (and `sudo crontab -e`) to delete the lines that start the old program, and `sudo apt purge` the browser, `xserver-xorg*`, `lightdm`, `stellarium`.
+(The `stellarium_clock` repository's `setup.sh` does all of this for the Stellarium clock.)
+
+### What the service does for you
+- At boot it waits (up to 90 s) for the framebuffer and the GPU before starting; the first start compiles the big sky shader and takes 35 to 45 s on a Zero.
+- `wobbly-clock-update.timer` fetches signed updates and rolls back one that does not start: `sudo systemctl enable --now wobbly-clock-update.timer`; try it first with `sudo WOBBLY_DRY_RUN=1 wobbly-clock-update`.
+- `journalctl -u wobbly-clock | grep ladder` shows each time the capability ladder moves a rung; `journalctl -u wobbly-clock | grep health` shows the hourly line (uptime, memory, canvases, free GPU memory).
+- The program restarts itself if its memory grows past 350 MB, or if the GPU runs out of memory; a Pi with a kernel older than mid 2023 has crashed after hours of running (a kernel oops in the video driver): `sudo apt update && sudo apt full-upgrade`,
+  and `native/scripts/collect-crash-info.sh` writes a report to send if it happens again.
 
 ## 6. An LED panel (optional)
 See `docs/LED-PANELS.md`: `wobbly-clock setup` asks about your panels and writes `matrix.cfg`; set `output = matrix`. The panel program `wobbly-matrix` has to be built

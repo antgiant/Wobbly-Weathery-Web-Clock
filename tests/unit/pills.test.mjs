@@ -7,15 +7,17 @@ const mkCtx = () => {
   Object.defineProperty(ctx, 'font', { get() { return ctx._font; }, set(v) { ctx._font = v; } });
   ctx.measureText = (t) => ({ width: (+/(\d+(?:\.\d+)?)px/.exec(ctx._font)[1]) * 0.55 * String(t).length });
   ctx.fillText = (t) => { ctx.texts.push(t); };
-  for (const m of ['beginPath', 'moveTo', 'lineTo', 'arc', 'closePath', 'fill', 'stroke', 'roundRect', 'clearRect']) ctx[m] = () => {};
+  for (const m of ['beginPath', 'moveTo', 'lineTo', 'arc', 'closePath', 'fill', 'stroke', 'roundRect', 'clearRect', 'save', 'restore', 'translate', 'scale']) ctx[m] = (...a) => { if (m === 'stroke' || m === 'fill') ctx.paths.push([m, a[0] && a[0].d]); };
+  ctx.paths = [];
   return ctx;
 };
 let canvasCount = 0;
 globalThis.document = { createElement: () => { canvasCount++; const c = { width: 300, height: 150, _id: 1, _ensure() {} }; const x = mkCtx(); c.getContext = () => x; c.ctx = x; return c; } };
+globalThis.Path2D = class { constructor(d) { this.d = d; } };
 globalThis.__c2d_read = (id, x, y, w, h) => new ArrayBuffer(w * h * 4);
 
 const P = await import('../../native/host/js/pills.js');
-const none = () => { for (const k of ['sun', 'rain', 'timer']) P.setPill(k, null); };
+const none = () => { for (const k of ['sun', 'rain', 'timer', 'severe']) P.setPill(k, null); };
 
 none();
 check('no pill shows: nothing is painted', P.paintPills(1280, 720) === null && !P.pillsVisible());
@@ -57,4 +59,29 @@ none(); P.setPill('rain', { level: 'umbrella', text: 'Umbrella: rain now' });
 const small = P.paintPills(1920, 1080), big = P.paintPills(3840, 2160);
 check('on a 4K screen the pills are about twice as big as on 1080p', big.w > small.w * 1.7 && big.w < small.w * 2.3, `${big.w} vs ${small.w}`);
 check('painting reuses one canvas', canvasCount === 1, `${canvasCount} canvases`);
+// ---- the severe weather notice: first, in its level's colour, wraps, and comes and goes like the others ----
+{
+  none();
+  check('a severe notice is a pill like the others (shown, hidden, reported)', P.setPill('severe', { level: 'warning', type: 'tornado', text: 'Tornado Warning until 4:15 PM (+1 more)' }) && P.pillsVisible() && !P.setPill('severe', { level: 'warning', type: 'tornado', text: 'Tornado Warning until 4:15 PM (+1 more)' }) && P.setPill('severe', null) && !P.pillsVisible());
+  P.setPill('severe', { level: 'warning', type: 'tornado', text: 'Tornado Warning until 4:15 PM' });
+  const one = P.paintPills(1280, 720); P.setPill('rain', { level: 'umbrella', text: 'Umbrella: rain now' }); const two = P.paintPills(1280, 720);
+  check('it is painted inside the picture, low and about in the middle', one && one.x >= 0 && one.x + one.w <= 1280 && one.y + one.h > 720 * 0.8 && Math.abs(one.x + one.w / 2 - 640) < 120);
+  check('with another pill the picture is bigger (both show; the page hides the umbrella itself)', two.w > one.w || two.h > one.h);
+  none(); P.setPill('severe', { level: 'watch', type: 'flood', text: 'Flash Flood Watch for the whole of a very large county and the ones next to it until tomorrow evening at 8:00 PM' });
+  const wide = P.paintPills(1280, 720), tall = P.paintPills(720, 1280);
+  check('a long headline wraps instead of running off the screen, on a landscape and an upright screen', wide && wide.w <= 1280 && tall && tall.w <= 720 && tall.h > 30);
+  check('a watch and a warning differ in colour (the notice is cached per state, so they are painted apart)', (() => { none(); P.setPill('severe', { level: 'watch', text: 'Flood Watch' }); const w = P.paintPills(1280, 720); P.setPill('severe', { level: 'warning', text: 'Flood Watch' }); return P.paintPills(1280, 720) !== w; })());
+  none();
+}
+
+
+// ---- each hazard has its own drawing, the page's (SEV_ICON, sent as `icon`), filled for a warning and an outline otherwise ----
+{
+  const { SEV_ICON } = await import('../../js/sky/severe.js');
+  check('every kind of hazard has a drawing of its own in the shared table', ['tornado', 'thunderstorm', 'flood', 'hurricane', 'winter', 'wind', 'heat', 'cold', 'fire', 'dust', 'smoke', 'fog', 'tsunami', 'marine', 'avalanche', 'earthquake', 'other'].every((t) => typeof SEV_ICON[t] === 'string' && SEV_ICON[t].length > 10) && new Set(Object.values(SEV_ICON)).size === Object.keys(SEV_ICON).length);
+  const run = (level, icon) => { none(); P.setPill('severe', { level, type: 't', icon, text: 'Tornado Warning' }); document.createElement('canvas'); return P.paintPills(1280, 720); };
+  const a = run('warning', SEV_ICON.tornado), b = run('warning', SEV_ICON.flood), c = run('warning', undefined);
+  check('a different hazard drawing is a different picture (the cache is keyed on the whole state); no drawing still paints the warning sign', a !== b && c && c.w === a.w);
+  none();
+}
 done();

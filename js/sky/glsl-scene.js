@@ -327,7 +327,7 @@ uniform vec3 uInk;         // flat ink colour (solid clock style while the LED p
 uniform sampler2D uFull;       // full-size overlay (the pills on panels the tuned layout does not cover), straight alpha
 uniform float uFullOn;
 uniform float uContrast;   // strength of the readability outline and tone, 0 off .. 1
-uniform vec4 uWx;          // weather on the digits: x snow settled on them 0..1, y rain on the glass 0..1, w time in seconds
+uniform vec4 uWx;          // weather on the digits: x snow settled on them 0..1, y rain on the glass 0..1, z ice (freezing rain) 0..1, w time in seconds
 uniform sampler2D uDrops;  // raindrops from drops.js, in the mask's place: r dark rim, g glint, b water
 uniform float uDropsOn;
 uniform sampler2D uGeo;    // (the ES 2 glass's passes)
@@ -396,6 +396,16 @@ vec3 bodyTone(vec3 c, float stroke) {
 // and drops bounce off the top edges as tiny splashes. All of it is thin and stays on the edges or in small spots, and it goes
 // on before the readability outline, so the outline still frames every digit.
 float vnoise(float x) { float i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(hash21(vec2(i, 7.1)), hash21(vec2(i + 1.0, 7.1)), f); }
+
+// Freezing rain glazes the digits: a clear sheet of ice that clouds the glass a little, patchy like frost, with crystals that catch the light.
+vec3 iceOn(vec3 glass, float stroke, float amount) {
+  float n = vnoise(gl_FragCoord.x / (stroke * 0.14) + 3.1 * vnoise(gl_FragCoord.y / (stroke * 0.14)));
+  float n2 = vnoise(gl_FragCoord.y / (stroke * 0.05) + gl_FragCoord.x / (stroke * 0.09));
+  float sheet = amount * (0.30 + 0.55 * n);
+  vec3 ice = mix(glass, vec3(0.84, 0.93, 1.0), 0.40 * sheet);
+  float sparkle = step(0.82, n2) * smoothstep(0.3, 0.9, n) * amount;
+  return ice + vec3(0.7, 0.85, 1.0) * sparkle * 0.22;
+}
 
 float snowCap(float stroke, float amount) {
   float lump = 0.7 + 0.6 * vnoise(gl_FragCoord.x / (stroke * 0.30));
@@ -479,6 +489,7 @@ void bodyInk() {                                             // flat ink: the LE
     vec3 ink = uInk, bs = base;
     float stk = uGlass.z;
     if (cv > 0.02 && uWx.x > 0.01) ink = snowOn(ink, snowCap(stk, uWx.x), base);
+    if (cv > 0.02 && uWx.z > 0.01) ink = iceOn(ink, stk, uWx.z);
     if (uWx.y > 0.01 && stk > 0.0) {
       if (cv > 0.02) {
         if (uDropsOn > 0.5) { vec4 dr = texture(uDrops, (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw); ink = rainOn(ink, vec4(dr.r * 0.7, dr.g * 0.8, dr.b, 0.0), uLightCol, base); }
@@ -577,6 +588,7 @@ void bodyGlass() {
   vec3 glass = min(c, vec3(1.6));
   if (cover > 0.02) {                                                  // snow and rain on the digits
     if (uWx.x > 0.01) glass = snowOn(glass, snowCap(stroke, uWx.x), base);
+    if (uWx.z > 0.01) glass = iceOn(glass, stroke, uWx.z);
     if (uWx.y > 0.01) {
       if (uDropsOn > 0.5) {                                              // drops that run, merge and are shed with the digit (drops.js)
         vec4 dr = texture(uDrops, (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw);
@@ -716,6 +728,7 @@ void bodyWx() {
   if (cover > 0.02) {
     vec3 glass = comp;
     if (uWx.x > 0.01) glass = snowOn(glass, snowCap(stroke, uWx.x), texture(uTex, vUv).rgb);
+    if (uWx.z > 0.01) glass = iceOn(glass, stroke, uWx.z);
     if (uWx.y > 0.01 && uDropsOn > 0.5) {
       vec4 dr = texture(uDrops, (vec2(vUv.x, 1.0 - vUv.y) - uMaskRect.xy) / uMaskRect.zw);
       glass = rainOn(glass, vec4(dr.r, dr.g, dr.b, 0.0), uLightCol, sceneAtL(vUv + vec2(0.0, stroke * 0.3) / uRes, sceneLv(1.0)));
@@ -956,10 +969,22 @@ uniform float uVisKm;         // meteorological visibility
 uniform float uFog;           // 0..1 ground fog
 uniform float uPrecip;        // 0 none, 1 heavy
 uniform float uSnow;          // 0 rain, 1 snow
+uniform float uLean;          // wind across the view: how far the falling rain leans (+ toward the right), -0.75..0.75
+uniform float uLeanOn;        // 1 when the weather knows the wind (else rain leans a fixed 0.12 and snow falls straight)
 uniform float uDpr;
 uniform vec3  uGround;        // ground albedo
 uniform vec3  uGround2;       // second ground colour (patches of dry / bare / different cover)
 uniform float uWet;           // 0..1 wet ground (rain)
+uniform float uSleet;         // 0..1: rain and snow falling together (both are drawn); 0 = whichever uSnow says
+uniform float uGlaze;         // 0..1 freezing rain: the rain is ice-clear, the ground is coated with ice
+uniform vec4  uAur;           // aurora: how visible 0..1, how high 0 (low in the pole's direction) .. 1 (overhead), the pole's azimuth (radians from north, clockwise), -
+uniform float uBow;           // 0..1 rainbow (js/sky/rainbow.js): a ring 42 degrees from the point opposite the sun
+uniform float uSand;          // 0..1 sand drifted over the ground by a dust storm
+uniform float uRime;          // 0..1 freezing fog: frost on the ground, glitter in the air
+uniform float uDust;          // 0..1 dust storm: a brown veil and sand blowing along
+uniform float uHail;          // 0..1: hail (stones in the air, a litter of them on the ground)
+uniform float uFlash;         // 0..1 lightning flash lifting the whole picture
+uniform vec4  uBolt;          // a bolt: x across 0..1, how low it reaches (0..1 from the bottom), a seed, how bright (0 = none)
 uniform vec4  uWaveA;         // wind sea: significant height m, period s, travel direction (x east, z north)
 uniform vec4  uWaveB;         // swell, same layout
 uniform vec4  uSea;           // wind speed m/s, foam amount 0..1, wind direction x, z
@@ -1098,6 +1123,13 @@ vec4 moonDisc(vec3 d, float expo) {
 }
 
 // Everything above the skyline. skyMask = how much of the sky is still open to stars.
+// the colours of a bow from violet (0) through blue, green, yellow, orange to red (1)
+vec3 spectrumBow(float t) {
+  t = clamp(t, 0.0, 1.0) * 5.0;
+  vec3 c0 = vec3(0.50, 0.18, 0.95), c1 = vec3(0.15, 0.40, 1.00), c2 = vec3(0.15, 0.90, 0.30), c3 = vec3(0.95, 0.90, 0.15), c4 = vec3(1.00, 0.52, 0.08), c5 = vec3(1.00, 0.12, 0.08);
+  return t < 1.0 ? mix(c0, c1, t) : t < 2.0 ? mix(c1, c2, t - 1.0) : t < 3.0 ? mix(c2, c3, t - 2.0) : t < 4.0 ? mix(c3, c4, t - 3.0) : mix(c4, c5, t - 4.0);
+}
+
 vec3 shadeSky(vec3 d, out float skyMask) {
   vec3 L;
   skyMask = 1.0;
@@ -1129,6 +1161,31 @@ vec3 shadeSky(vec3 d, out float skyMask) {
   vec4 mo = moonDisc(d, expo);
   L += mo.rgb * mo.a;               // added on top: the air in front of the moon still glows
   skyMask *= 1.0 - mo.a;
+  if (abs(uLandType - 2.0) < 0.1) {   // a city's light dome: the lights of the streets, scattered back by the air, glow orange along the horizon at night
+    float cnight = 1.0 - smoothstep(-0.14, 0.01, uSunA.z);
+    L += vec3(1.0, 0.62, 0.32) * exp(-max(d.y, 0.0) / 0.16) * cnight * 0.012 * (0.7 + 0.3 * smoothstep(0.0, 0.1, d.y + 0.05));
+  }
+  if (uAur.x > 0.01 && d.y > 0.0) {   // aurora: a wavy arc of curtains toward the magnetic pole, green below and pink above, striped with rays
+    float az = atan(d.x, d.z), alt = asin(clamp(d.y, 0.0, 1.0));
+    float da = az - uAur.z; da = atan(sin(da), cos(da));
+    float wav = 0.06 * sin(da * 5.0 + uTime * 0.4) + 0.04 * sin(da * 11.0 - uTime * 0.7);
+    float altC = mix(0.16, 0.95, uAur.y) + wav;
+    float up = (alt - altC) / 0.16;
+    float band = up < 0.0 ? exp(-up * up * 6.0) : exp(-up * up * 0.9);                        // a sharp lower edge, a soft glow above it
+    float across = exp(-pow(da / mix(0.8, 2.2, uAur.y), 2.0));
+    float rays = 0.5 + 0.5 * sin(da * 41.0 + 2.0 * sin(da * 9.0 + uTime * 0.3) + uTime * 0.6);
+    rays = 0.35 + 0.65 * rays * (0.6 + 0.4 * sin(da * 17.0 - uTime * 0.5));
+    vec3 ac = mix(vec3(0.18, 1.0, 0.42), vec3(0.78, 0.28, 0.72), smoothstep(0.0, 1.6, up));
+    L += ac * band * across * rays * uAur.x * 0.08;
+  }
+  if (uBow > 0.01) {                // rainbow: red outside at 42 degrees, violet inside; a fainter second bow at 51 degrees with the colours reversed; the sky between them is a little darker
+    float ang = degrees(acos(clamp(dot(d, -uSunDir), -1.0, 1.0)));
+    float p = (ang - 40.6) / 1.9, q = (ang - 50.0) / 3.5;
+    float inP = smoothstep(0.0, 0.15, p) * (1.0 - smoothstep(0.85, 1.0, p)), inS = smoothstep(0.0, 0.15, q) * (1.0 - smoothstep(0.85, 1.0, q));
+    vec3 bowC = spectrumBow(p) * inP + spectrumBow(1.0 - q) * inS * 0.28;
+    float dark = 1.0 - 0.14 * smoothstep(42.4, 43.6, ang) * (1.0 - smoothstep(49.4, 50.4, ang));
+    L *= mix(1.0, dark, uBow) * (1.0 + 3.2 * uBow * bowC);
+  }
   return L;
 }
 
@@ -1214,7 +1271,7 @@ vec3 shadeTerrain(int layer, vec3 d) {
     foam *= mix(1.0, 0.55, smoothstep(2.0, 40.0, fp));        // far foam averages into a pale sheen instead of aliasing
     vec3 foamL = vec3(0.82, 0.86, 0.88) * (sunIg * max(uSunDir.y, 0.0) + moonIg * max(uMoonDir.y, 0.0) + ambLux) / PI;
     L = mix(L, foamL, foam);
-    if (uWet > 0.05 && tdist < 0.05) {                          // raindrop rings
+    if (uWet * (1.0 - uGlaze) > 0.05 && tdist < 0.05) {         // raindrop rings (none on ice)
       vec2 rp = wp * 0.8;
       vec2 cell = floor(rp);
       vec2 fc = fract(rp) - 0.5 - (vec2(hash12(cell + 7.3), hash12(cell + 3.1)) - 0.5) * 0.5;
@@ -1244,13 +1301,18 @@ vec3 shadeTerrain(int layer, vec3 d) {
       alb = mix(uGround, uGround2, smoothstep(0.38, 0.62, pa * 0.7 + pb * 0.3));
       alb *= mix(1.0, 0.62 + 0.9 * sp, sm);
       alb = mix(alb, vec3(0.30, 0.28, 0.25), step(0.985, hash12(floor(gp * 7.0))) * sm * 0.55);   // pebbles
+      alb = mix(alb, vec3(0.86, 0.9, 0.95), step(0.9, hash12(floor(gp * 11.0 + 3.0))) * sm * uHail * 0.85);
+      alb = mix(alb, vec3(0.88, 0.94, 1.0), uRime * (0.45 + 0.4 * sp));
+      alb = mix(alb, vec3(0.66, 0.52, 0.31) * (0.85 + 0.3 * sp), uSand * (0.5 + 0.4 * smoothstep(0.35, 0.65, pb)));        // sand: drifted over the grass and the pebbles, thickest in the hollows                                           // rime: the ground is white with frost, the more where the grass would be   // hail stones lying on the ground
       // wet ground: darker, with a sky-reflecting sheen that grows toward grazing angles and in puddles
       float pud = smoothstep(0.55, 0.72, pb) * uWet;
       alb *= 1.0 - 0.35 * uWet;
       float cosv = max(-d.y, 0.0);
       float Fg = 0.02 + 0.98 * pow(1.0 - cosv, 5.0);
       emit += skyLum(vec3(d.x, -d.y, d.z)) * Fg * (0.14 * uWet + 0.5 * pud);
-      if (uWet > 0.05 && tdist < 0.03) {                  // raindrop ripples close to the camera
+      alb = mix(alb, vec3(0.62, 0.72, 0.82), 0.4 * uGlaze);                                         // glaze: a clear coat of ice over the ground
+      emit += skyLum(vec3(d.x, -d.y, d.z)) * (0.12 + 0.6 * Fg) * uGlaze;                            // ...which mirrors the sky, and the more so the lower you look
+      if (uWet * (1.0 - uGlaze) > 0.05 && tdist < 0.03) {                                          // (no ripples on ice)                  // raindrop ripples close to the camera
         vec2 rp = gp * 0.8;
         vec2 cell = floor(rp);
         vec2 fc = fract(rp) - 0.5 - (vec2(hash12(cell + 7.3), hash12(cell + 3.1)) - 0.5) * 0.5;
@@ -1276,12 +1338,21 @@ vec3 shadeTerrain(int layer, vec3 d) {
       alb = mix(alb, vec3(0.8, 0.82, 0.86), snow);
       depthMix *= mix(1.3, 0.65, hz);
       if (abs(uLandType - 2.0) < 0.1) {
-        // city: dark blocks with lit windows after dusk
+        // city: dark facades, and after dusk lit windows. Each building (known by its height) has its own life: some are dark, some have whole floors lit, some a scatter of windows;
+        // a window is a lit cell of a grid with a gap round it; warm and cool lights; the tallest towers carry a slow red beacon on the roof.
         alb = vec3(0.14, 0.14, 0.15) * (0.7 + 0.6 * rr);
-        vec2 cell = floor(vec2(az * 2400.0, d.y * 2600.0));
-        float lit = step(0.80, hash12(cell)) * step(0.35, hz * 0.0 + hash12(cell + 9.0));
+        float bid = hash12(vec2(floor(ridgeTop * 3500.0), float(layer) + 0.5));
+        vec2 gridp = vec2(az * 2400.0, d.y * 2600.0);
+        vec2 cell = floor(gridp), inCell = fract(gridp);
+        float pane = step(inCell.x, 0.62) * step(inCell.y, 0.7);
+        float onFloor = step(0.4, hash12(vec2(cell.y, bid * 91.0)));
+        float style = step(0.35, bid) * mix(step(0.55, hash12(cell + 9.0)), onFloor * step(0.18, hash12(cell + 5.0)), step(0.5, fract(bid * 7.0)));
         float night = 1.0 - smoothstep(-0.14, 0.01, uSunA.z);
-        emit = vec3(1.0, 0.78, 0.45) * lit * night * 1.4 / expo * 0.35;
+        vec3 wcol = mix(vec3(1.0, 0.78, 0.45), vec3(0.72, 0.86, 1.0), step(0.82, hash12(cell + 3.0)));
+        emit = wcol * pane * style * night * 0.5 / expo;
+        float tower = step(0.05, ridgeTop) * float(layer == 2);
+        float beacon = tower * step(0.55, bid) * smoothstep(0.93, 1.0, hz) * step(0.5, fract(uTime * 0.45 + bid * 3.0));
+        emit += vec3(1.0, 0.08, 0.04) * beacon * (0.3 + 0.7 * night) * 3.0 / expo;
       }
     }
     vec3 lit = terrainLit(alb, n, sunIg, moonIg, ambLux) + emit;
@@ -1346,25 +1417,81 @@ vec4 finish(vec3 L, float alpha) {
     vec2 sp = gl_FragCoord.xy / uDpr;
     for (int k = 0; k < 2; k++) {
       float sc = k == 0 ? 1.0 : 0.6;
-      float cellW = mix(5.0, 11.0, uSnow) / sc;
-      float slant = (1.0 - uSnow) * 0.12;
+      float sn = uSleet > 0.15 ? float(k) : uSnow;                          // sleet: one layer is rain, the other snow
+      float cellW = mix(5.0, 11.0, sn) / sc;
+      float slant = uLeanOn > 0.5 ? uLean * mix(1.0, 2.2, sn) : (1.0 - sn) * 0.12;      // wind: rain leans, snow (which falls slowly) is carried further
       vec2 g = vec2(sp.x + sp.y * slant, sp.y);
       float cx = floor(g.x / cellW);
       float rnd = hash12(vec2(cx, float(k) * 17.0));
-      float len = mix(46.0, 8.0, uSnow) * sc;
-      float speed = mix(1100.0, 70.0, uSnow) * (0.75 + 0.5 * rnd) * sc;
+      float len = mix(46.0, 8.0, sn) * sc;
+      float speed = mix(1100.0, 70.0, sn) * (0.75 + 0.5 * rnd) * sc;
       float y = fract((g.y + uTime * speed) / (len * 5.0) + rnd);       // position along the cycle
       float fx = fract(g.x / cellW) - 0.5;
       float on = step(1.0 - uPrecip * 0.8, hash12(vec2(cx, 3.3 + float(k))));
-      float across = exp(-pow(fx * cellW / mix(0.55, 2.6, uSnow), 2.0));
-      float along = uSnow > 0.5 ? exp(-pow((y - 0.5) * len * 5.0 / 3.0, 2.0))
+      float across = exp(-pow(fx * cellW / mix(0.55, 2.6, sn), 2.0));
+      float along = sn > 0.5 ? exp(-pow((y - 0.5) * len * 5.0 / 3.0, 2.0))
                                 : smoothstep(0.0, 0.2, y) * (1.0 - smoothstep(0.2, 0.2 + 1.0 / 5.0, y));
-      rainRel += vec3(0.55, 0.6, 0.68) * across * along * on * 0.20 * sc;
+      vec3 dropCol = mix(vec3(0.55, 0.6, 0.68), vec3(0.72, 0.88, 1.0), uGlaze);       // freezing rain is clear and icy
+      rainRel += dropCol * across * along * on * (0.20 + 0.06 * uGlaze) * sc;
     }
+  }
+
+  // ---------- dust: sand blowing sideways along the wind (the brown cast is added after the tonemap, below) ----------
+  if (uDust > 0.02) {
+    vec2 dp = gl_FragCoord.xy / uDpr;
+    float dirx = uLeanOn > 0.5 && uLean < 0.0 ? -1.0 : 1.0;
+    for (int k = 0; k < 2; k++) {
+      float sc = k == 0 ? 1.0 : 0.6;
+      float row = floor(dp.y / (4.0 / sc));
+      float rnd = hash12(vec2(row, 91.0 + float(k)));
+      float len = 70.0 * sc, cyc = 520.0 * sc;
+      float x = fract((dp.x * dirx + uTime * (700.0 + 500.0 * rnd) * sc) / cyc + rnd);
+      float along = smoothstep(0.0, 0.05, x) * (1.0 - smoothstep(0.05, 0.05 + len / cyc, x));
+      float on = step(1.0 - uDust * 0.6, hash12(vec2(row, 12.5 + float(k))));
+      float across = exp(-pow((fract(dp.y / (4.0 / sc)) - 0.5) * 4.0, 2.0));
+      rainRel += vec3(0.85, 0.6, 0.32) * along * across * on * 0.3 * sc;
+    }
+  }
+
+  // ---------- rime: ice crystals glittering in the air ----------
+  if (uRime > 0.02) {
+    vec2 rp = floor(gl_FragCoord.xy / (uDpr * 2.0));
+    float tw = hash12(rp + floor(uTime * 1.5) * 7.0);
+    rainRel += vec3(0.8, 0.9, 1.0) * step(0.9975 - 0.003 * uRime, tw) * uRime * 0.5;
+  }
+
+  // ---------- hail: round stones, fast, and larger than rain ----------
+  if (uHail > 0.05) {
+    vec2 hp = gl_FragCoord.xy / uDpr;
+    for (int k = 0; k < 2; k++) {
+      float sc = k == 0 ? 1.0 : 0.7;
+      float cellW = 22.0 / sc, cycle = 260.0 * sc;
+      vec2 g = vec2(hp.x + hp.y * (uLeanOn > 0.5 ? uLean : 0.12), hp.y);
+      float cx = floor(g.x / cellW);
+      float rnd = hash12(vec2(cx, 40.0 + float(k)));
+      float y = fract((g.y + uTime * 1500.0 * (0.8 + 0.4 * rnd) * sc) / cycle + rnd);
+      float fx = (fract(g.x / cellW) - 0.5) * cellW;
+      float on = step(1.0 - uHail * 0.5, hash12(vec2(cx, 7.7 + float(k))));
+      float stone = smoothstep(2.8, 0.9, length(vec2(fx, (y - 0.5) * cycle * 0.35)));
+      rainRel += vec3(0.82, 0.87, 0.92) * stone * on * 0.5 * sc;
+    }
+  }
+
+  // ---------- lightning: the sky flashes, and the first strike of a flash is a jagged bolt ----------
+  if (uFlash > 0.001) rainRel += vec3(0.78, 0.84, 1.0) * uFlash * 0.7;
+  if (uBolt.w > 0.02) {
+    vec2 bv = gl_FragCoord.xy / uRes;
+    float bf = bv.y * 26.0, bi = floor(bf);
+    float kink = mix(hash12(vec2(bi, uBolt.z)), hash12(vec2(bi + 1.0, uBolt.z)), fract(bf)) - 0.5;
+    float bx = uBolt.x + kink * 0.07 + (hash12(vec2(floor(bv.y * 5.0), uBolt.z + 3.0)) - 0.5) * 0.08;
+    float bd = abs(bv.x - bx);
+    float reach = smoothstep(uBolt.y - 0.02, uBolt.y + 0.02, bv.y);
+    rainRel += vec3(0.9, 0.93, 1.0) * (exp(-pow(bd / 0.0022, 2.0)) + 0.35 * exp(-pow(bd / 0.012, 2.0))) * reach * uBolt.w * 1.4;
   }
 
   // ---------- exposure, scotopic shift, tonemap ----------
   vec3 c = toDisplay(L, expo, rainRel);
+  c = mix(c, c * vec3(1.0, 0.68, 0.38) * 0.88 + vec3(0.09, 0.045, 0.0), uDust * 0.75);                  // dust: everything is seen through brown
   // triangular dither avoids banding in the dark gradients
   float n1 = hash12(gl_FragCoord.xy + uFrame * 1.31);
   float n2 = hash12(gl_FragCoord.yx + uFrame * 2.17 + 11.0);

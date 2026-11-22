@@ -516,14 +516,20 @@
     "storm",
     "snow",
     "fog",
-    "haze"
+    "haze",
+    "sleet",
+    "freezing",
+    "hail",
+    "dust",
+    "rime",
+    "windy"
    ],
    "tab": "weather",
    "advanced": false,
    "label": "Weather",
    "shareable": true,
    "preset": true,
-   "doc": "live | clear | partly | cloudy | overcast | rain | storm | snow | fog | haze"
+   "doc": "live | clear | partly | cloudy | overcast | rain | storm | snow | fog | haze | sleet | freezing | hail | dust | rime | windy: the weather to show: live, or one chosen (freezing = freezing rain, dust = dust storm, rime = freezing fog)"
   },
   {
    "key": "tempUnit",
@@ -576,6 +582,45 @@
    "shareable": true,
    "preset": true,
    "doc": "show an umbrella / slicker indicator when enough rain is coming today"
+  },
+  {
+   "key": "aurora",
+   "type": "bool",
+   "default": true,
+   "tab": "weather",
+   "advanced": true,
+   "label": "Aurora",
+   "shareable": false,
+   "preset": false,
+   "doc": "show the aurora when the real conditions allow it: a place near enough to the magnetic pole for the current planetary K index, a dark and clear sky (the index is read from NOAA every 30 minutes)"
+  },
+  {
+   "key": "severeAlerts",
+   "type": "enum",
+   "default": "watch",
+   "options": [
+    "off",
+    "warning",
+    "watch",
+    "all"
+   ],
+   "tab": "weather",
+   "advanced": false,
+   "label": "Severe weather notices",
+   "shareable": false,
+   "preset": false,
+   "doc": "off | warning | watch | all: official alerts for the place (US National Weather Service, Environment Canada, German DWD): off, warnings only, watches and warnings, or advisories too. A notice shows above the umbrella alert and goes when the alert ends or is cancelled"
+  },
+  {
+   "key": "severeOther",
+   "type": "bool",
+   "default": false,
+   "tab": "weather",
+   "advanced": true,
+   "label": "Also non-weather emergencies",
+   "shareable": false,
+   "preset": false,
+   "doc": "also show emergencies that are not weather (civil emergency, evacuation, child abduction)"
   },
   {
    "key": "digitWeather",

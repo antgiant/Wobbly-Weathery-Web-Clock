@@ -76,6 +76,9 @@ export function initGlass(engine, getBasis) {
     lastDropT = t;
     if (inkStale) refreshInk();
     if (engine.knobs) sim.maxDrops = engine.knobs.drops;               // the quality governor's limit
+    sim.hail = engine.wx ? engine.wx.hail : 0;                              // hail: stones bounce off the digits
+    sim.freeze = engine.wx ? engine.wx.freeze : 0;                         // freezing rain: drops freeze where they land
+    sim.wind = engine.lean && engine.lean.on ? engine.lean.v : 0;          // wind pushes the drops that have left the glass
     sim.step(dt, rain);
     const L = engine.glass.light || [-0.5, 0.8, 0.6];
     if (engine.canDrawMask && !window.__canvasMask) {                // the GPU draws the drops (glsl-mask.js); the CPU only lists them
@@ -249,6 +252,7 @@ export function initGlass(engine, getBasis) {
     return [Math.max(0, u(x0)), Math.max(0, v(y0)), Math.min(1, u(x1)), Math.min(1, v(y1))];
   }
 
+  let lastGeoSig = '';
   function draw() {
     raf = 0;
     if (!active()) return;
@@ -266,6 +270,13 @@ export function initGlass(engine, getBasis) {
       if (tp) tp('page glass.draw: geometry (the strokes as lists)', tg);
       lastPolys = geo.polys;
       inkStroke = L.strokePx * L.scale; inkStale = true;
+      // the same digits in the same place (the light timer and the layout events ask every second): nothing to draw again
+      let sum = 0, sum2 = 0; const st = geo.strokes, lt = geo.lights;
+      for (let i = 0; i < st.length; i++) { sum += st[i]; sum2 += st[i] * ((i % 97) + 1); }
+      for (let i = 0; i < lt.length; i++) { sum += lt[i]; sum2 += lt[i] * ((i % 89) + 1); }
+      const sig = [L.mw, L.mh, L.rect.join(), L.strokePx, stained, st.length, lt.length, sum.toFixed(3), sum2.toFixed(2), engine.canvas.width, engine.canvas.height, engine.knobs && engine.knobs.glass].join('|');
+      if (engine.glass.hasMask && sig === lastGeoSig) return;
+      lastGeoSig = sig;
       engine.setGlassGeometry({ w: L.mw, h: L.mh, rect: L.rect, strokeCssPx: L.strokePx, strokes: geo.strokes, lights: geo.lights, black: stained, bounds: boundsOf(geo, L) });
       return;
     }

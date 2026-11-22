@@ -41,6 +41,9 @@ web page: what you can set here you can set there, and a share link from the web
 .B setup
 Ask where the clock shows (HDMI or LED panel), describe the panels in plain questions, check the answers, run the test, and write the configuration.
 .TP
+.B config
+The web Settings drawer in a terminal: walks the same tabs (Presets first), shows each setting's value, changes it, resets it to its default, searches for the place (by name, or an estimate from the network address, only if you say yes) and offers to restart the clock. The conf file is the only source of settings: a setting set back to its default is dropped from the file.
+.TP
 .B test
 Light the output with test patterns and stop: colour bars and a grey ramp, the panels numbered, a brightness sweep, a border box. Ctrl\\-C ends it.
 .TP
@@ -125,7 +128,7 @@ wobbly\\-clock(1)
 /** --help: short form of the same content */
 export function help() {
   const lines = ['Usage: wobbly-clock <command> [arguments]', '', 'Commands:',
-    '  setup  test  run  get [key]  set <key> <value>  presets  preset <name>  apply <link>',
+    '  setup  config  test  run  get [key]  set <key> <value>  presets  preset <name>  apply <link>',
     '  import-matrix-cfg <file>  export-matrix-cfg  install-service  status  logs  restart  update', '',
     'Presets: ' + PRESET_LIST.map((p) => p.id).join(', '), `Settings: ${SETTINGS.length} (same names as the web page); see man wobbly-clock.conf`];
   return lines.join('\n');
