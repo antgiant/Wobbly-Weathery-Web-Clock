@@ -1147,6 +1147,10 @@ vec3 shadeSky(vec3 d, out float skyMask) {
   vec4 mo = moonDisc(d, expo);
   L += mo.rgb * mo.a;               // added on top: the air in front of the moon still glows
   skyMask *= 1.0 - mo.a;
+  if (abs(uLandType - 2.0) < 0.1) {   // a city's light dome: the lights of the streets, scattered back by the air, glow orange along the horizon at night
+    float cnight = 1.0 - smoothstep(-0.14, 0.01, uSunA.z);
+    L += vec3(1.0, 0.62, 0.32) * exp(-max(d.y, 0.0) / 0.16) * cnight * 0.012 * (0.7 + 0.3 * smoothstep(0.0, 0.1, d.y + 0.05));
+  }
   if (uAur.x > 0.01 && d.y > 0.0) {   // aurora: a wavy arc of curtains toward the magnetic pole, green below and pink above, striped with rays
     float az = atan(d.x, d.z), alt = asin(clamp(d.y, 0.0, 1.0));
     float da = az - uAur.z; da = atan(sin(da), cos(da));
