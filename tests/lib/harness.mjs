@@ -39,6 +39,7 @@ async function installMocks(ctx, net) {
     if (!net.up) return r.abort('internetdisconnected');
     if (u.includes('air-quality')) return r.fulfill(json({ current: { aerosol_optical_depth: 0.1 } }));
     if (u.includes('marine')) return r.fulfill(json({}, 400));
+    if (u.includes('current=') && !u.includes('air-quality') && !u.includes('marine') && u.includes('past_hours=')) return r.fulfill(json({ elevation: 30, current: net.weather, hourly: { time: ['t0', 't1', 't2', 't3'], precipitation: net.recentRain || [0, 0, 0, 0] } }));       // live weather, with the last hours' rain
     if (u.includes('hourly=precipitation,precipitation_probability')) {
       const times = [], p = [], pr = [], sn = [];
       const d0 = new Date(net.now || Date.now()); d0.setUTCHours(0, 0, 0, 0);

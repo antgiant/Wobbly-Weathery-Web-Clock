@@ -25,6 +25,7 @@ export const CLEAR = {
   lightning: 0,            // how often it strikes: 0 none, 1 almost continuous
   rime: 0,                 // freezing fog: ice crystals depositing on everything
   dust: 0,                 // blowing dust or sand: 0 clear, 1 a dust storm
+  recent: 0,               // 0..1: how hard it rained in the last three hours (rain that has just ended: a rainbow's moment)
   gust: 0,                 // wind gusts at the surface, m/s
   windMs: 0,               // mean wind at the surface, m/s
   cape: null,              // J/kg, how much energy a rising air parcel has (thunderstorms need some)
@@ -55,7 +56,7 @@ export const MODES = Object.keys(PRESETS);
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 
 /** Map an Open-Meteo `current` block (+ optional air-quality block) to renderer params. */
-export function mapOpenMeteo(cur, air) {
+export function mapOpenMeteo(cur, air, recentMm = 0) {
   const w = { ...CLEAR, cover: [0, 0, 0], wind: [...CLEAR.wind], label: 'Live' };
   const pct = (v) => (Number.isFinite(v) ? clamp(v / 100, 0, 1) : 0);
   w.cover = [pct(cur.cloud_cover_low), pct(cur.cloud_cover_mid), pct(cur.cloud_cover_high)];
@@ -108,6 +109,7 @@ export function mapOpenMeteo(cur, air) {
   // dust in the air (ug/m3, the air-quality service's `dust`): 50 is a noticeable haze, 500 and more a dust storm
   if (air && Number.isFinite(air.dust)) w.dust = clamp((air.dust - 50) / 450, 0, 1);
   if (w.dust > 0) { w.aod = Math.max(w.aod, 0.12 + 1.4 * w.dust); w.visKm = Math.min(w.visKm, 25 - 23.5 * w.dust); }        // a dust storm is thick, brown haze: you cannot see far
+  w.recent = Number.isFinite(recentMm) ? clamp(recentMm / 3, 0, 1) : 0;
   w.label = 'Live';
   return w;
 }
@@ -119,7 +121,7 @@ export async function fetchLiveWeather(lat, lon, signal) {
     'cloud_cover', 'cloud_cover_low', 'cloud_cover_mid', 'cloud_cover_high',
     'visibility', 'wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m', 'cape',
   ].join(',');
-  const f = await fetch(`${base}?latitude=${lat}&longitude=${lon}&current=${vars}&wind_speed_unit=ms&timezone=auto`, { signal });
+  const f = await fetch(`${base}?latitude=${lat}&longitude=${lon}&current=${vars}&hourly=precipitation&past_hours=3&forecast_hours=1&wind_speed_unit=ms&timezone=auto`, { signal });
   if (!f.ok) throw new Error('weather HTTP ' + f.status);
   const fj = await f.json();
 
@@ -129,7 +131,8 @@ export async function fetchLiveWeather(lat, lon, signal) {
     if (a.ok) air = (await a.json()).current;
   } catch (_) { /* aerosol data is optional */ }
 
-  return { weather: mapOpenMeteo(fj.current || {}, air), elevation: Number.isFinite(fj.elevation) ? fj.elevation : null };
+  const past = (fj.hourly && Array.isArray(fj.hourly.precipitation) ? fj.hourly.precipitation : []).slice(0, -1).filter(Number.isFinite);         // the three hours before this one (the last entry is this hour)
+  return { weather: mapOpenMeteo(fj.current || {}, air, past.length ? Math.max(...past) : 0), elevation: Number.isFinite(fj.elevation) ? fj.elevation : null };
 }
 
 /**

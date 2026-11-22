@@ -18,7 +18,8 @@ export const PRIMARY_DEG = 42, SECONDARY_DEG = 51;
  */
 export function rainbowStrength(sunAltDeg, w) {
   if (!w || !(sunAltDeg > 0.3 && sunAltDeg < PRIMARY_DEG)) return 0;
-  const drops = smooth(w.precip || 0, 0.03, 0.15) * (1 - smooth(w.precip || 0, 0.6, 0.9));           // drops, but not a downpour
+  const wet = Math.max(w.precip || 0, 0.7 * (w.recent || 0) * (1 - smooth(w.precip || 0, 0.6, 0.9)));      // rain falling, or rain that has just ended (the drops are still in the air, and the sun is back)
+  const drops = smooth(wet, 0.03, 0.15) * ((w.precip || 0) > 0.03 ? 1 : 0.8) * (1 - smooth(w.precip || 0, 0.6, 0.9));           // drops, but not a downpour; the drops of rain that has ended are fewer
   const cover = w.cover || [0, 0, 0];
   const sunOpen = smooth(0.95 - Math.max(cover[0], 0.8 * cover[1], 0.6 * cover[2]), 0, 0.5);        // broken cloud lets the sun through; an overcast does not
   const height = smooth(sunAltDeg, 0.3, 4) * (1 - smooth(sunAltDeg, 30, PRIMARY_DEG));                // low sun: a tall, bright bow; near 42 degrees only a sliver

@@ -14,4 +14,6 @@ check('it fades in as the sun clears the horizon and out as it nears 42 degrees'
 check('a little rain is enough, more cloud means a weaker bow, never above 1 or below 0', (() => { const a = rainbowStrength(15, { ...shower, precip: 0.06 }), b = rainbowStrength(15, { ...shower, cover: [0.6, 0.3, 0.2] }), c = rainbowStrength(15, shower); return a > 0 && b < c && [a, b, c].every((v) => v >= 0 && v <= 1); })());
 check('the top of the bow stands 42 degrees minus the sun\'s height above the horizon', bowTopAltitude(10) === 32 && bowTopAltitude(0) === PRIMARY_DEG);
 check('missing weather fields mean none, not a crash', rainbowStrength(15, null) === 0 && rainbowStrength(15, {}) === 0);
+check('rain that has just ended still makes a bow (the last three hours count), a little less than rain falling; none if it has not rained', rainbowStrength(15, { ...shower, precip: 0, recent: 1 }) > 0.4 && rainbowStrength(15, { ...shower, precip: 0, recent: 1 }) < rainbowStrength(15, shower) && rainbowStrength(15, { ...shower, precip: 0, recent: 0 }) === 0 && rainbowStrength(15, { ...shower, precip: 0, recent: 0.03 }) === 0);
+check('and a downpour still hides the sun, whatever fell before', rainbowStrength(15, { ...shower, precip: 0.95, recent: 1 }) === 0);
 done();
